@@ -1,0 +1,226 @@
+{
+  "timestamp": "2025-08-05T11:13:59.359254",
+  "total_countries": 54,
+  "successful_uploads": 54,
+  "failed_uploads": 0,
+  "errors": [],
+  "uploaded_countries": [
+    {
+      "code": "DZ",
+      "name": "Algérie"
+    },
+    {
+      "code": "EG",
+      "name": "Égypte"
+    },
+    {
+      "code": "LY",
+      "name": "Libye"
+    },
+    {
+      "code": "MA",
+      "name": "Maroc"
+    },
+    {
+      "code": "TN",
+      "name": "Tunisie"
+    },
+    {
+      "code": "BJ",
+      "name": "Bénin"
+    },
+    {
+      "code": "BF",
+      "name": "Burkina Faso"
+    },
+    {
+      "code": "CV",
+      "name": "Cap-Vert"
+    },
+    {
+      "code": "CI",
+      "name": "Côte d'Ivoire"
+    },
+    {
+      "code": "GM",
+      "name": "Gambie"
+    },
+    {
+      "code": "GH",
+      "name": "Ghana"
+    },
+    {
+      "code": "GN",
+      "name": "Guinée"
+    },
+    {
+      "code": "GW",
+      "name": "Guinée-Bissau"
+    },
+    {
+      "code": "LR",
+      "name": "Libéria"
+    },
+    {
+      "code": "ML",
+      "name": "Mali"
+    },
+    {
+      "code": "MR",
+      "name": "Mauritanie"
+    },
+    {
+      "code": "NE",
+      "name": "Niger"
+    },
+    {
+      "code": "NG",
+      "name": "Nigeria"
+    },
+    {
+      "code": "SN",
+      "name": "Sénégal"
+    },
+    {
+      "code": "SL",
+      "name": "Sierra Leone"
+    },
+    {
+      "code": "TG",
+      "name": "Togo"
+    },
+    {
+      "code": "AO",
+      "name": "Angola"
+    },
+    {
+      "code": "CM",
+      "name": "Cameroun"
+    },
+    {
+      "code": "CF",
+      "name": "République centrafricaine"
+    },
+    {
+      "code": "TD",
+      "name": "Tchad"
+    },
+    {
+      "code": "CG",
+      "name": "Congo"
+    },
+    {
+      "code": "CD",
+      "name": "République démocratique du Congo"
+    },
+    {
+      "code": "GQ",
+      "name": "Guinée équatoriale"
+    },
+    {
+      "code": "GA",
+      "name": "Gabon"
+    },
+    {
+      "code": "ST",
+      "name": "Sao Tomé-et-Principe"
+    },
+    {
+      "code": "BI",
+      "name": "Burundi"
+    },
+    {
+      "code": "KM",
+      "name": "Comores"
+    },
+    {
+      "code": "DJ",
+      "name": "Djibouti"
+    },
+    {
+      "code": "ER",
+      "name": "Érythrée"
+    },
+    {
+      "code": "ET",
+      "name": "Éthiopie"
+    },
+    {
+      "code": "KE",
+      "name": "Kenya"
+    },
+    {
+      "code": "MG",
+      "name": "Madagascar"
+    },
+    {
+      "code": "MW",
+      "name": "Malawi"
+    },
+    {
+      "code": "MU",
+      "name": "Maurice"
+    },
+    {
+      "code": "MZ",
+      "name": "Mozambique"
+    },
+    {
+      "code": "RW",
+      "name": "Rwanda"
+    },
+    {
+      "code": "SC",
+      "name": "Seychelles"
+    },
+    {
+      "code": "SO",
+      "name": "Somalie"
+    },
+    {
+      "code": "SS",
+      "name": "Soudan du Sud"
+    },
+    {
+      "code": "SD",
+      "name": "Soudan"
+    },
+    {
+      "code": "TZ",
+      "name": "Tanzanie"
+    },
+    {
+      "code": "UG",
+      "name": "Ouganda"
+    },
+    {
+      "code": "ZM",
+      "name": "Zambie"
+    },
+    {
+      "code": "ZW",
+      "name": "Zimbabwe"
+    },
+    {
+      "code": "BW",
+      "name": "Botswana"
+    },
+    {
+      "code": "LS",
+      "name": "Lesotho"
+    },
+    {
+      "code": "NA",
+      "name": "Namibie"
+    },
+    {
+      "code": "ZA",
+      "name": "Afrique du Sud"
+    },
+    {
+      "code": "SZ",
+      "name": "Eswatini"
+    }
+  ],
+  "failed_countries": []
+}

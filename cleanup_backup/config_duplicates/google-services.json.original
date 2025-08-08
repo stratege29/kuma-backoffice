@@ -1,0 +1,46 @@
+{
+  "project_info": {
+    "project_number": "116620596804",
+    "project_id": "kumafire-7864b",
+    "storage_bucket": "kumafire-7864b.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:116620596804:android:04234d5421646c49170e11",
+        "android_client_info": {
+          "package_name": "com.ultimesgriots.kuma"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "116620596804-22vjbrv6mr9icg0bt06usp4g3pt3ug6i.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDmrcUwPqua3YgbaR9VmladMTfTqu2GSNY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "116620596804-22vjbrv6mr9icg0bt06usp4g3pt3ug6i.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "116620596804-20mo7jna56n7amt5p5rh003elako0pi7.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.ultimesgriots.kuma"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

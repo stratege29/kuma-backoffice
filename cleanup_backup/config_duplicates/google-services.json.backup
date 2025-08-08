@@ -1,0 +1,82 @@
+{
+  "project_info": {
+    "project_number": "116620596804",
+    "project_id": "kumafire-7864b",
+    "storage_bucket": "kumafire-7864b.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:116620596804:android:c5e03db7c33dcc93170e11",
+        "android_client_info": {
+          "package_name": "com.ultimesgriots.kuma"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "116620596804-22vjbrv6mr9icg0bt06usp4g3pt3ug6i.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDmrcUwPqua3YgbaR9VmladMTfTqu2GSNY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "116620596804-22vjbrv6mr9icg0bt06usp4g3pt3ug6i.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "116620596804-937aomj99b3i234n3kjtpsq08vfk98mt.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.ultimesgriots.kuma"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:116620596804:android:5b0382aeae0518d1170e11",
+        "android_client_info": {
+          "package_name": "com.ultimesgriots.kuma_flutter"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "116620596804-22vjbrv6mr9icg0bt06usp4g3pt3ug6i.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDmrcUwPqua3YgbaR9VmladMTfTqu2GSNY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "116620596804-22vjbrv6mr9icg0bt06usp4g3pt3ug6i.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "116620596804-937aomj99b3i234n3kjtpsq08vfk98mt.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.ultimesgriots.kuma"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

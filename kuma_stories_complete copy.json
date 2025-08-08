@@ -1,0 +1,672 @@
+{
+  "stories": [
+    {
+      "id": "story_ke_001",
+      "title": "Les rayures du zèbre",
+      "country": "Kenya",
+      "countryCode": "KE",
+      "content": {
+        "fr": "ll y a très longtemps, les ânes étaient libres. Ils vivaient avec tous les animaux dans la savane* et ne connaissaient pas les hommes. Un jour, un homme alla à la chasse. Après avoir capturé sa proie*, il se rendit compte qu'elle était lourde et difficile à porter.\n\nL'homme décida alors de se rendre au village pour y chercher de l'aide. Sur son chemin, il rencontra un âne qui se promenait. « Tiens, je pourrais mettre ma proie sur le dos de cet âne », se dit l'homme, « cela me faciliterai la tâche ». L'homme se rapprocha de l'âne et mit la proie sur son dos. L'âne n'opposa aucune résistance et suivit l'homme.\n\nAprès plusieurs heures de marche, ils arrivèrent au village. L'homme déchargea l'âne et lui donna à manger. Depuis lors, l'homme garda l'âne comme moyen de transport. Quelle aubaine* pour les villageois ! Ils pouvaient désormais transporter des charges* lourdes sur de longues distances. Chaque villageois voulait avoir son âne à lui.\n\nLes ânes dans la savane ignoraient ce qui se passait jusque-là. Ils s'en rendirent compte quand plusieurs de leurs amis furent capturés par les hommes. Pris de panique, les ânes commencèrent à se cacher loin dans la savane. Mais hélas, les hommes avaient déjà compris leur utilité et les traquaient partout où ils pouvaient être trouvés.\n\nTrès inquiets, les ânes libres se rassemblèrent pour tenir une réunion. Ils discutèrent de longues heures de ce qu'ils devaient faire. Finalement, ils décidèrent d'avoir recours à Tipy, le lièvre*, reconnu pour sa ruse* et son intelligence.\n\nLes ânes se rendirent chez Tipy et lui expliquèrent leur problème. Tipy réfléchit une minute et dit :\n- Chers camarades ânes, je peux vous aider. Pour cela, soyez tous réunis chez moi demain à l'aube.\n\nLe lendemain, les ânes étaient tous présents chez Tipy. Ils le trouvèrent assis devant sa case avec un seau contenant du lait et un pinceau. « En quoi du lait et un pinceau peuvent-ils nous aider ? » murmurèrent les ânes. Tipy essaya de s'expliquer mais les ânes étaient têtus.\n\nFinalement, l'un d'entre eux se porta volontaire et Tipy se mit à lui peindre des bandes de lait sur le pelage. Le résultat était magnifique ! L'âne volontaire était recouvert de belles rayures noires et blanches. Les autres ânes, admiratifs et souhaitant lui ressembler, se mirent à se bagarrer pour savoir qui serait le suivant.\n\n- Si le seau se renverse, il n'y aura plus de lait et je ne pourrai plus vous peindre, avertit Tipy.\n\nLes ânes se calmèrent et Tipy continua. Une heure plus tard, il commençait à faire chaud. Les ânes, impatients, recommencèrent à se bousculer et l'un d'eux renversa le seau plein de lait. Tipy, très en colère s'exclama:\n\n- Je vous ai avertis et vous ne m'avez pas écouté ! Tout le lait est versé et maintenant, je ne peux plus vous aider.\n\nLes ânes qui n'avaient pas été peints furent très malheureux. Les jours suivants, les hommes les capturèrent tous. Les ânes peints quant à eux, changèrent leur nom en zèbre et furent à jamais à l'abri* des hommes."
+      },
+      "imageUrl": "https://storage.googleapis.com/kumafire-7864b.firebasestorage.app/covers/Les%2520rayures%2520du%2520z%25C3%25A8bre.png",
+      "audioUrl": "https://storage.googleapis.com/kumafire-7864b.firebasestorage.app/audio/Les%2520rayures%2520du%2520z%25C3%25A8bre.wav",
+      "estimatedReadingTime": 3,
+      "estimatedAudioDuration": 240,
+      "values": ["Ruse", "Entraide", "Sagesse", "Transformation"],
+      "quizQuestions": [
+        {
+          "id": "q1",
+          "question": "Qui a aidé les ânes à échapper aux hommes ?",
+          "options": ["Le lion", "Tipy le lièvre", "L'éléphant", "Le zèbre"],
+          "correctAnswer": 1,
+          "explanation": "Tipy le lièvre, reconnu pour sa ruse et son intelligence, a aidé les ânes."
+        },
+        {
+          "id": "q2",
+          "question": "Comment Tipy a-t-il transformé les ânes ?",
+          "options": ["En les peignant avec du lait", "En leur donnant des ailes", "En les rendant invisibles", "En changeant leur couleur"],
+          "correctAnswer": 0,
+          "explanation": "Tipy a peint des bandes de lait sur le pelage des ânes pour créer des rayures."
+        },
+        {
+          "id": "q3",
+          "question": "Que sont devenus les ânes rayés ?",
+          "options": ["Ils sont restés des ânes", "Ils sont devenus des chevaux", "Ils sont devenus des zèbres", "Ils ont disparu"],
+          "correctAnswer": 2,
+          "explanation": "Les ânes peints ont changé leur nom en zèbre et furent à jamais à l'abri des hommes."
+        }
+      ],
+      "metadata": {
+        "author": "Tradition orale kenyane",
+        "origin": "Kenya",
+        "moralLesson": "L'intelligence et la coopération peuvent nous sauver du danger",
+        "keywords": ["rayures", "zèbre", "tipy", "lièvre", "transformation", "ruse", "savane", "ânes"],
+        "ageGroup": "7-12",
+        "difficulty": "moyen",
+        "region": "Afrique de l'Est",
+        "createdAt": "2025-06-04T10:00:00.000Z",
+        "updatedAt": "2025-06-04T10:00:00.000Z"
+      },
+      "tags": ["conte", "tradition", "afrique", "animaux", "transformation"],
+      "isPublished": true,
+      "order": 1
+    },
+    {
+      "id": "story_mu_001",
+      "title": "Tizan et la sorcière",
+      "country": "Maurice",
+      "countryCode": "MU",
+      "content": {
+        "fr": "Tizan est un petit garçon très rusé et friand* de gâteaux-canettes*. Il aime aussi aider sa maman lorsqu'elle fait la cuisine ou lorsqu'elle va faire les courses.\n\nUn jour, alors que la maman de Tizan se rendit au marché faire les courses, Tizan arrangea sa chambre et fit toutes ses corvées. Pour le récompenser, sa maman lui offrit deux pièces. Tizan, tout joyeux ,se rendit à l'étalage* de monsieur Eldo. Il acheta deux gâteaux-canettes, ses friandises préférées. Comme il avait faim, il décida d'en manger un et de garder l'autre.\n\n« Ce serait une bonne idée de planter le second, ainsi je pourrai avoir autant de gâteaux-canettes que je voudrais », se dit Tizan.\n\nLorsqu'il rentra à la maison, il planta le second gâteau-cannette dans le petit jardin devant sa maison. Chaque matin, pendant une semaine, il se levait et vérifiait si son arbre avait poussé. Malheureusement, celui-ci ne poussait pas comme il l'avait espéré.\n\nPlusieurs jours passèrent et toujours pas d'arbre. Tizan, très contrarié, se mit à parler à l'endroit où il avait planté son arbre à gâteaux-canettes. « Pourquoi ne pousses-tu pas, tous les jours je prends soin de toi et pourtant tu ne veux pas pousser »\n\nQuelques jours plus tard, l'arbre se mit à pousser et devint très grand. Tizan était très heureux. Un beau matin, après avoir terminé ses tâches, Tizan grimpa au sommet de l'arbre et se délecta* de ses gâteaux-canettes. Pendant qu'il se régalait, une vieille dame passa sous l'arbre et se mit à lui parler.\n\n- Bonjour mon petit, dit la vieille dame. Aide-moi s'il te plaît, je n'ai rien mangé depuis des jours. Peux-tu descendre et me remettre quelques friandises de ton arbre ?\n\nTizan méfiant, répondit :\n- Bonjour Madame, pourquoi ne prenez-vous pas les fruits sur la première branche ? Ils sont bien mûrs et délicieux.\n- Ils sont trop sucrés, je ne pourrai pas les manger, répliqua la vieille dame.\n\nPris de pitié, Tizan finit par descendre et offrit des gâteaux-canettes à la vieille dame. Mais ce qu'il ignorait, c'est qu'elle était en réalité une sorcière. Elle le saisit brusquement par le bras et le mit à l'intérieur de son sac.\n\n- Ah Ah Ah ! Je vais me régaler ce soir, dit-elle. Voilà un petit garçon bien grassouillet* pour le dîner !\n- Laisse-moi sortir ! hurla Tizan.\n\nMais la sorcière ne l'écoutait pas et continuait son chemin. Tizan se mit à réfléchir. « Comment vais-je sortir de ce sac? » se demanda-t-il. « Je dois profiter de toutes les occasions qui vont se présenter à moi ».\n\nArrivée au bord d'un ruisseau, la vieille dame voulut puiser de l'eau pour sa soupe du soir. Elle retira une cuvette du sac où se trouvait Tizan, mais oublia de le refermer aussitôt. Dès qu'elle tourna la tête, Tizan sortit du sac et se mit à le remplir de pierres.\n\nEn rentrant à la maison, la vieille dame mit sa marmite au feu. Et sans regarder le contenu du sac, la sorcière renversa les pierres dans l'eau bouillante. L'eau chaude l'éclabousse et elle fut brûlée au visage. Hurlant de douleur, elle promit de se venger de tous les petits garçons qui grimpent aux arbres.\n\nMORALE: Économise, investit et tu auras plus de ce que tu aimes"
+      },
+      "imageUrl": "https://storage.googleapis.com/kumafire-7864b.firebasestorage.app/covers/Tizan%2520et%2520la%2520sorci%25C3%25A8re.png",
+      "audioUrl": "https://storage.googleapis.com/kumafire-7864b.firebasestorage.app/audio/Tizan%2520et%2520la%2520sorci%25C3%25A8re.wav",
+      "estimatedReadingTime": 4,
+      "estimatedAudioDuration": 300,
+      "values": ["Ruse", "Prudence", "Persévérance", "Sagesse"],
+      "quizQuestions": [
+        {
+          "id": "q1",
+          "question": "Qu'a planté Tizan dans son jardin ?",
+          "options": ["Une graine", "Un gâteau-canette", "Une fleur", "Un arbre"],
+          "correctAnswer": 1,
+          "explanation": "Tizan a planté un gâteau-canette en pensant qu'il pousserait comme un arbre."
+        },
+        {
+          "id": "q2",
+          "question": "Comment Tizan s'est-il échappé de la sorcière ?",
+          "options": ["Il a cassé le sac", "Il a remplacé son corps par des pierres", "Il a appelé à l'aide", "Il s'est transformé"],
+          "correctAnswer": 1,
+          "explanation": "Tizan a profité d'un moment d'inattention pour sortir du sac et le remplir de pierres."
+        },
+        {
+          "id": "q3",
+          "question": "Quelle est la morale de cette histoire ?",
+          "options": ["Il faut être prudent", "Économise, investit et tu auras plus", "Ne fais confiance à personne", "Les arbres ne poussent pas"],
+          "correctAnswer": 1,
+          "explanation": "La morale explicite de l'histoire est : 'Économise, investit et tu auras plus de ce que tu aimes'."
+        }
+      ],
+      "metadata": {
+        "author": "Tradition orale mauricienne",
+        "origin": "Maurice",
+        "moralLesson": "Économise, investit et tu auras plus de ce que tu aimes",
+        "keywords": ["tizan", "sorcière", "gâteaux", "canettes", "ruse", "prudence", "arbre", "magie"],
+        "ageGroup": "6-10",
+        "difficulty": "moyen",
+        "region": "Afrique Australe",
+        "createdAt": "2025-06-04T10:00:00.000Z",
+        "updatedAt": "2025-06-04T10:00:00.000Z"
+      },
+      "tags": ["conte", "tradition", "afrique", "magie", "héros"],
+      "isPublished": true,
+      "order": 2
+    },
+    {
+      "id": "story_et_001",
+      "title": "L'écureuil imprudent",
+      "country": "Ethiopie",
+      "countryCode": "ET",
+      "content": {
+        "fr": "Autrefois Firihati*, le rat-taupe nu* et Defari* l'écureuil étaient deux amis inséparables. Firihati avait créé sa taupinière à l'entrée du champ d'un cultivateur et y vivait avec ses petits. Defari, lui, s'était installé dans un arbre à l'entrée de la forêt. Dans le champ, le cultivateur avait semé de l'arachide, du sorgho* et du teff*. Defari l'écureuil sortait en pleine journée pour grignoter l'arachide, le teff et le sorgho du cultivateur. Firihati lui dit :\n\n- Fais attention, ne sors plus en plein jour. Ne nous attire pas d'ennuis.\nL'écureuil lui répondit :\n- Ne t'en fais pas, nous ne risquons rien.\n\nLe cultivateur constata qu'un rongeur mangeait constamment ses arachides. Or le cultivateur avait trois chiens aux sens très affûtés : Fet'ani*, Meregagati* et Gobezi*. Defari, insouciant, continuait de grignoter les cultures du cultivateur. Son ami Firihati, inquiet, lui dit de nouveau :\n\n- Ton entêtement nous attirera des ennuis.\nMalgré les avertissements répétés de son ami, Defari l'écureuil continuait d'aller grignoter dans le champ en plein jour.\n\nUn jour, le cultivateur, décidé à trouver le coupable*, resta à l'entrée du champ. Il était accompagné de ses trois chiens. Defari arriva, examina le champ, mais ne remarqua pas les chiens. Il commença alors à arracher les arachides.\nDe son point de guet*, le cultivateur aperçut une silhouette* qui attira son attention. Il exhorta ses chiens à faire la ronde*. Soudain, Meregagati, l'un des chiens aperçu un mouvement de feuilles et s'avança lentement suivi des deux autres chiens. Dès qu'il les vit, Defari, effrayé s'enfuit. Mais le cultivateur hurla à ses chiens :\n\n-Attrapez-le !\nQuand Défari vit qu'il était pourchassé, il alla directement se réfugier chez Firihati, le rat-taupe nu. Sentant la menace, la taupe, apeurée, dit à Defari :\n-Voilà ce que je te disais, ton entêtement nous a attiré des ennuis!\nDefari lui répondit :\n- Ne t'inquiète pas, ils ne nous retrouveront pas.\n\nMalheureusement pour eux, les chiens avaient remarqué les traces de Defari. En suivant ses pas, les chiens découvrirent le trou dans lequel il venait de rentrer et se mirent à creuser. Le cultivateur attrapa Defari et le fit captif* pour l'offrir à ses enfants. Puis il remarqua la présence de tessons de poterie* et de coques d'arachides*.\n« Il doit y avoir d'autres animaux ! », se dit-il. Il continua ses recherches et trouva Firihati et ses petits. Il s'empara d'eux aussi. Firihati s'écria : « Voilà ce que j'avais prédit! »\nDepuis ce jour, l'écureuil et la taupe ne sont plus amis. L'écureuil sort le jour et la taupe la nuit.\nMORALE: La prudence est la mère de la sûreté"
+      },
+      "imageUrl": "https://firebasestorage.googleapis.com/v0/b/kumafire-7864b.firebasestorage.app/o/covers/L_%C3%A9cureuil%20imprudent.png?alt=media&token=3d1cd181-e3dd-4eea-b9f6-55e4fa2fc346",
+      "audioUrl": "",
+      "estimatedReadingTime": 4,
+      "estimatedAudioDuration": null,
+      "values": ["Prudence", "Sagesse", "Loyauté"],
+      "quizQuestions": [
+        {
+          "id": "q1",
+          "question": "Pourquoi Firihati conseillait-il à Defari de ne pas sortir le jour ?",
+          "options": ["Il faisait trop chaud", "C'était dangereux à cause du cultivateur", "Il préférait la nuit", "Il était paresseux"],
+          "correctAnswer": 1,
+          "explanation": "Firihati savait que sortir le jour était dangereux car le cultivateur pouvait les voir."
+        },
+        {
+          "id": "q2",
+          "question": "Qu'est-ce qui a permis aux chiens de trouver la cachette ?",
+          "options": ["L'odeur", "Les traces de Defari", "Le bruit", "Le hasard"],
+          "correctAnswer": 1,
+          "explanation": "Les chiens ont suivi les traces laissées par Defari quand il s'est enfui."
+        },
+        {
+          "id": "q3",
+          "question": "Quelle est la morale de cette histoire ?",
+          "options": ["L'amitié est importante", "Il faut travailler dur", "La prudence est la mère de la sûreté", "Les animaux sont intelligents"],
+          "correctAnswer": 2,
+          "explanation": "La morale explicite nous enseigne l'importance de la prudence pour éviter les problèmes."
+        }
+      ],
+      "metadata": {
+        "author": "Tradition orale éthiopienne",
+        "origin": "Ethiopie",
+        "moralLesson": "La prudence est la mère de la sûreté",
+        "keywords": ["écureuil", "prudent", "firihati", "defari", "cultivateur", "prudence", "arachides", "chiens"],
+        "ageGroup": "7-12",
+        "difficulty": "moyen",
+        "region": "Afrique de l'Est",
+        "createdAt": "2025-06-04T10:00:00.000Z",
+        "updatedAt": "2025-06-04T10:00:00.000Z"
+      },
+      "tags": ["conte", "tradition", "afrique", "animaux", "amitié"],
+      "isPublished": true,
+      "order": 3
+    },
+    {
+      "id": "story_sd_001",
+      "title": "N_Gul et les jumeaux",
+      "country": "Soudan",
+      "countryCode": "SD",
+      "content": {
+        "fr": "ll était une fois, un gros serpent appelé Ngul, qui vivait entre un village et une plaine* verdoyante. Dans la plaine verdoyante, on trouvait de bonnes herbes pour le bétail*. Une rivière coulait à proximité, donnant ainsi la possibilité aux animaux de s'abreuver*, sans avoir à parcourir de longues distances. De nombreux bouviers* emmenaient leurs bêtes dans la plaine verdoyante pour les nourrir. Ils y séjournaient plusieurs mois loin de leur famille. Tantôt, les bouviers rendaient visite à leur famille au village, tantôt, les villageois rendaient visite à leurs parents bouviers et leur apportaient de la nourriture. C'est la raison pour laquelle le chemin entre la plaine et le village était toujours fréquenté.\n\nUn jour, le serpent Ngul eut faim. Il sortit sur le chemin entre le village et la plaine verdoyante. Il ouvrit grandement sa bouche en mettant une lèvre au sol et l'autre au- dessus du ciel. Les gens qui empruntaient le chemin, marchaient tous inconsciemment à l'intérieur de sa gueule. Ils ne pouvaient rien voir parce que sa gueule était très très grande. Quand le serpent fut rassasié, il ferma la bouche, enfermant ainsi tous ceux qui avaient emprunté le chemin. Ainsi, plusieurs personnes disparaissaient chaque année et personne ne savait où elles se trouvaient.\n\nIl y avait dans le village une femme veuve*. Son mari avait été avalé par Ngul, le gros serpent, alors qu'elle était enceinte. Plus tard, elle donna naissance à des jumeaux qu'elle appela Ngor et Madit.\nUn jour, ils interrogèrent leur mère :\n\n- Maman, où est notre père?\n- Alors qu'il emmenait les vaches dans la plaine verdoyante, votre père a soudainement disparu, répondit la mère. Plusieurs personnes ont également disparu sur le même chemin. On raconte qu'un énorme serpent dont on ne voit la gueule, avale les passants.\n\nLes jumeaux, alors âgés de 14 ans, firent savoir à leur mère qu'ils se rendraient dans la plaine afin de retrouver leur père. Mais la mère, qui ne voulait pas perdre ses seuls enfants, refusa de les laisser partir.\nLes jumeaux, déterminés, décidèrent de s'en aller de nuit pendant que leur mère dormait. Ils s'engagèrent sur le chemin vers la plaine avec leurs vaches . Arrivés sur le chemin, les jumeaux alignèrent leurs vaches à la queue leu leu dans une longue file. Ils se mirent à l'arrière et laissèrent les vaches marcher devant. À chaque pas, les jumeaux criaient le nom de la première vache, celle en tête de la file.\n\n-Roaa, m'entends-tu ?\nEt celle-ci répondait d'un retentissant meuglement « Meuuuh ! ».\n\nDès lors, ils étaient sûrs que la vache était toujours présente et pouvaient continuer à faire avancer le troupeau. Ils répétèrent cette astuce tout au long de la marche. Une heure plus tard, les jumeaux appelèrent Roaa. Mais cette fois-ci, elle ne répondit pas. Ils appelèrent la deuxième vache, mais celle-ci ne répondit pas non plus. La troisième, la quatrième puis la cinquième vache, mais toujours pas de réponse. Ce fut finalement la sixième vache qui répondit à leur appel.\n« C'est certainement là que commence la bouche du serpent. » se dirent les jumeaux.\n\nIls firent sortir leurs épées, entrèrent dans la gueule du serpent et se mirent à le découper de l'intérieur, en partant de la tête jusqu'à la queue. Le serpent mourut instantanément. Les gens et les animaux qui étaient à l'intérieur du serpent furent sauvés. Et les jumeaux purent enfin retrouver leur père.\n\nQuelques années plus tard, une rivière se forma à l'endroit où le serpent fut vaincu. On lui donna le nom de Ngul, en souvenir du gros serpent avaleur d'hommes.\n\nMorale: Rien n'est impossible avec de la détermination et du courage !"
+      },
+      "imageUrl": "https://storage.googleapis.com/kumafire-7864b.firebasestorage.app/covers/N_Gul%2520et%2520les%2520jumeaux.png",
+      "audioUrl": "https://storage.googleapis.com/kumafire-7864b.firebasestorage.app/audio/N_Gul%2520et%2520les%2520jumeaux.wav",
+      "estimatedReadingTime": 5,
+      "estimatedAudioDuration": 360,
+      "values": ["Courage", "Persévérance", "Entraide", "Sagesse"],
+      "quizQuestions": [
+        {
+          "id": "q1",
+          "question": "Comment les jumeaux ont-ils détecté la présence du serpent ?",
+          "options": ["Ils l'ont vu", "Les vaches ont cessé de répondre", "Ils ont senti une odeur", "Leur mère les a prévenus"],
+          "correctAnswer": 1,
+          "explanation": "Les jumeaux ont compris que le serpent était là quand les vaches ont cessé de répondre à leurs appels."
+        },
+        {
+          "id": "q2",
+          "question": "Comment ont-ils vaincu le serpent Ngul ?",
+          "options": ["Avec des pierres", "En le découpant de l'intérieur avec leurs épées", "En l'empoisonnant", "En lui tendant un piège"],
+          "correctAnswer": 1,
+          "explanation": "Les jumeaux sont entrés dans la gueule du serpent et l'ont découpé de l'intérieur avec leurs épées."
+        },
+        {
+          "id": "q3",
+          "question": "Qu'est-ce qui s'est formé après la mort du serpent ?",
+          "options": ["Une montagne", "Une forêt", "Une rivière", "Un lac"],
+          "correctAnswer": 2,
+          "explanation": "Une rivière s'est formée à l'endroit où le serpent fut vaincu et porte son nom en souvenir."
+        }
+      ],
+      "metadata": {
+        "author": "Tradition orale soudanaise",
+        "origin": "Soudan",
+        "moralLesson": "Rien n'est impossible avec de la détermination et du courage",
+        "keywords": ["ngul", "jumeaux", "serpent", "courage", "détermination", "ngor", "madit", "vaches"],
+        "ageGroup": "8-14",
+        "difficulty": "difficile",
+        "region": "Afrique de l'Est",
+        "createdAt": "2025-06-04T10:00:00.000Z",
+        "updatedAt": "2025-06-04T10:00:00.000Z"
+      },
+      "tags": ["conte", "tradition", "afrique", "héros", "animaux"],
+      "isPublished": true,
+      "order": 4
+    },
+    {
+      "id": "story_tz_001",
+      "title": "L_ami déloyal",
+      "country": "Tanzanie",
+      "countryCode": "TZ",
+      "content": {
+        "fr": "Dans un village vivait une vieille femme. Elle préparait des graines de palme et les vendait au marché. Cette vieille femme avait un beau mouton bien dodu*. Dans la brousse, près du village, vivait l'hyène. L'hyène convoitait ce beau mouton et était déterminé à le voler coûte que coûte*.\nUn jour, l'hyène se rendit chez le féticheur pour solliciter son aide.\n\n- Féticheur, dit l'hyène, peux-tu me donner le pouvoir de prendre l'apparence humaine?\n- Bien évidement, répondit le féticheur. Pour cela, tu devras labourer mon champ pendant deux années.\n\nL'hyène accepta sans broncher et laboura le champ du féticheur comme convenu. Au terme des deux années, le féticheur remit à l'hyène une amulette qui lui permettrait de se transformer en homme. \nL'hyène, sous l'apparence humaine, venait régulièrement aider la vieille femme à écraser ses graines de palme. Tout en les écrasant, il guettait de loin le mouton bien dodu attaché à un arbre.\nLorsque l'hyène finissait son travail, la vieille femme lui offrait un repas copieux* d'Ugali*. L'hyène gagnait de plus en plus la confiance de la vieille femme. Cette dernière ne se souciait même plus de laisser l'hyène seule avec le mouton, pendant qu'elle allait vendre ses graines au marché.\n\nUn jour, alors que la vieille dame était au marché, l'hyène sous sa forme humaine bondit sur le mouton, s'empara de lui et courut vers la brousse. Le mouton, effrayé, se mit à bêler de toutes ses forces :\n« Bêêê bêêê! ».\nLa vieille femme, sur le chemin du retour, reconnut les bêlements de son mouton.\n« Ah ! Quelqu'un est en train de me voler mon mouton ! » s'écria-t-elle. « Si seulement mon ami qui m'aide à écraser les graines était là, il aurait pu arrêter le voleur. »\n\nToute triste, la vieille dame changea de chemin et alla s'asseoir près du marigot pour pleurer.\nL'hyène, pendant ce temps, continuait sa course effrénée avec le mouton dans les bras. Mais le mouton était très lourd et les bras de l'hyène commençaient à fatiguer.\n« Ah, je suis bien fatigué ! Je vais boire un peu d'eau au marigot avant de continuer ma course », haleta l'hyène. Il se rendit au marigot. Dès qu'il arriva, la vieille dame qui était aussi au marigot s'écria :\n\n- C'est donc toi mon ami, qui me vole mon mouton pendant mon absence ?\nL'hyène, honteuse, se couvrit le visage et se mit à fuir en direction de la brousse, laissant le mouton près du marigot.\n\nMorale: La confiance n'exclut pas le contrôle."
+      },
+      "imageUrl": "https://storage.googleapis.com/kumafire-7864b.firebasestorage.app/covers/L_ami%2520d%25C3%25A9loyal.png",
+      "audioUrl": "https://storage.googleapis.com/kumafire-7864b.firebasestorage.app/audio/L_ami%2520d%25C3%25A9loyal.wav",
+      "estimatedReadingTime": 3,
+      "estimatedAudioDuration": 240,
+      "values": ["Loyauté", "Prudence", "Sagesse"],
+      "quizQuestions": [
+        {
+          "id": "q1",
+          "question": "Que voulait l'hyène du féticheur ?",
+          "options": ["De la nourriture", "Le pouvoir de voler", "Le pouvoir de prendre l'apparence humaine", "Une amulette magique"],
+          "correctAnswer": 2,
+          "explanation": "L'hyène voulait obtenir le pouvoir de se transformer en homme pour tromper la vieille femme."
+        },
+        {
+          "id": "q2",
+          "question": "Comment l'hyène a-t-elle été démasquée ?",
+          "options": ["Elle a perdu son déguisement", "La vieille femme l'a vue voler le mouton", "Elle s'est fait prendre au marigot", "Le mouton l'a dénoncée"],
+          "correctAnswer": 2,
+          "explanation": "L'hyène a été surprise par la vieille femme au marigot alors qu'elle portait le mouton volé."
+        },
+        {
+          "id": "q3",
+          "question": "Quelle est la morale de cette histoire ?",
+          "options": ["Il ne faut pas faire confiance aux étrangers", "La confiance n'exclut pas le contrôle", "Les apparences sont trompeuses", "Il faut toujours être sur ses gardes"],
+          "correctAnswer": 1,
+          "explanation": "La morale nous enseigne qu'avoir confiance en quelqu'un ne signifie pas qu'il faut arrêter d'être vigilant."
+        }
+      ],
+      "metadata": {
+        "author": "Tradition orale tanzanienne",
+        "origin": "Tanzanie",
+        "moralLesson": "La confiance n'exclut pas le contrôle",
+        "keywords": ["hyène", "déloyal", "mouton", "confiance", "féticheur", "transformation", "trahison", "marigot"],
+        "ageGroup": "7-12",
+        "difficulty": "moyen",
+        "region": "Afrique de l'Est",
+        "createdAt": "2025-06-04T10:00:00.000Z",
+        "updatedAt": "2025-06-04T10:00:00.000Z"
+      },
+      "tags": ["conte", "tradition", "afrique", "animaux", "magie"],
+      "isPublished": true,
+      "order": 5
+    },
+    {
+      "id": "story_gq_001",
+      "title": "Le léopard et la tortue",
+      "country": "Guinée Équatoriale",
+      "countryCode": "GQ",
+      "content": {
+        "fr": "La tortue et le léopard vivaient près d'un village avec leurs enfants. Lorsque les chasseurs partaient chasser et que les cultivateurs allaient labourer leurs champs, la tortue et le léopard, accompagnés de leurs enfants, se faufilaient dans les greniers* pour manger leurs provisions. De retour de leurs activités, les villageois constataient que leurs réserves avaient été pillées.\n\n- Qui peut bien se servir dans nos provisions ? se demandaient les villageois.\nIl en fut ainsi durant de nombreuses semaines. Puis un jour, ils organisèrent une réunion sur la place du village.\n– Trop c'est trop ! Nous devons découvrir pourquoi nos provisions disparaissent, s'écria un villageois tout irrité.\n– Nous allons tendre un piège et ainsi trouver les coupables, clamèrent* les autres villageois.\nLa nuit tombée, les villageois remplirent leur grenier de provisions. Le matin, comme à leur habitude, ils vaquèrent tous à leurs occupations. Cependant, ils avaient prévu de rentrer un peu plus tôt ce jour-là pour attraper les coupables la main dans le sac.\nAussitôt que les villageois quittèrent le village, la tortue et le léopard, toujours accompagnés de leurs enfants, s'infiltrèrent dans les greniers. C'était un vrai régal ! Les greniers avaient été bien remplis si bien que nos amis ne sentirent pas le temps passer.\nIls étaient encore en pleine dégustation lorsque la tortue sentit l'odeur des humains.\n\n- Léopard ! Léopard ! Les villageois sont de retour, qu'allons-nous faire ?\n- Nous ne pouvons aller nulle part, s'inquiéta le léopard. Cachons-nous dans la maison., ajouta-t-il après une seconde de réflexion.\n- Mes enfants et moi, nous nous cacherons dans l'arbre près de la maison, dit la tortue.\n- Non, c'est là que je me mettrai avec mes enfants ! répondit le léopard.\n- Nous irons dans la cuisine alors, dit la tortue.\n- C'est exactement à cet endroit que je veux me cacher avec mes enfants, ajouta le léopard.\n\nChaque fois que la tortue choisissait un endroit, le léopard décidait que c'était là qu'il voulait se cacher avec ses enfants. Exaspérée, la tortue décida de déféquer* sur des feuilles et de s'y cacher avec sa famille. Lorsque les villageois entrèrent dans le grenier, ils découvrirent les excréments* dispersés.\n\n- C'est incroyable !! Cette chose a dévoré nos provisions, et a également déféqué dans tout le grenier, se plaignit un des villageois. L'odeur est insupportable, il faut vite nettoyer.\nLes villageois ramassèrent alors tous les excréments et les jetèrent dans le déversoir*. La tortue et sa famille maintenant à l'extérieur, sortirent des excréments, puis disparurent dans la brousse.\nLe léopard, quant à lui, se cacha dans l'arbre avec ses petits. Lorsque la nuit tomba, les chasseurs allumèrent un feu en-dessous de l'arbre pour se réchauffer. Le feu commença à produire beaucoup de fumée. Les petits du léopard, envahis par la fumée, commencèrent à suffoquer*.\n\n- Père, la fumée me gêne, gémit l'un des petits.\n- Chut ! Ne fais pas de bruit ! Les chasseurs sont juste en bas, répondit le léopard.\nMais la situation devenait de plus en plus insupportable pour le petit.\n\n- Père, la fumée me gêne, dit-il à nouveau.\n- Si tu ne te tais pas, les chasseurs nous attraperont et nous passerons un mauvais quart d'heure, répliqua le léopard, énervé.\nPuis, la fumée doubla de volume. C'en était trop pour le petit qui, à bout, cria:\n\n- Père ! La fumée me gêne !\nLes chasseurs, qui avaient entendu le bruit, levèrent tous les yeux et découvrirent la famille léopard perchée dans l'arbre.\n\n- Voici donc ceux qui mangent toute notre nourriture, s'exclama l'un des chasseurs.\nEt les villageois, fous de rage, se saisirent de grands bâtons, et leur administrèrent une bonne raclée*. Sous la volée de coups, la famille léopard tomba de l'arbre. Ils réussirent tant bien que mal à s'échapper mais furent tous recouverts de bleus.\nLa simplicité de la tortue lui a permis de s'enfuir, l'égoïsme du léopard lui a valu une bonne correction.\n\nMorale: Dans le danger, il ne faut pas penser qu'à soi!"
+      },
+      "imageUrl": "https://storage.googleapis.com/kumafire-7864b.firebasestorage.app/covers/Le%2520l%25C3%25A9opard%2520et%2520la%2520tortue.png",
+      "audioUrl": "https://storage.googleapis.com/kumafire-7864b.firebasestorage.app/audio/Le%2520l%25C3%25A9opard%2520et%2520la%2520tortue.wav",
+      "estimatedReadingTime": 5,
+      "estimatedAudioDuration": 360,
+      "values": ["Égoïsme", "Sagesse", "Prudence", "Entraide"],
+      "quizQuestions": [
+        {
+          "id": "q1",
+          "question": "Pourquoi le léopard et la tortue ne pouvaient pas se cacher ensemble ?",
+          "options": ["Ils se détestaient", "Le léopard voulait toujours la même cachette que la tortue", "Il n'y avait pas assez de place", "Ils avaient peur l'un de l'autre"],
+          "correctAnswer": 1,
+          "explanation": "Le léopard était égoïste et voulait toujours prendre la cachette que choisissait la tortue."
+        },
+        {
+          "id": "q2",
+          "question": "Comment la tortue s'est-elle cachée finalement ?",
+          "options": ["Dans l'arbre", "Dans la cuisine", "Dans ses excréments", "Dans la maison"],
+          "correctAnswer": 2,
+          "explanation": "Exaspérée par l'égoïsme du léopard, la tortue a eu l'idée astucieuse de se cacher dans ses excréments."
+        },
+        {
+          "id": "q3",
+          "question": "Quelle est la morale de cette histoire ?",
+          "options": ["Il faut être malin", "Dans le danger, il ne faut pas penser qu'à soi", "Les tortues sont plus intelligentes", "Il ne faut pas voler"],
+          "correctAnswer": 1,
+          "explanation": "L'histoire nous enseigne qu'en situation de danger, l'égoïsme peut nous perdre et qu'il faut coopérer."
+        }
+      ],
+      "metadata": {
+        "author": "Tradition orale équato-guinéenne",
+        "origin": "Guinée Équatoriale",
+        "moralLesson": "Dans le danger, il ne faut pas penser qu'à soi",
+        "keywords": ["léopard", "tortue", "égoïsme", "cachette", "greniers", "villageois", "fumée", "simplicité"],
+        "ageGroup": "8-14",
+        "difficulty": "difficile",
+        "region": "Afrique Centrale",
+        "createdAt": "2025-06-04T10:00:00.000Z",
+        "updatedAt": "2025-06-04T10:00:00.000Z"
+      },
+      "tags": ["conte", "tradition", "afrique", "animaux", "morale"],
+      "isPublished": true,
+      "order": 6
+    },
+    {
+      "id": "story_cm_001",
+      "title": "Kimbu l_homme sale",
+      "country": "Cameroun",
+      "countryCode": "CM",
+      "content": {
+        "fr": "ll existait autrefois un village du nom de Fongo Tongo. Ce village avait une particularité: près de lui, se trouvait une chute d'eau où vivaient des sirènes. Les sirènes et les hommes cohabitaient depuis de nombreuses années. Lorsque les hommes avaient besoin de poissons, ils demandaient de l'aide aux sirènes. En contrepartie, ils n'avaient pas le droit de polluer l'eau qui était l'habitat des sirènes.\n\nDans ce village vivait Kimbu, un homme très sale. Il prenait plaisir à verser des détritus* partout où il se trouvait. Son endroit de prédilection était les chutes d'eau. Dès qu'il nettoyait sa case, hop ! Il renversait les ordures dans l'eau. Dès qu'il épluchait ses pommes de terre, hop ! Dans l'eau. Les villageois le mirent en garde. Mais il ne les écoutait pas. Il continuait à enfreindre sans cesse les règles établies.\nChaque fois que les sirènes se plaignaient, il envoyait une délégation s'excuser et recommençait aussitôt.\n\nUn jour, il décida d'aller à la pêche. Il prit sa pirogue* et commença sa traversée. Mais Kimbu était un piètre* navigateur. À peine était-il au milieu de la rivière qu'il cogna un rocher. Sa pirogue fut abîmée si bien que l'eau commençait à y entrer. N'étant pas un bon nageur, Kimbu se mit à hurler :\n\n- À l'aide ! À l'aide ! Aidez-moi, je vais me noyer, je ne sais pas nager !\nAu même moment, une sirène passait par là. Les cris et supplications d'un homme l'alertèrent. Elle s'approchait pour l'aider lorsqu'elle reconnut Kimbu.\n\n- À l'aide ! À l'aide ! Aidez-moi, je vais me noyer, répéta Kimbu. Je ne sais pas nager !\n- Pourquoi devrais-je t'aider ? lui demanda la sirène. Tu ne respectes pas notre maison. Tu y jettes des détritus sans cesse malgré nos interdictions. Ce serait bien si nous étions débarrassées de toi une bonne fois pour toutes.\n\n- Aide-moi sirène, implora Kimbu. Je ne recommencerai plus jamais. Aie pitié de moi !\n- Je te sauverai, dit la sirène. Mais tu devras me promettre de ne plus salir nos chutes d'eau ni aucun endroit de la Terre. D'ailleurs, tu partageras la moitié de ta récolte avec tous les habitants du village chaque fois que ce sera la période de la moisson. Cela devra te servir de leçon.\n\n- Oui, répondit Kimbu, je le ferai sirène, mais s'il te plaît, aide-moi.\nLa sirène vint à son niveau et lui demanda de s'accrocher à ses épaules, chose que Kimbu fit. Elle le hissa ensuite vers la berge la plus proche. Kimbu la remercia et lui promit de respecter les nouvelles règles qu'il avait établies avec elle. À partir de ce jour, Kimbu ne renversa plus de détritus ni dans les eaux ni dans les endroits publics. Il prenait aussi le soin d'offrir la moitié de ses récoltes aux habitants du village.\n\nMorale: Et voilà, le conte est terminé, je n'en sais pas plus."
+      },
+      "imageUrl": "https://storage.googleapis.com/kumafire-7864b.firebasestorage.app/covers/Kimbu%2520l_homme%2520sale.png",
+      "audioUrl": "https://storage.googleapis.com/kumafire-7864b.firebasestorage.app/audio/Kimbu%2520l_homme%2520sale.wav",
+      "estimatedReadingTime": 4,
+      "estimatedAudioDuration": 300,
+      "values": ["Responsabilité", "Respect", "Générosité", "Sagesse"],
+      "quizQuestions": [
+        {
+          "id": "q1",
+          "question": "Quelle était la mauvaise habitude de Kimbu ?",
+          "options": ["Il mentait beaucoup", "Il jetait des détritus partout", "Il volait ses voisins", "Il était paresseux"],
+          "correctAnswer": 1,
+          "explanation": "Kimbu avait l'habitude de jeter des détritus partout, notamment dans les chutes d'eau des sirènes."
+        },
+        {
+          "id": "q2",
+          "question": "Pourquoi la sirène a-t-elle hésité à sauver Kimbu ?",
+          "options": ["Elle ne savait pas nager", "Elle avait peur de lui", "Il polluait constamment leur habitat", "Elle était occupée"],
+          "correctAnswer": 2,
+          "explanation": "La sirène a hésité car Kimbu polluait constamment les chutes d'eau malgré les interdictions."
+        },
+        {
+          "id": "q3",
+          "question": "Qu'a promis Kimbu en échange de sa vie ?",
+          "options": ["De partir du village", "De ne plus polluer et de partager ses récoltes", "De devenir pêcheur", "De construire une maison"],
+          "correctAnswer": 1,
+          "explanation": "Kimbu a promis de ne plus polluer et de partager la moitié de ses récoltes avec le village."
+        }
+      ],
+      "metadata": {
+        "author": "Tradition orale camerounaise",
+        "origin": "Cameroun",
+        "moralLesson": "Il faut respecter l'environnement et partager avec sa communauté",
+        "keywords": ["kimbu", "sirène", "pollution", "détritus", "environnement", "respect", "partage", "fongo"],
+        "ageGroup": "7-12",
+        "difficulty": "moyen",
+        "region": "Afrique Centrale",
+        "createdAt": "2025-06-04T10:00:00.000Z",
+        "updatedAt": "2025-06-04T10:00:00.000Z"
+      },
+      "tags": ["conte", "tradition", "afrique", "environnement", "magie"],
+      "isPublished": true,
+      "order": 7
+    },
+    {
+      "id": "story_bi_001",
+      "title": "Le chasseur errant",
+      "country": "Burundi",
+      "countryCode": "BI",
+      "content": {
+        "fr": "Dans la forêt de Kibira vivait un gentil génie. Il aimait beaucoup les hommes et leur offrait du gibier*. Il n'aimait pas que l'on salisse sa forêt. Mais ce qu'il détestait par-dessus tout, c'étaient les méchantes personnes qui tuaient les animaux pour le plaisir. Il leur préparait de mauvais sorts à la hauteur de leur méchanceté.\nIl y avait dans le village voisin, un homme nommé Rukundo. Rukundo aimait la chasse. Il adorait avoir beaucoup de viande et ne voulait partager avec personne.\n\n- Fais attention Rukundo, lui dit un autre chasseur, il y a un génie dans cette forêt. Il n'aime pas qu'on s'attaque aux animaux impunément*.\n- Ce sont des sottises*, dit Rukundo. Je chasserai comme je le voudrai et rien ne m'arrivera.\n\nUn jour, Rukundo partit à la chasse, il captura énormément de gibiers. Il en captura tellement qu'il pouvait à peine marcher et les porter. Rukundo tomba nez à nez avec un vieillard. Le vieillard était triste et affamé.\n\n- Mon fils, donne-moi s'il te plaît un peu de ta viande , dit le vieillard.\n- Non, je ne peux pas, répondit Rukundo. Cette viande m'appartient. Je l'ai chassée et je ne la donnerai à personne.\n- S'il te plaît mon fils, je n'ai pas mangé depuis des jours, je suis trop vieux pour chasser.\n- Non, tout est à moi, conclut Rukundo.\nLe vieillard s'en alla tristement. Pendant qu'il continuait sa chasse, Rukundo eut faim et se mit à rôtir une de ses proies. L'odeur était agréable. Un chasseur qui passait par là s'arrêta à son niveau.\n\n- Ah Rukundo, tu as eu beaucoup de gibier aujourd'hui, dis-donc ! Peux-tu m'en donner aussi ? Je n'ai malheureusement pas pu en capturer.\n- Non, je ne peux pas, c'est ma viande, c'est moi qui l'ai chassée.\n\nLe chasseur s'en alla, laissant Rukundo manger. Lorsqu'il eut fini de manger, Rukundo chargea le reste de son gibier et s'en alla. Il rencontra des femmes, des enfants et d'autres chasseurs, mais il refusa malgré leurs supplications* de leur donner un peu de sa viande. Ce jour-là, enhardi* par la facilité avec laquelle il trouvait les animaux, il s'était enfoncé plus que d'habitude dans la forêt. Il n'avait pas pris le soin de laisser des marques et au moment de rentrer, il ne retrouvait plus son chemin. En marchant, il rencontra de nouveau le vieillard. Et le vieillard partit, laissant Rukundo seul avec son gibier. Rukundo se mit à marcher désespérément à la recherche de son chemin. Il marcha jour et nuit en vain. Son égoïsme lui a été fatal.\n\nSi un jour, il vous arrive de visiter cette forêt, vous le verrez sûrement errer à la recherche d'une issue.\n\nMorale: Aide d'abord les autres et tu seras aidé à ton tour."
+      },
+      "imageUrl": "https://storage.googleapis.com/kumafire-7864b.firebasestorage.app/covers/Le%2520chasseur%2520errant.png",
+      "audioUrl": "https://storage.googleapis.com/kumafire-7864b.firebasestorage.app/audio/Le%2520chasseur%2520errant.wav",
+      "estimatedReadingTime": 4,
+      "estimatedAudioDuration": 300,
+      "values": ["Égoïsme", "Générosité", "Sagesse", "Entraide"],
+      "quizQuestions": [
+        {
+          "id": "q1",
+          "question": "Qui était le vieillard que Rukundo a rencontré ?",
+          "options": ["Un chasseur perdu", "Le génie de la forêt déguisé", "Un mendiant du village", "Son père"],
+          "correctAnswer": 1,
+          "explanation": "Le vieillard était en réalité le génie de la forêt qui testait la générosité de Rukundo."
+        },
+        {
+          "id": "q2",
+          "question": "Quelle était la principale faute de Rukundo ?",
+          "options": ["Il chassait trop", "Il se perdait souvent", "Il refusait de partager avec les nécessiteux", "Il ne respectait pas la forêt"],
+          "correctAnswer": 2,
+          "explanation": "Rukundo refusait systématiquement de partager sa viande avec tous ceux qui lui en demandaient."
+        },
+        {
+          "id": "q3",
+          "question": "Quelle est la morale de cette histoire ?",
+          "options": ["Il faut bien connaître la forêt", "Aide d'abord les autres et tu seras aidé à ton tour", "La chasse est dangereuse", "Il faut écouter les conseils"],
+          "correctAnswer": 1,
+          "explanation": "La morale nous enseigne l'importance de l'entraide et de la générosité envers les autres."
+        }
+      ],
+      "metadata": {
+        "author": "Tradition orale burundaise",
+        "origin": "Burundi",
+        "moralLesson": "Aide d'abord les autres et tu seras aidé à ton tour",
+        "keywords": ["rukundo", "chasseur", "égoïsme", "génie", "forêt", "kibira", "générosité", "errant"],
+        "ageGroup": "8-14",
+        "difficulty": "moyen",
+        "region": "Afrique de l'Est",
+        "createdAt": "2025-06-04T10:00:00.000Z",
+        "updatedAt": "2025-06-04T10:00:00.000Z"
+      },
+      "tags": ["conte", "tradition", "afrique", "magie", "morale"],
+      "isPublished": true,
+      "order": 8
+    },
+    {
+  "id": "story_er_001",
+  "title": "Le chamelon bleu",
+  "country": "Érythrée",
+  "countryCode": "ER",
+  "content": {
+    "fr": "Quelque part dans le beau village de Nafka, situé sur la corne de l'Afrique, un chamelon* naquit avec une apparence unique et rare, le pelage bleu! Le ciel fut jaloux et devint gris ! Ce fut un grand choc pour Masego la chamelle*, sa mère, qui depuis longtemps convoitait* un petit. Le nouveau bébé du troupeau au pelage* bleu, de la tête au pied, semait un grand désarroi* dans le cœur de sa mère à chaque fois qu'elle devait l'allaiter* ou le toiletter*.\n\nComme tous les chamelons de son âge, il était curieux et désirait explorer son environnement, aussi sèches et arides qu'étaient les côtes de la mer Rouge. Quand le chamelon fut sevré* et qu'il put déambuler* à sa guise dans le troupeau, tous les chameaux l'évitaient ou l'exposaient à des railleries* sans qu'il n'en comprenne lui-même la raison. Les regards insistants et les jugements faisaient énormément souffrir sa maman Masego. Elle supportait de moins en moins les moqueries que son petit subissait. Elle était si triste qu'elle cessa de se nourrir, au point de maigrir et d'être vendue au premier venu.\n\nÀ partir de ce moment, le jeune chamelon fut encore plus isolé du reste du troupeau. Il recevait moins de plantes que les autres et était le dernier à boire dans les sources. Et c'est lors d'une halte dans les oasis, que le chamelon bleu, tout assoiffé, plongeant son museau* pour boire, sursauta à la vue de son reflet. Il comprit la raison de tant de haine. Il tenta malgré tout de se faire accepter des autres, de marcher, de déblatérer* comme eux, mais tous restaient insensibles face à ses efforts ; y compris son maître qui cherchait la première occasion pour se débarrasser de lui !\n\nUn jour, alors que ces efforts semblaient vains et que le découragement augmentait peu à peu dans son cœur, arriva une jeune femme nommée Winta. Elle vint avec son grand troupeau à la rencontre du vieil homme.\n\n- Je te salue homme dont la sagesse est reconnue par les terres que tu as foulées. Je suis Winta, jeune héritière du peuple Afars*. Je promenais le troupeau de mon père quand j'ai aperçu dans le tien, une ressource rare et des plus précieuses. Permets-moi de l'acquérir en échange de dix chameaux que tu auras la latitude de choisir.\n- Comme il te plaira, jeune enfant, répondit le vieil homme.\n\nWinta se rapprocha tout doucement du chamelon devenu plus grand.\n\n- Jeune enfant, je t'avais cru plus maligne, dit le maître. Mais faire ce choix me fait remettre en doute l'héritage que te confie ton père. Ce chameau au pelage repoussant, c'est tout ce qu'il y a de plus malheureux, mais bon, la vie te conseillera mieux.\n\nWinta répondit par un sourire et laissa le vieil homme s'éloigner avec son troupeau. Winta fit ensuite promener le chamelon dans le troupeau pour qu'il rencontre les autres quand soudain, son regard croisa celui de sa mère.\n\nElle le serra avec tout son amour. Le chamelon et sa mère se mirent aussitôt à pleurer. Winta témoin de la scène lui demanda :\n\n- Qu'y a-t-il, jeune chamelon ?\n- Voici ma mère maîtresse, ma différence lui a causé beaucoup de peine et de tourments et j'en suis navré.\n- J'ai senti ta peine et ton envie de prouver ta valeur, lui dit Winta. Être différent n'a rien d'anormal, c'est le propre de tous êtres vivants. Même une mère lionne fait la distinction entre ses petits de la même portée. Pourquoi ton pelage bleu ne serait-il pas une bénédiction des dieux ?\n\nLe chamelon bleu lui répondit tristement.\n\n- Comment penser de la sorte lorsque vous êtes délaissés et traité différemment par les autres ? En plus, l'on ne m'a jamais attribué de nom.\n\nWinta prit le chamelon et sa maman dans les bras.\n\n- Voici que je te donne un nom digne d'intérêt. Tu t'appelleras Jemal* et tu seras la preuve que la différence est source de richesse.\n- Ô maîtresse, que vos paroles se réalisent ! S'exclama maman Masego.\n- Maintenant, permets-moi de prendre place entre tes magnifiques bosses et de siéger confortablement dans ce beau pelage ciel.\n\nJemal s'accroupit aussitôt. Jamais il n'avait reçu autant de respect et d'amour.\n\nC'est ainsi que Winta et Jemal parcoururent le grand désert jusqu'au campement Afar. De loin, on pouvait voir arriver la fine silhouette de Winta, vêtue d'un habesha kemis* de vives couleurs et de parures scintillantes qui ornaient ses vêtements et son corps. Elle portait autour de la tête, un netela* pour se protéger des vents forts. Elle était dressée sur un chameau bleu et avançait avec beaucoup d'assurance. Il se trouvait à sa suite, six fois le troupeau de départ qui chaque fois que l'occasion se présentait - la nuit en est témoin - les chamelles se ruaient vers Jemal pour s'accaparer cette beauté qui autrefois inspirait la honte. Au petit matin, des petits chamelons naissaient plus beaux et plus forts et encore plus bleus…"
+  },
+  "imageUrl": "",
+  "audioUrl": "",
+  "estimatedReadingTime": 6,
+  "estimatedAudioDuration": 420,
+  "values": ["Acceptation", "Différence", "Persévérance", "Compassion", "Transformation"],
+  "quizQuestions": [
+    {
+      "id": "q1",
+      "question": "Qu'est-ce qui rendait le chamelon différent des autres ?",
+      "options": ["Il était plus grand", "Il avait un pelage bleu", "Il boitait", "Il était blanc"],
+      "correctAnswer": 1,
+      "explanation": "Le chamelon était né avec un pelage bleu de la tête aux pieds, ce qui était unique et rare."
+    },
+    {
+      "id": "q2",
+      "question": "Qu'est-il arrivé à Masego, la mère du chamelon bleu ?",
+      "options": ["Elle est morte", "Elle s'est enfuie", "Elle a été vendue car elle avait maigri de tristesse", "Elle est devenue bleue aussi"],
+      "correctAnswer": 2,
+      "explanation": "Masego était si triste des moqueries que subissait son petit qu'elle cessa de se nourrir, maigrit et fut vendue."
+    },
+    {
+      "id": "q3",
+      "question": "Comment le chamelon a-t-il découvert pourquoi il était rejeté ?",
+      "options": ["Quelqu'un le lui a dit", "En voyant son reflet dans l'eau", "Sa mère le lui a expliqué", "Le maître le lui a dit"],
+      "correctAnswer": 1,
+      "explanation": "C'est en plongeant son museau pour boire dans une oasis qu'il a vu son reflet et compris la raison de tant de haine."
+    },
+    {
+      "id": "q4",
+      "question": "Quel nom Winta a-t-elle donné au chamelon bleu ?",
+      "options": ["Masego", "Nafka", "Jemal", "Afar"],
+      "correctAnswer": 2,
+      "explanation": "Winta lui a donné le nom de Jemal, disant qu'il serait la preuve que la différence est source de richesse."
+    },
+    {
+      "id": "q5",
+      "question": "Qu'est-il arrivé à Jemal après que Winta l'ait emmené ?",
+      "options": ["Il est resté seul", "Il est devenu normal", "Il est devenu très recherché et a eu de nombreux descendants bleus", "Il s'est enfui"],
+      "correctAnswer": 2,
+      "explanation": "Les chamelles se ruaient vers Jemal pour s'accaparer cette beauté, et des petits chamelons naissaient plus beaux, plus forts et encore plus bleus."
+    }
+  ],
+  "metadata": {
+    "author": "Tradition orale érythréenne",
+    "origin": "Érythrée",
+    "moralLesson": "La différence est source de richesse ; ce qui nous rend unique peut devenir notre plus grande force",
+    "keywords": ["jemal", "chamelon", "bleu", "winta", "différence", "acceptation", "masego", "afar"],
+    "ageGroup": "8-12",
+    "difficulty": "moyen",
+    "region": "Afrique de l'Est",
+    "createdAt": "2025-06-04T10:00:00.000Z",
+    "updatedAt": "2025-06-04T10:00:00.000Z"
+  },
+  "tags": ["conte", "tradition", "afrique", "différence", "acceptation", "transformation"],
+  "isPublished": true,
+  "order": 21
+},
+{
+  "id": "story_ss_001",
+  "title": "Malou et l'art de la parole",
+  "country": "Soudan du Sud",
+  "countryCode": "SS",
+  "content": {
+    "fr": "Kuany Duop était un riche éleveur de bétail. Il était si riche et si bienveillant que tout le village le respectait. Cependant, le roi Kuany avait une étrange règle : il refusait toute compagne et descendance. Il vouait sa vie à son bétail et plus particulièrement à son grand et beau taureau brun. Il l'aimait beaucoup, lui faisait manger les herbes les plus fines et alla jusqu'à le surnommer Babikir Duop.\n\nUn jour, pour montrer publiquement l'importance et l'amour qu'il avait pour son taureau, il convoqua tout le village. Au cours de la séance, il déclara :\n\n- Peuple de Renk-Malakal, écoutez-moi ! Je suis votre Roi et Babikir est mon taureau bien-aimé. Je veux qu'il soit aimé et choyé par tous. Malheur à celui qui osera un jour m'annoncer sa mort.\n\nAprès cette déclaration du puissant monarque, Babikir fut comme d'habitude conduit au pâturage*. Mais un grand malheur arriva. Il fut mordu par un serpent et tomba raide mort. Qui assumerait la lourde responsabilité d'annoncer à Sa Majesté cette mauvaise nouvelle ? Personne n'osa. Aussitôt, une jeune fille, tout à fait banale, leva la main au sein de l'assemblée et se présenta comme volontaire pour assurer cette tâche.\n\n- Oui, pourquoi pas ! dit un villageois. Peut-être qu'en voyant cette petite fille, il ne se mettra pas en colère.\n- Mais il pourrait tout aussi la condamner ou pire ! s'écria un autre villageois.\n- Le taureau est en train de se refroidir, il faut agir au plus vite, dit la jeune fille.\n\nLes villageois s'étonnèrent de la voir s'exprimer de la sorte et la conduisirent aussitôt auprès du roi. Ce qu'ils ne savaient pas, c'est que la jeune fille maîtrisait l'art de la parole.\n\nAprès avoir demandé une audience, elle fut reçue dans les somptueux appartements du roi Kuany. Elle entra et s'assit sur le sol tapissé.\n\n- Majesté, vous êtes vénéré et adoré parmi tous les rois, car vous êtes le plus puissant et le plus intelligent. Grâce à vous, notre village est prospère.\n- Voici donc la petite Malou, répliqua le roi. Dis-moi jeune fille, qu'as-tu d'intéressant à me raconter pour demander cette audience* en urgence ?\n- Votre majesté, répondit Malou, je viens vous faire part d'un détail que seule une voix compatissante et douce peut vous faire entendre. Il s'agit de Babikir notre bien-aimé à tous. Ce matin, je l'ai vu dans un état inhabituel.\n- Et dans quel état ? rétorqua le Roi.\n- Il était couché dans l'herbe, les yeux grandement ouverts, les quatre pattes dégagées vers le ciel. Il était plus gros que d'habitude et de plus, son parfum attirait les mouches.\n- Malou, jeune enfant, dit le roi après un moment de réflexion, d'après ce que je comprends, Babikir mon taureau bien-aimé est mort.\n- Votre majesté, je n'ai jamais dit que Babikir, notre taureau bien-aimé était mort, c'est vous-même qui avez fait ce diagnostic.\n- Je suis à la fois ébranlé par la mort de l'être le plus cher à mon cœur et en admiration par la diplomatie avec laquelle tu me l'as annoncé, dit le roi en souriant. À cet instant même, je fais de toi le successeur de ce royaume.\n- Vos paroles ont trouvé grâce aux oreilles de la jeune enfant que je suis.\n\nMalou devint aussitôt la petite princesse du royaume de Renk-Malakal et hérita de tout le royaume à la mort de Kuany."
+  },
+  "imageUrl": "",
+  "audioUrl": "",
+  "estimatedReadingTime": 5,
+  "estimatedAudioDuration": 360,
+  "values": ["Intelligence", "Diplomatie", "Courage", "Sagesse", "Communication"],
+  "quizQuestions": [
+    {
+      "id": "q1",
+      "question": "Quelle menace le roi Kuany avait-il proférée concernant son taureau ?",
+      "options": ["Celui qui le toucherait serait puni", "Malheur à celui qui lui annoncerait sa mort", "Celui qui le volerait serait exilé", "Celui qui ne l'aimerait pas serait chassé"],
+      "correctAnswer": 1,
+      "explanation": "Le roi avait déclaré : 'Malheur à celui qui osera un jour m'annoncer sa mort.'"
+    },
+    {
+      "id": "q2",
+      "question": "Comment Babikir le taureau est-il mort ?",
+      "options": ["De vieillesse", "Mordu par un serpent", "D'une maladie", "En tombant"],
+      "correctAnswer": 1,
+      "explanation": "Babikir fut mordu par un serpent et tomba raide mort au pâturage."
+    },
+    {
+      "id": "q3",
+      "question": "Comment Malou a-t-elle décrit l'état du taureau sans dire qu'il était mort ?",
+      "options": ["Il dormait profondément", "Il était malade", "Couché, yeux ouverts, pattes vers le ciel, gonflé, attirant les mouches", "Il ne bougeait plus"],
+      "correctAnswer": 2,
+      "explanation": "Malou a décrit précisément l'état du taureau mort sans jamais prononcer le mot 'mort'."
+    },
+    {
+      "id": "q4",
+      "question": "Qui a finalement dit que le taureau était mort ?",
+      "options": ["Malou", "Un villageois", "Le roi lui-même", "Personne"],
+      "correctAnswer": 2,
+      "explanation": "C'est le roi lui-même qui a conclu que Babikir était mort après avoir écouté la description de Malou."
+    },
+    {
+      "id": "q5",
+      "question": "Quelle a été la récompense de Malou pour sa diplomatie ?",
+      "options": ["De l'or", "Un troupeau", "Elle est devenue l'héritière du royaume", "Une maison"],
+      "correctAnswer": 2,
+      "explanation": "Impressionné par sa diplomatie, le roi a fait de Malou son successeur au royaume."
+    }
+  ],
+  "metadata": {
+    "author": "Tradition orale sud-soudanaise",
+    "origin": "Soudan du Sud",
+    "moralLesson": "L'intelligence et la diplomatie dans la communication peuvent transformer les situations les plus dangereuses en opportunités",
+    "keywords": ["malou", "kuany", "babikir", "taureau", "diplomatie", "parole", "intelligence", "renk-malakal"],
+    "ageGroup": "8-12",
+    "difficulty": "moyen",
+    "region": "Afrique de l'Est",
+    "createdAt": "2025-06-04T10:00:00.000Z",
+    "updatedAt": "2025-06-04T10:00:00.000Z"
+  },
+  "tags": ["conte", "tradition", "afrique", "sagesse", "diplomatie", "communication"],
+  "isPublished": true,
+  "order": 22
+},
+{
+  "id": "story_rw_001",
+  "title": "Le fou du roi",
+  "country": "Rwanda",
+  "countryCode": "RW",
+  "content": {
+    "fr": "Ce fut une joie immense au palais de Nyanza quand les jumeaux du roi Kaware virent le jour. Il était à l'apogée de son règne jusqu'au jour où survint le décès de la reine pour des raisons inconnues. Le chagrin du roi était si grand qu'il se renferma et n'adressa la parole à personne. Pire, lorsqu'on entendit que la reine avait été empoisonnée pendant son repas, la situation s'envenima ! Il interdit toute festivité. C'était le chaos total. Les différents clans, qui jamais n'avaient eu de conflits entre eux, se mirent à s'accuser les uns les autres, allant jusqu'à se faire la guerre.\n\nSebantu, le conseiller du roi, conscient que les choses s'aggraveraient s'il ne trouvait pas de solution, ordonna aux chasseurs du royaume de retrouver, Uwera l'hideux, dans la forêt de Nyungwe.\n\nDix jours après, les chasseurs réapparurent aux côtés d'un vieillard très disgracieux*. Ses narines étaient si dilatées* qu'il pouvait respirer tout l'air d'une pièce. Ses grandes oreilles, lui permettaient d'entendre des conversations, sur de longues distances. Et ses yeux globuleux* auxquels rien n'échappait même lorsqu'il fermait les yeux voyaient tout, et ce, avant que cela ne se produise.\n\n- On reconnaît un ami dans le malheur et les temps que nous vivons sont bien pires ! s'écria Sebantu le conseiller en voyant Uwera. Va, tout au fond de ces couloirs, tu trouveras une chambre de laquelle s'échappe une odeur plus pestilentielle* que la bouse* de notre bétail. Il s'agit de la détresse du roi. Aide-le.\n\nAussitôt, Uwera se rendit devant les deux grandes portes qui menaient aux appartements du roi, les ouvrit et cria :\n\n- La mort ne sent point sa propre odeur, mais la vôtre est à couper le souffle ! Comment donc puis-je faire avec ces narines ?\n\nLe roi Kaware, assis à même le sol, fut surpris par tant d'audace. Mais en voyant les narines de son interlocuteur, il éclata de rire tellement fort que le tonnerre gronda en plein soleil.\n\n- Insolent ! À qui oses-tu t'adresser de la sorte ? dit le roi.\n- Celui qui se sent morveux votre majesté. Voulez-vous que je me mouche pour le prouver ?\n\nEn voyant ses narines dilatées, le roi imagina que la morve de ce sot pourrait recouvrir le palais entier et éclata encore de rire. Aussitôt, toutes les armes prévues pour la guerre qui se préparait se mirent à fondre, sous les rires du roi qui réchauffaient les cœurs.\n\n- Qui es-tu énergumène*? demanda le roi.\n- Votre sot, majesté ! Je suis ici parce que les pleurs d'un homme restent dans son cœur, mais les vôtres ont créé mille et un malheurs dans ce royaume. Si Sa Majesté le désire, je m'en irai, mais sachez mon roi, le ciel m'ayant doté d'une bouche capable de faire entendre le plus sourd, je la mets à votre disposition, mon Roi ! Sachez que vos merveilleux enfants ont trouvé le bonheur chez les gens du peuple mais leur crainte à votre égard étant plus grande, ils en ont fait fi. Ne sont-ils pas le cadeau qu'a pu vous laisser notre sublimissime reine ? Usez de votre grande sagesse pour comprendre que vous êtes le seul à faire le bon nœud pour tenir le bétail.\n- J'ai longtemps été tiraillé par le chagrin sans me rendre compte que mon devoir était après celui de mon peuple. Ordonnez de partager dix cauris à chaque villageois, qu'ils festoient en l'honneur de leur reine et que mes enfants me rejoignent et m'embrassent de nouveau.\n- Le roi est de retour ! Je vais l'annoncer au royaume ! L'amour est une force bien trop puissante pour être terrassée par le chagrin et la haine.\n\nC'est ainsi qu'après de longues années, le roi redevint un bon roi."
+  },
+  "imageUrl": "",
+  "audioUrl": "",
+  "estimatedReadingTime": 5,
+  "estimatedAudioDuration": 360,
+  "values": ["Sagesse", "Guérison", "Humour", "Responsabilité", "Amour"],
+  "quizQuestions": [
+    {
+      "id": "q1",
+      "question": "Qu'est-il arrivé à la reine qui a plongé le roi dans le chagrin ?",
+      "options": ["Elle est tombée malade", "Elle a été empoisonnée", "Elle est partie", "Elle a eu un accident"],
+      "correctAnswer": 1,
+      "explanation": "La reine a été empoisonnée pendant son repas, ce qui a causé un immense chagrin au roi."
+    },
+    {
+      "id": "q2",
+      "question": "Quelles étaient les caractéristiques physiques particulières d'Uwera ?",
+      "options": ["Il était très beau", "Il avait de grandes narines, grandes oreilles et yeux globuleux", "Il était très petit", "Il était aveugle"],
+      "correctAnswer": 1,
+      "explanation": "Uwera avait des narines si dilatées qu'il pouvait respirer tout l'air d'une pièce, de grandes oreilles et des yeux globuleux."
+    },
+    {
+      "id": "q3",
+      "question": "Comment Uwera a-t-il réussi à faire rire le roi ?",
+      "options": ["En racontant des blagues", "En dansant", "Par son audace et ses remarques sur ses propres narines", "En chantant"],
+      "correctAnswer": 2,
+      "explanation": "Uwera a fait rire le roi par son audace et ses remarques humoristiques sur ses grandes narines et la morve."
+    },
+    {
+      "id": "q4",
+      "question": "Où étaient les enfants jumeaux du roi pendant son deuil ?",
+      "options": ["Au palais", "Morts avec leur mère", "Chez les gens du peuple", "En voyage"],
+      "correctAnswer": 2,
+      "explanation": "Uwera révèle que les enfants ont trouvé le bonheur chez les gens du peuple mais craignaient de revenir."
+    },
+    {
+      "id": "q5",
+      "question": "Quel effet les rires du roi ont-ils eu sur le royaume ?",
+      "options": ["Rien n'a changé", "Les armes de guerre se sont mises à fondre", "Il a plu", "Les ennemis sont partis"],
+      "correctAnswer": 1,
+      "explanation": "Les rires du roi réchauffaient les cœurs et toutes les armes prévues pour la guerre se mirent à fondre."
+    }
+  ],
+  "metadata": {
+    "author": "Tradition orale rwandaise",
+    "origin": "Rwanda",
+    "moralLesson": "Le rire et la sagesse peuvent guérir les plus grandes douleurs et ramener la paix",
+    "keywords": ["uwera", "kaware", "fou", "roi", "rire", "sagesse", "deuil", "jumeaux"],
+    "ageGroup": "8-12",
+    "difficulty": "moyen",
+    "region": "Afrique de l'Est",
+    "createdAt": "2025-06-04T10:00:00.000Z",
+    "updatedAt": "2025-06-04T10:00:00.000Z"
+  },
+  "tags": ["conte", "tradition", "afrique", "sagesse", "humour", "guérison"],
+  "isPublished": true,
+  "order": 23
+},
+{
+  "id": "story_ls_001",
+  "title": "Mofele et Mofolo",
+  "country": "Lesotho",
+  "countryCode": "LS",
+  "content": {
+    "fr": "On raconte qu'un homme possédait deux animaux : un âne nommé Mofele et un bœuf appelé Mofolo. Le bœuf labourait toute la journée avec lui Mofolo le bœuf, si bien que ce dernier s'écroulait de fatigue quand ils rentraient le soir. C'était ainsi tous les jours, du lever au coucher du soleil. Pendant ce temps, Mofele, lui, ne faisait rien. Il était gracieusement nourri et se reposait à l'ombre des grands Acacia. Il ne fournissait aucun effort.\n\nUn jour, de retour du champ, Mofolo s'adressa à lui :\n\n- Frère, n'as-tu pas un conseil qui m'aidera à esquiver cette fatigue ?\n- Fais semblant d'être malade, lui dit Mofele en souriant, et surtout, ne mange pas ton fourrage ! Demain, lorsque notre maître te verra dans cet état, il te laissera et ne te prendra pas au labeur. Alors, tu te reposeras.\n\nCe que les animaux ne savaient pas, c'est que leur maître comprenait leur langage. Il entendit leur conversation et continua son chemin comme si de rien n'était.\n\nMofolo suivit le conseil de son frère l'âne. Le lendemain, quand leur maître vint les voir pour récuperer Mofolo, il remarqua que celui-ci n'avait pas mangé son fourrage. Il le laissa donc et prit Mofele à sa place. Mofele laboura des kilomètres et des kilomètres de champs ; il laboura toute la journée. Il laboura tellement qu'il crut qu'il allait mourir d'épuisement. Il regretta alors son conseil au bœuf.\n\nLorsqu'il rentra le soir, Mofolo qui s'était reposé comme un prince, le salua.\n\n- Comment vas-tu, frère ? lui dit Mofolo.\n\nMofele soupira grandement avant de répondre :\n\n- Bien, répondit-il, cependant, j'ai entendu un propos te concernant qui m'a alarmé.\n- De quoi s'agit-il ? demanda le bœuf.\n- J'ai entendu notre maître dire que si tu devais rester malade, il faudrait t'égorger pour que tu ne perdes pas de ta valeur, lui répondit Mofele. Je te conseille donc de reprendre tes habitudes et de manger ton fourrage pour éviter que ce grand malheur ne t'arrive.\n\nMofolo sursauta :\n\n- Tu as raison, lui répondit le bœuf. Je vais de ce pas récupérer des forces.\n\nEt Mofolo se mit tout de suite à sa mangeoire.\n\nEntendant cela, leur maître éclata de rire. À partir de ce jour, il les fit travailler à tour de rôle de manière équitable."
+  },
+  "imageUrl": "",
+  "audioUrl": "",
+  "estimatedReadingTime": 4,
+  "estimatedAudioDuration": 300,
+  "values": ["Équité", "Justice", "Travail", "Conséquence", "Sagesse"],
+  "quizQuestions": [
+    {
+      "id": "q1",
+      "question": "Quelle était la différence entre le travail de Mofele et celui de Mofolo ?",
+      "options": ["Ils travaillaient tous les deux", "Mofolo labourait tandis que Mofele se reposait", "Mofele travaillait plus", "Ils se reposaient tous les deux"],
+      "correctAnswer": 1,
+      "explanation": "Mofolo le bœuf labourait toute la journée tandis que Mofele l'âne ne faisait rien et se reposait à l'ombre."
+    },
+    {
+      "id": "q2",
+      "question": "Quel conseil Mofele a-t-il donné à Mofolo ?",
+      "options": ["De s'enfuir", "De faire semblant d'être malade", "De travailler plus dur", "De demander de l'aide"],
+      "correctAnswer": 1,
+      "explanation": "Mofele a conseillé à Mofolo de faire semblant d'être malade et de ne pas manger son fourrage."
+    },
+    {
+      "id": "q3",
+      "question": "Qu'est-ce que le maître savait faire que les animaux ignoraient ?",
+      "options": ["Voler", "Comprendre leur langage", "Faire de la magie", "Lire dans les pensées"],
+      "correctAnswer": 1,
+      "explanation": "Le maître comprenait le langage des animaux et a entendu toute leur conversation."
+    },
+    {
+      "id": "q4",
+      "question": "Comment Mofele a-t-il fait reprendre le travail à Mofolo ?",
+      "options": ["En le forçant", "En lui disant que le maître voulait l'égorger", "En le suppliant", "En l'encourageant"],
+      "correctAnswer": 1,
+      "explanation": "Mofele a menti en disant avoir entendu le maître dire qu'il fallait égorger Mofolo s'il restait malade."
+    },
+    {
+      "id": "q5",
+      "question": "Quelle décision le maître a-t-il prise à la fin ?",
+      "options": ["Il a vendu les animaux", "Il les a fait travailler à tour de rôle équitablement", "Il a gardé seulement Mofolo", "Il les a libérés"],
+      "correctAnswer": 1,
+      "explanation": "Le maître a ri et décidé de les faire travailler à tour de rôle de manière équitable."
+    }
+  ],
+  "metadata": {
+    "author": "Tradition orale basotho",
+    "origin": "Lesotho",
+    "moralLesson": "La paresse et la ruse finissent par se retourner contre soi ; l'équité dans le travail est essentielle",
+    "keywords": ["mofele", "mofolo", "âne", "bœuf", "travail", "équité", "ruse", "justice"],
+    "ageGroup": "7-11",
+    "difficulty": "facile",
+    "region": "Afrique Australe",
+    "createdAt": "2025-06-04T10:00:00.000Z",
+    "updatedAt": "2025-06-04T10:00:00.000Z"
+  },
+  "tags": ["conte", "tradition", "afrique", "animaux", "morale", "travail"],
+  "isPublished": true,
+  "order": 24
+}
+  ]
+}
