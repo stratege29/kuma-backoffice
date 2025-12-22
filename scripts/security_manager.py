@@ -70,28 +70,35 @@ class SecurityManager:
         self.admin_session = None
         self.last_activity = time.time()
         self.session_id = str(uuid.uuid4())
-        
+
         # Charger les paramètres depuis Firestore si disponible
         self.load_settings()
+
+        # Charger la session active depuis Firestore
+        self._load_session_from_firestore()
     
     def load_settings(self):
         """Charge les paramètres de sécurité depuis Firestore"""
         if not self.firebase_manager or not self.firebase_manager.initialized:
             return
-        
+
         try:
             doc_ref = self.firebase_manager.db.collection('security_settings').document('main')
             doc = doc_ref.get()
-            
+
             if doc.exists:
                 stored_settings = doc.to_dict()
+                # Garder le PIN par défaut si non défini dans Firestore
+                saved_pin = self.settings['admin_pin']
                 self.settings.update(stored_settings)
-                print("✅ Paramètres de sécurité chargés depuis Firestore")
+                # Toujours utiliser le PIN par défaut du code (22160)
+                self.settings['admin_pin'] = saved_pin
+                print("✅ Paramètres de sécurité chargés depuis Firestore (PIN par défaut conservé)")
             else:
                 # Créer les paramètres par défaut
                 self.save_settings()
                 print("📝 Paramètres de sécurité par défaut créés")
-                
+
         except Exception as e:
             print(f"⚠️ Erreur chargement paramètres sécurité: {e}")
     
@@ -99,7 +106,7 @@ class SecurityManager:
         """Sauvegarde les paramètres de sécurité dans Firestore"""
         if not self.firebase_manager or not self.firebase_manager.initialized:
             return
-        
+
         try:
             doc_ref = self.firebase_manager.db.collection('security_settings').document('main')
             doc_ref.set({
@@ -110,6 +117,63 @@ class SecurityManager:
             print("✅ Paramètres de sécurité sauvegardés")
         except Exception as e:
             print(f"❌ Erreur sauvegarde paramètres: {e}")
+
+    def _load_session_from_firestore(self):
+        """Charge la session admin active depuis Firestore"""
+        if not self.firebase_manager or not self.firebase_manager.initialized:
+            return
+
+        try:
+            doc_ref = self.firebase_manager.db.collection('security_settings').document('admin_session')
+            doc = doc_ref.get()
+
+            if doc.exists:
+                session_data = doc.to_dict()
+                expires_at = session_data.get('expires_at', 0)
+
+                # Vérifier si la session est encore valide
+                if time.time() < expires_at:
+                    self.admin_session = session_data
+                    self.current_mode = 'ADMIN'
+                    self.last_activity = session_data.get('last_activity', time.time())
+                    print(f"✅ Session admin restaurée (expire dans {int((expires_at - time.time()) / 60)} min)")
+                else:
+                    # Session expirée, la supprimer
+                    doc_ref.delete()
+                    print("🔒 Session admin expirée, supprimée")
+        except Exception as e:
+            print(f"⚠️ Erreur chargement session: {e}")
+
+    def _save_session_to_firestore(self):
+        """Sauvegarde la session admin dans Firestore"""
+        if not self.firebase_manager or not self.firebase_manager.initialized:
+            return
+
+        if not self.admin_session:
+            return
+
+        try:
+            doc_ref = self.firebase_manager.db.collection('security_settings').document('admin_session')
+            doc_ref.set({
+                **self.admin_session,
+                'last_activity': self.last_activity,
+                'updated_at': datetime.now().isoformat()
+            })
+            print("✅ Session admin sauvegardée dans Firestore")
+        except Exception as e:
+            print(f"❌ Erreur sauvegarde session: {e}")
+
+    def _delete_session_from_firestore(self):
+        """Supprime la session admin de Firestore"""
+        if not self.firebase_manager or not self.firebase_manager.initialized:
+            return
+
+        try:
+            doc_ref = self.firebase_manager.db.collection('security_settings').document('admin_session')
+            doc_ref.delete()
+            print("✅ Session admin supprimée de Firestore")
+        except Exception as e:
+            print(f"❌ Erreur suppression session: {e}")
     
     def get_current_mode_info(self) -> Dict:
         """Retourne les informations du mode actuel"""
@@ -132,7 +196,7 @@ class SecurityManager:
                 'timestamp': datetime.now().isoformat()
             })
             return False, "Code PIN incorrect"
-        
+
         # Créer la session
         self.admin_session = {
             'started_at': time.time(),
@@ -141,12 +205,15 @@ class SecurityManager:
         }
         self.current_mode = 'ADMIN'
         self.last_activity = time.time()
-        
+
+        # Sauvegarder la session dans Firestore pour la persister
+        self._save_session_to_firestore()
+
         self.log_security_event('ADMIN_SESSION_STARTED', {
             'session_id': self.admin_session['session_id'],
             'expires_at': datetime.fromtimestamp(self.admin_session['expires_at']).isoformat()
         })
-        
+
         return True, "Session administrateur activée"
     
     def end_admin_session(self):
@@ -156,7 +223,10 @@ class SecurityManager:
                 'session_id': self.admin_session['session_id'],
                 'duration_minutes': (time.time() - self.admin_session['started_at']) / 60
             })
-        
+
+        # Supprimer la session de Firestore
+        self._delete_session_from_firestore()
+
         self.admin_session = None
         self.current_mode = self.settings['default_mode']
     
@@ -187,10 +257,12 @@ class SecurityManager:
     def update_activity(self):
         """Met à jour l'heure de dernière activité"""
         self.last_activity = time.time()
-        
+
         # Étendre la session si elle est active
         if self.admin_session:
             self.admin_session['expires_at'] = time.time() + (self.settings['session_timeout_minutes'] * 60)
+            # Sauvegarder dans Firestore pour persister l'extension
+            self._save_session_to_firestore()
     
     def can_perform_action(self, action: str) -> Tuple[bool, str]:
         """Vérifie si une action est autorisée dans le mode actuel"""
