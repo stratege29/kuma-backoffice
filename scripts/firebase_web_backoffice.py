@@ -1894,9 +1894,20 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
             </div>
             
             <form id="story-form" class="story-form">
+                <!-- Progress indicator -->
+                <div class="form-progress" id="form-progress">
+                    <a class="progress-step active" href="#section-info" onclick="scrollToSection(event, 'section-info')">📝 Infos</a>
+                    <a class="progress-step" href="#section-media" onclick="scrollToSection(event, 'section-media')">🖼️ Médias</a>
+                    <a class="progress-step" href="#section-content" onclick="scrollToSection(event, 'section-content')">📖 Contenu</a>
+                    <a class="progress-step" href="#section-meta" onclick="scrollToSection(event, 'section-meta')">📊 Méta</a>
+                    <a class="progress-step" href="#section-class" onclick="scrollToSection(event, 'section-class')">🎯 Tags</a>
+                    <a class="progress-step" href="#section-quiz" onclick="scrollToSection(event, 'section-quiz')">🧠 Quiz</a>
+                    <a class="progress-step" href="#section-publish" onclick="scrollToSection(event, 'section-publish')">🚀 Publier</a>
+                </div>
+
                 <div class="form-sections">
                     <!-- Informations générales -->
-                    <div class="form-section">
+                    <div class="form-section" id="section-info">
                         <h3>📝 Informations générales</h3>
                         <div class="form-row">
                             <div class="form-group">
@@ -1933,7 +1944,7 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                     </div>
                     
                     <!-- Médias -->
-                    <div class="form-section">
+                    <div class="form-section" id="section-media">
                         <h3>🖼️ Médias</h3>
                         <div class="form-row">
                             <div class="form-group">
@@ -1963,7 +1974,7 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                     </div>
                     
                     <!-- Contenu -->
-                    <div class="form-section">
+                    <div class="form-section" id="section-content">
                         <h3>📖 Contenu</h3>
                         <div class="content-tabs">
                             <button type="button" class="tab-btn active" onclick="switchTab('fr')">🇫🇷 Français</button>
@@ -1992,7 +2003,7 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                     </div>
                     
                     <!-- Métadonnées -->
-                    <div class="form-section">
+                    <div class="form-section" id="section-meta">
                         <h3>📊 Métadonnées</h3>
                         <div class="form-row">
                             <div class="form-group">
@@ -2036,7 +2047,7 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                     </div>
                     
                     <!-- Valeurs et tags -->
-                    <div class="form-section">
+                    <div class="form-section" id="section-class">
                         <h3>🎯 Classification</h3>
                         <div class="form-group">
                             <label for="values">Valeurs éducatives</label>
@@ -2058,7 +2069,7 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                     </div>
                     
                     <!-- Quiz Questions -->
-                    <div class="form-section">
+                    <div class="form-section" id="section-quiz">
                         <h3>🧠 Quiz Questions</h3>
                         <p style="color: #666; margin-bottom: 15px;">Ajoutez des questions pour tester la compréhension de l'histoire. Minimum 3 questions recommandées.</p>
                         <input type="hidden" id="quizQuestionsJson" name="quizQuestionsJson" value="">
@@ -2069,7 +2080,7 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                     </div>
 
                     <!-- Publication -->
-                    <div class="form-section">
+                    <div class="form-section" id="section-publish">
                         <h3>🚀 Publication</h3>
                         <div class="form-group checkbox-group">
                             <label class="checkbox-label">
@@ -2090,12 +2101,68 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
             </form>
             
             <script>
-                // Validation et soumission du formulaire
+                // Inline validation
+                function validateForm() {{
+                    clearValidationErrors();
+                    let errors = [];
+
+                    const title = document.getElementById('title');
+                    if (!title.value.trim()) errors.push({{ el: title, msg: 'Le titre est obligatoire' }});
+
+                    const countryCode = document.getElementById('countryCode');
+                    if (countryCode.value.trim().length !== 2) errors.push({{ el: countryCode, msg: 'Le code pays doit faire exactement 2 caractères' }});
+
+                    const contentFr = document.getElementById('content_fr');
+                    if (!contentFr.value.trim()) errors.push({{ el: contentFr, msg: 'Le contenu en français est obligatoire' }});
+
+                    const moral = document.getElementById('moralLesson');
+                    if (!moral.value.trim()) errors.push({{ el: moral, msg: 'La leçon morale est obligatoire' }});
+
+                    // Validation quiz questions (non-bloquant si vide, bloquant si rempli partiellement)
+                    const quizBlocks = document.querySelectorAll('.quiz-question-block');
+                    quizBlocks.forEach((block, i) => {{
+                        const qText = block.querySelector('.quiz-q-text');
+                        if (!qText.value.trim()) errors.push({{ el: qText, msg: `Question ${{i+1}} : texte manquant` }});
+                        block.querySelectorAll('.quiz-option').forEach((opt, j) => {{
+                            if (!opt.value.trim()) errors.push({{ el: opt, msg: `Question ${{i+1}}, option ${{String.fromCharCode(65+j)}} manquante` }});
+                        }});
+                    }});
+
+                    if (errors.length > 0) {{
+                        errors.forEach(err => {{
+                            err.el.style.borderColor = '#dc3545';
+                            const msg = document.createElement('div');
+                            msg.className = 'validation-error';
+                            msg.textContent = err.msg;
+                            err.el.parentElement.appendChild(msg);
+                        }});
+                        errors[0].el.scrollIntoView({{ behavior: 'smooth', block: 'center' }});
+                        return false;
+                    }}
+
+                    // Avertissement quiz < 3 (non bloquant)
+                    if (quizBlocks.length > 0 && quizBlocks.length < 3) {{
+                        showToast(`Seulement ${{quizBlocks.length}} question(s) de quiz. 3 minimum recommandées.`, 'warning');
+                    }}
+                    if (quizBlocks.length === 0) {{
+                        showToast('Aucune question de quiz ajoutée.', 'warning');
+                    }}
+
+                    return true;
+                }}
+
+                function clearValidationErrors() {{
+                    document.querySelectorAll('.validation-error').forEach(el => el.remove());
+                    document.querySelectorAll('[style*="border-color: rgb(220, 53, 69)"]').forEach(el => el.style.borderColor = '');
+                }}
+
+                // Soumission du formulaire
                 document.getElementById('story-form').addEventListener('submit', function(e) {{
                     e.preventDefault();
-                    
+
+                    if (!validateForm()) return;
+
                     const formData = new FormData(this);
-                    // Sérialiser les questions de quiz dans le champ hidden
                     const quizData = serializeQuizQuestions();
                     formData.set('quizQuestionsJson', JSON.stringify(quizData));
                     const data = new URLSearchParams(formData);
@@ -2113,17 +2180,17 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                     .then(data => {{
                         showLoading(false);
                         if (data.success) {{
-                            alert(`✅ ${{data.message}}`);
+                            showToast(data.message, 'success');
                             if (data.redirect) {{
-                                window.location.href = data.redirect;
+                                setTimeout(() => window.location.href = data.redirect, 1500);
                             }}
                         }} else {{
-                            alert(`❌ Erreur: ${{data.error || 'Sauvegarde échouée'}}`);
+                            showToast(data.error || 'Sauvegarde échouée', 'error');
                         }}
                     }})
                     .catch(error => {{
                         showLoading(false);
-                        alert(`❌ Erreur: ${{error.message}}`);
+                        showToast(error.message, 'error');
                     }});
                 }});
                 
@@ -2247,7 +2314,24 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                     document.body.appendChild(overlay);
                     return overlay;
                 }}
-                
+
+                // Toast notifications
+                function showToast(message, type = 'info') {{
+                    let container = document.getElementById('toast-container');
+                    if (!container) {{
+                        container = document.createElement('div');
+                        container.id = 'toast-container';
+                        container.style.cssText = 'position:fixed;top:20px;right:20px;z-index:10000;display:flex;flex-direction:column;gap:10px;';
+                        document.body.appendChild(container);
+                    }}
+                    const icons = {{ success: '✅', error: '❌', warning: '⚠️', info: 'ℹ️' }};
+                    const toast = document.createElement('div');
+                    toast.className = `toast toast-${{type}}`;
+                    toast.innerHTML = `<span class="toast-icon">${{icons[type] || icons.info}}</span><span class="toast-message">${{message}}</span><button class="toast-close" onclick="this.parentElement.remove()">&times;</button>`;
+                    container.appendChild(toast);
+                    setTimeout(() => {{ toast.classList.add('fade-out'); setTimeout(() => toast.remove(), 400); }}, 4000);
+                }}
+
                 // Initialisation
                 updateCharCount(document.getElementById('content_fr'), 'count-fr');
                 updateCharCount(document.getElementById('content_en'), 'count-en');
@@ -2357,6 +2441,26 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                 if (existingQuiz && existingQuiz.length > 0) {{
                     existingQuiz.forEach(q => addQuizQuestion(q));
                 }}
+
+                // Progress indicator - IntersectionObserver
+                function scrollToSection(e, id) {{
+                    e.preventDefault();
+                    document.getElementById(id).scrollIntoView({{ behavior: 'smooth', block: 'start' }});
+                }}
+
+                const sections = document.querySelectorAll('.form-section[id]');
+                const progressSteps = document.querySelectorAll('.progress-step');
+                const observer = new IntersectionObserver((entries) => {{
+                    entries.forEach(entry => {{
+                        if (entry.isIntersecting) {{
+                            const id = entry.target.id;
+                            progressSteps.forEach(step => {{
+                                step.classList.toggle('active', step.getAttribute('href') === `#${{id}}`);
+                            }});
+                        }}
+                    }});
+                }}, {{ rootMargin: '-20% 0px -60% 0px' }});
+                sections.forEach(s => observer.observe(s));
             </script>
 
             <style>
@@ -2437,6 +2541,78 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                     border-color: #4CAF50;
                     background: #f0fff0;
                 }}
+
+                /* Progress indicator */
+                .form-progress {{
+                    display: flex;
+                    gap: 4px;
+                    padding: 12px 0;
+                    margin-bottom: 20px;
+                    position: sticky;
+                    top: 0;
+                    background: white;
+                    z-index: 50;
+                    border-bottom: 1px solid #eee;
+                    flex-wrap: wrap;
+                }}
+                .progress-step {{
+                    padding: 6px 12px;
+                    border-radius: 20px;
+                    font-size: 0.82em;
+                    text-decoration: none;
+                    color: #666;
+                    background: #f0f0f0;
+                    transition: all 0.3s;
+                    white-space: nowrap;
+                }}
+                .progress-step.active {{
+                    background: #FF6B35;
+                    color: white;
+                    font-weight: 600;
+                }}
+                .progress-step:hover {{
+                    background: #ffe0d0;
+                    color: #FF6B35;
+                }}
+                .progress-step.active:hover {{
+                    background: #e55a2b;
+                    color: white;
+                }}
+
+                /* Validation errors */
+                .validation-error {{
+                    color: #dc3545;
+                    font-size: 0.85em;
+                    margin-top: 4px;
+                }}
+
+                /* Responsive form */
+                @media (max-width: 768px) {{
+                    .form-progress {{
+                        gap: 3px;
+                        padding: 8px 0;
+                    }}
+                    .progress-step {{
+                        font-size: 0.75em;
+                        padding: 4px 8px;
+                    }}
+                    .form-actions {{
+                        position: sticky;
+                        bottom: 0;
+                        background: white;
+                        padding: 15px;
+                        box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
+                        z-index: 100;
+                        margin: 0 -30px;
+                        border-radius: 0;
+                    }}
+                    .quiz-options-grid {{
+                        grid-template-columns: 1fr;
+                    }}
+                    .form-row {{
+                        flex-direction: column;
+                    }}
+                }}
             </style>
         """)
         self.send_html_response(html)
@@ -2464,11 +2640,18 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
         
         html = self.get_base_html('stories', f"""
             <div class="story-view">
+                <!-- Breadcrumb -->
+                <div style="margin-bottom:15px;font-size:0.9em;color:#666;">
+                    <a href="/stories" style="color:#FF6B35;text-decoration:none;">Histoires</a>
+                    <span style="margin:0 8px;">›</span>
+                    <span>{title}</span>
+                </div>
+
                 <div class="story-header">
-                    <h2>📖 {title}</h2>
-                    <div class="story-actions">
+                    <h2>{title}</h2>
+                    <div class="story-actions" style="display:flex;gap:10px;">
                         <a href="/stories/edit/{story_id}" class="btn-primary">✏️ Modifier</a>
-                        <a href="/stories" class="btn-secondary">← Retour à la liste</a>
+                        <a href="/stories" class="btn-secondary">← Retour</a>
                     </div>
                 </div>
                 
@@ -2578,32 +2761,39 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
         self.send_html_response(html)
     
     def _render_quiz_questions(self, quiz_questions):
-        """Rend les questions de quiz"""
+        """Rend les questions de quiz en accordion"""
         if not quiz_questions:
             return '<p><em>Aucune question de quiz définie</em></p>'
-        
+
         html = '<div class="quiz-questions">'
         for i, question in enumerate(quiz_questions):
             options_html = ""
             for j, option in enumerate(question.get('options', [])):
                 is_correct = j == question.get('correctAnswer', 0)
-                option_class = 'correct-option' if is_correct else 'option'
-                options_html += f'<li class="{option_class}">{option} {"✅" if is_correct else ""}</li>'
-            
+                if is_correct:
+                    options_html += f'<li style="background:#d4edda;color:#155724;padding:6px 10px;border-radius:5px;font-weight:600;">{option} (bonne réponse)</li>'
+                else:
+                    options_html += f'<li style="padding:6px 10px;">{option}</li>'
+
             html += f"""
-                <div class="quiz-question">
-                    <h4>Question {i + 1}</h4>
-                    <p class="question-text">{question.get('question', 'Question non définie')}</p>
-                    <ul class="question-options">
-                        {options_html}
-                    </ul>
-                    <div class="question-explanation">
-                        <strong>Explication:</strong> {question.get('explanation', 'Aucune explication fournie')}
+                <details class="quiz-accordion" {'open' if i == 0 else ''}>
+                    <summary style="cursor:pointer;padding:12px;background:#f8f9fa;border-radius:8px;font-weight:600;list-style:none;display:flex;justify-content:space-between;align-items:center;">
+                        <span>Question {i + 1} : {question.get('question', 'Question non définie')}</span>
+                        <span style="font-size:0.85em;color:#666;">▼</span>
+                    </summary>
+                    <div style="padding:15px;">
+                        <ul style="list-style:none;padding:0;display:flex;flex-direction:column;gap:4px;">
+                            {options_html}
+                        </ul>
+                        <div style="margin-top:10px;padding:10px;background:#e8f4fd;border-radius:5px;font-size:0.9em;">
+                            <strong>Explication :</strong> {question.get('explanation', 'Aucune explication fournie')}
+                        </div>
                     </div>
-                </div>
+                </details>
             """
-        
+
         html += '</div>'
+        html += '<style>.quiz-accordion{border:1px solid #eee;border-radius:8px;margin-bottom:8px;overflow:hidden;}.quiz-accordion[open] summary span:last-child{transform:rotate(180deg);}.quiz-accordion summary:hover{background:#f0f0f0;}</style>'
         return html
     
     def send_error_response(self, code, message):
@@ -3325,29 +3515,31 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
             quiz_count = len(story.get('quizQuestions', []))
             moral_lesson = story.get('metadata', {}).get('moralLesson', 'Non spécifié')
             
-            status_badge = "✅ Publié" if is_published else "🔒 Brouillon"
+            status_badge = "Publié" if is_published else "Brouillon"
             status_class = "status-published" if is_published else "status-draft"
-            
+            border_color = "#28a745" if is_published else "#FF6B35"
+            quiz_badge_class = "quiz-badge-ok" if quiz_count >= 3 else "quiz-badge-warn"
+            moral_truncated = (moral_lesson[:100] + '...') if len(moral_lesson) > 100 else moral_lesson
+
             stories_html += f"""
-                <div class="story-item" data-id="{story['id']}" data-title="{title.lower()}" data-country="{country}" data-values="{','.join([v.lower() for v in values])}" data-moral="{moral_lesson.lower()}">
+                <div class="story-item" data-id="{story['id']}" data-title="{title.lower()}" data-country="{country}" data-values="{','.join([v.lower() for v in values])}" data-moral="{moral_lesson.lower()}" style="border-left: 4px solid {border_color};">
                     <div class="story-header">
-                        <h4>📖 {title}</h4>
+                        <h4>{title}</h4>
                         <span class="story-status {status_class}">{status_badge}</span>
                     </div>
-                    
+
                     <div class="story-meta">
-                        <span><strong>Pays:</strong> {country} ({country_code})</span>
-                        <span><strong>Durée:</strong> {reading_time} min</span>
-                        <span><strong>Quiz:</strong> {quiz_count} questions</span>
+                        <span class="meta-chip">🌍 {country} ({country_code})</span>
+                        <span class="meta-chip">⏱️ {reading_time} min</span>
+                        <span class="meta-chip {quiz_badge_class}">🧠 {quiz_count} quiz</span>
                     </div>
-                    
-                    <p><strong>Leçon morale:</strong> {moral_lesson}</p>
-                    
+
+                    <p class="story-moral">{moral_truncated}</p>
+
                     <div class="story-values">
-                        <strong>Valeurs:</strong> 
-                        {', '.join([f'<span class="value-tag">{v}</span>' for v in values[:5]])}
+                        {' '.join([f'<span class="value-tag">{v}</span>' for v in values[:5]])}
                     </div>
-                    
+
                     <div class="story-actions">
                         <button class="btn-action btn-edit" onclick="editStory('{story['id']}')">✏️ Modifier</button>
                         <button class="btn-action btn-view" onclick="viewStory('{story['id']}')">👁️ Voir</button>
@@ -3564,59 +3756,48 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                 }}
                 
                 function deleteStory(id) {{
-                    // Étape 1: Première confirmation
-                    if (!confirm('⚠️ SUPPRESSION SÉCURISÉE\\n\\nÊtes-vous vraiment sûr de vouloir supprimer cette histoire ?\\n\\nElle sera déplacée vers la corbeille pour 30 jours.')) {{
-                        return;
-                    }}
-                    
-                    // Récupérer le titre de l'histoire pour la confirmation
                     const storyElement = document.querySelector(`[data-id="${{id}}"]`);
                     const storyTitle = storyElement ? storyElement.getAttribute('data-title') : 'histoire inconnue';
-                    
-                    // Étape 2: Confirmation avec titre
-                    const titleConfirmation = prompt(`🔐 CONFIRMATION SÉCURISÉE\\n\\nPour confirmer la suppression, tapez exactement le titre de l'histoire:\\n\\n"${{storyTitle}}"`);
-                    
-                    if (!titleConfirmation || titleConfirmation.toLowerCase() !== storyTitle.toLowerCase()) {{
-                        alert('❌ Titre incorrect. Suppression annulée.');
-                        return;
+
+                    // Ouvrir la modale de confirmation
+                    document.getElementById('delete-story-title').textContent = storyTitle;
+                    document.getElementById('delete-title-input').value = '';
+                    document.getElementById('delete-confirm-btn').disabled = true;
+                    document.getElementById('delete-confirm-btn').dataset.storyId = id;
+                    document.getElementById('delete-modal').style.display = 'block';
+                }}
+
+                function closeDeleteModal() {{
+                    document.getElementById('delete-modal').style.display = 'none';
+                }}
+
+                // Validation de l'input de confirmation
+                document.addEventListener('input', function(e) {{
+                    if (e.target.id === 'delete-title-input') {{
+                        const expected = document.getElementById('delete-story-title').textContent.toLowerCase();
+                        const btn = document.getElementById('delete-confirm-btn');
+                        btn.disabled = e.target.value.toLowerCase() !== expected;
                     }}
-                    
-                    // Étape 3: Vérification du mode administrateur
+                }});
+
+                function confirmDelete() {{
+                    const id = document.getElementById('delete-confirm-btn').dataset.storyId;
+                    closeDeleteModal();
+
+                    // Vérifier session admin
                     fetch('/api/security/status')
-                        .then(response => response.json())
-                        .then(securityData => {{
-                            if (!securityData.session_active) {{
-                                alert('🔒 Session administrateur requise pour la suppression.\\nVeuillez vous authentifier dans la section Sécurité.');
+                        .then(r => r.json())
+                        .then(secData => {{
+                            if (!secData.session_active) {{
+                                showToast('Session administrateur requise. Authentifiez-vous dans Sécurité.', 'warning');
                                 window.open('/security', '_blank');
                                 return;
                             }}
-                            
-                            // Étape 4: Délai de réflexion
-                            let countdown = 5;
-                            const countdownInterval = setInterval(() => {{
-                                if (countdown <= 0) {{
-                                    clearInterval(countdownInterval);
-                                    
-                                    // Étape 5: Confirmation finale
-                                    if (confirm(`🚨 DERNIÈRE CONFIRMATION\\n\\nDernière chance d'annuler la suppression de:\\n"${{storyTitle}}"\\n\\nContinuer ?`)) {{
-                                        performSecureDelete(id);
-                                    }} else {{
-                                        alert('✅ Suppression annulée.');
-                                    }}
-                                }} else {{
-                                    console.log(`Suppression dans ${{countdown}} secondes...`);
-                                    countdown--;
-                                }}
-                            }}, 1000);
-                            
-                            // Afficher le décompte à l'utilisateur
-                            alert(`⏱️ DÉLAI DE RÉFLEXION\\n\\nSuppression dans 5 secondes...\\nFermez cette alerte et attendez.`);
+                            performSecureDelete(id);
                         }})
-                        .catch(error => {{
-                            alert('❌ Erreur vérification sécurité: ' + error.message);
-                        }});
+                        .catch(err => showToast('Erreur vérification sécurité: ' + err.message, 'error'));
                 }}
-                
+
                 function performSecureDelete(id) {{
                     showLoading(true);
                     fetch(`/api/stories/${{id}}/delete`, {{
@@ -3626,15 +3807,15 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                     .then(data => {{
                         showLoading(false);
                         if (data.success) {{
-                            alert(`✅ ${{data.message}}`);
-                            location.reload();
+                            showToast(data.message, 'success');
+                            setTimeout(() => location.reload(), 1500);
                         }} else {{
-                            alert(`❌ Erreur: ${{data.error || 'Suppression échouée'}}`);
+                            showToast(data.error || 'Suppression échouée', 'error');
                         }}
                     }})
                     .catch(error => {{
                         showLoading(false);
-                        alert(`❌ Erreur: ${{error.message}}`);
+                        showToast(error.message, 'error');
                     }});
                 }}
                 
@@ -3663,10 +3844,89 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                 function refreshStories() {{
                     location.reload();
                 }}
+
+                // Toast notifications
+                function showToast(message, type = 'info') {{
+                    let container = document.getElementById('toast-container');
+                    if (!container) {{
+                        container = document.createElement('div');
+                        container.id = 'toast-container';
+                        container.style.cssText = 'position:fixed;top:20px;right:20px;z-index:10000;display:flex;flex-direction:column;gap:10px;';
+                        document.body.appendChild(container);
+                    }}
+                    const icons = {{ success: '✅', error: '❌', warning: '⚠️', info: 'ℹ️' }};
+                    const toast = document.createElement('div');
+                    toast.className = `toast toast-${{type}}`;
+                    toast.innerHTML = `<span class="toast-icon">${{icons[type] || icons.info}}</span><span class="toast-message">${{message}}</span><button class="toast-close" onclick="this.parentElement.remove()">&times;</button>`;
+                    container.appendChild(toast);
+                    setTimeout(() => {{ toast.classList.add('fade-out'); setTimeout(() => toast.remove(), 400); }}, 4000);
+                }}
+
+                // Fermer modale en cliquant dehors
+                window.onclick = function(event) {{
+                    const modal = document.getElementById('delete-modal');
+                    if (event.target === modal) modal.style.display = 'none';
+                }}
             </script>
+
+            <!-- Modale de suppression -->
+            <div id="delete-modal" class="modal" style="display:none;">
+                <div class="modal-content" style="max-width:500px;">
+                    <div class="modal-header">
+                        <h2 style="margin:0;color:#dc3545;">🗑️ Supprimer l'histoire</h2>
+                        <span class="close" onclick="closeDeleteModal()">&times;</span>
+                    </div>
+                    <div class="modal-body">
+                        <p>Vous êtes sur le point de supprimer :</p>
+                        <p style="font-weight:bold;font-size:1.1em;color:#333;background:#f8f9fa;padding:10px;border-radius:5px;" id="delete-story-title"></p>
+                        <p style="color:#666;margin-top:15px;">Elle sera déplacée vers la corbeille pour 30 jours.</p>
+                        <div style="margin-top:15px;">
+                            <label style="font-weight:500;">Tapez le titre de l'histoire pour confirmer :</label>
+                            <input type="text" id="delete-title-input" placeholder="Tapez le titre ici..." style="width:100%;padding:10px;border:2px solid #ddd;border-radius:5px;margin-top:5px;box-sizing:border-box;">
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn-secondary" onclick="closeDeleteModal()">Annuler</button>
+                        <button id="delete-confirm-btn" class="btn-action btn-delete" style="padding:10px 25px;font-size:1em;" disabled onclick="confirmDelete()">Supprimer</button>
+                    </div>
+                </div>
+            </div>
+
+            <style>
+                .modal {{ position:fixed; z-index:1000; left:0; top:0; width:100%; height:100%; background:rgba(0,0,0,0.5); display:flex; align-items:center; justify-content:center; }}
+                .modal-content {{ background:white; border-radius:10px; width:90%; overflow:hidden; }}
+                .modal-header {{ padding:20px; border-bottom:1px solid #ddd; display:flex; justify-content:space-between; align-items:center; }}
+                .modal-body {{ padding:20px; }}
+                .modal-footer {{ padding:15px 20px; border-top:1px solid #ddd; display:flex; justify-content:flex-end; gap:10px; }}
+                .close {{ font-size:24px; cursor:pointer; color:#999; }}
+                .close:hover {{ color:#333; }}
+                #delete-confirm-btn:disabled {{ opacity:0.5; cursor:not-allowed; }}
+
+                /* Story cards improvements */
+                .story-item {{ transition: box-shadow 0.2s, transform 0.2s; }}
+                .story-item:hover {{ box-shadow: 0 4px 12px rgba(0,0,0,0.15); transform: translateY(-2px); }}
+                .story-header {{ display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }}
+                .story-header h4 {{ margin:0; color:#333; font-size:1.05em; }}
+                .story-status {{ padding:4px 12px; border-radius:20px; font-size:0.8em; font-weight:600; }}
+                .status-published {{ background:#d4edda; color:#155724; }}
+                .status-draft {{ background:#fff3cd; color:#856404; }}
+                .story-meta {{ display:flex; gap:10px; flex-wrap:wrap; margin-bottom:10px; }}
+                .meta-chip {{ background:#f0f0f0; padding:4px 10px; border-radius:15px; font-size:0.85em; color:#555; }}
+                .quiz-badge-ok {{ background:#d4edda; color:#155724; }}
+                .quiz-badge-warn {{ background:#f8d7da; color:#721c24; }}
+                .story-moral {{ color:#555; font-size:0.9em; margin:8px 0; line-height:1.4; }}
+                .story-values {{ margin:10px 0; display:flex; flex-wrap:wrap; gap:5px; }}
+                .value-tag {{ background:#e8f4fd; color:#0c5460; padding:3px 10px; border-radius:15px; font-size:0.82em; }}
+                .story-actions {{ display:flex; gap:8px; margin-top:12px; padding-top:12px; border-top:1px solid #eee; }}
+                .btn-action {{ padding:8px 16px; border:none; border-radius:5px; cursor:pointer; font-size:0.9em; font-weight:500; transition:opacity 0.2s; }}
+                .btn-action:hover {{ opacity:0.85; }}
+                .btn-edit {{ background:#FF6B35; color:white; }}
+                .btn-view {{ background:#17a2b8; color:white; }}
+                .btn-delete {{ background:#dc3545; color:white; }}
+            </style>
         """)
         self.send_html_response(html)
-    
+
     def send_countries_page(self):
         """Page des pays avec interface d'édition complète utilisant countries_enriched"""
         
