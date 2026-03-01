@@ -33,11 +33,60 @@ except ImportError:
 
 class NotificationManager:
     """Gestionnaire principal des notifications push"""
-    
+
     def __init__(self, firebase_manager=None):
         self.firebase_manager = firebase_manager
-        self.db = firebase_manager.db if firebase_manager else None
+
+        # Initialiser la base de données
+        if firebase_manager and hasattr(firebase_manager, 'db'):
+            self.db = firebase_manager.db
+        else:
+            # Initialiser notre propre client Firestore
+            self.db = self._init_firestore()
+
         self.rate_limiter = {}
+
+    def _init_firestore(self):
+        """Initialise le client Firestore et Firebase Admin SDK si non fourni"""
+        import os
+        import base64
+        try:
+            creds_b64 = os.environ.get('FIREBASE_CREDENTIALS_B64')
+            creds_path = None
+
+            if creds_b64:
+                import tempfile
+                creds_json = base64.b64decode(creds_b64).decode('utf-8')
+                with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+                    f.write(creds_json)
+                    creds_path = f.name
+                os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = creds_path
+            else:
+                local_creds = os.path.join(os.path.dirname(__file__), 'firebase-credentials.json')
+                if os.path.exists(local_creds):
+                    creds_path = local_creds
+                    os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = local_creds
+
+            # Initialiser Firebase Admin SDK si pas déjà fait
+            if FIREBASE_AVAILABLE:
+                try:
+                    # Vérifier si déjà initialisé
+                    firebase_admin.get_app()
+                except ValueError:
+                    # Pas encore initialisé, on l'initialise
+                    if creds_path:
+                        cred = credentials.Certificate(creds_path)
+                        firebase_admin.initialize_app(cred)
+                        logger.info("✅ Firebase Admin SDK initialisé")
+                    else:
+                        firebase_admin.initialize_app()
+                        logger.info("✅ Firebase Admin SDK initialisé (default)")
+
+            from google.cloud import firestore
+            return firestore.Client()
+        except Exception as e:
+            logger.error(f"Erreur initialisation Firestore dans NotificationManager: {e}")
+            return None
         
         # Initialiser les gestionnaires de parcours et timezone
         if JOURNEY_MODULES_AVAILABLE:
@@ -109,6 +158,47 @@ class NotificationManager:
                 'title': '⏰ C\'est le moment !',
                 'body': 'Il est {time} à {location}, parfait pour une histoire !',
                 'action': 'optimal_time'
+            },
+            # Templates "Flamme de l'Afrique" pour les streaks
+            'streak_at_risk': {
+                'title': '🔥 Ta flamme africaine vacille !',
+                'body': '{child_name}, ne laisse pas ta série de {streak} jours s\'éteindre ! Une histoire et elle brille à nouveau !',
+                'action': 'streak_reminder'
+            },
+            'streak_lost': {
+                'title': '😢 La flamme s\'est éteinte',
+                'body': '{child_name}, ta série de {streak} jours est terminée. Rallume ta flamme africaine !',
+                'action': 'restart_streak'
+            },
+            'streak_milestone_7': {
+                'title': '🌟 1 semaine de flamme !',
+                'body': '{child_name}, ta flamme africaine brille depuis 7 jours ! Continue ton voyage !',
+                'action': 'celebrate_streak'
+            },
+            'streak_milestone_14': {
+                'title': '🏆 2 semaines de flamme !',
+                'body': '{child_name}, tu es un vrai explorateur africain ! 14 jours de découvertes !',
+                'action': 'celebrate_streak'
+            },
+            'streak_milestone_30': {
+                'title': '🔥 1 MOIS de flamme !',
+                'body': '{child_name}, ta flamme africaine brûle fort ! 30 jours légendaires !',
+                'action': 'celebrate_streak'
+            },
+            'streak_milestone_60': {
+                'title': '👑 2 MOIS de flamme !',
+                'body': '{child_name}, tu es un maître des contes africains ! 60 jours incroyables !',
+                'action': 'celebrate_streak'
+            },
+            'streak_milestone_100': {
+                'title': '🌈 100 JOURS de flamme !',
+                'body': '{child_name}, LÉGENDAIRE ! L\'Afrique est fière de toi ! 100 jours de magie !',
+                'action': 'celebrate_streak'
+            },
+            'streak_milestone_365': {
+                'title': '🌍 1 AN de flamme !',
+                'body': '{child_name}, tu es une LÉGENDE ! 365 jours à explorer l\'Afrique !',
+                'action': 'celebrate_streak'
             }
         }
     
@@ -191,20 +281,28 @@ class NotificationManager:
     
     def _build_message(self, notification_data: Dict[str, Any]) -> Dict[str, Any]:
         """Construit le message de notification"""
-        notification_type = notification_data.get('type', 'story_unlock')
-        template = self.notification_templates.get(notification_type, self.notification_templates['story_unlock'])
-        
-        # Formater le titre et le corps
-        title = template['title'].format(**notification_data.get('params', {}))
-        body = template['body'].format(**notification_data.get('params', {}))
-        
+        # Vérifier s'il y a déjà un titre/corps personnalisé
+        if 'notification' in notification_data:
+            title = notification_data['notification'].get('title', 'Kuma')
+            body = notification_data['notification'].get('body', '')
+            action = notification_data.get('data', {}).get('action', 'open_app')
+        else:
+            # Utiliser les templates
+            notification_type = notification_data.get('type', 'story_unlock')
+            template = self.notification_templates.get(notification_type, self.notification_templates['story_unlock'])
+
+            # Formater le titre et le corps
+            title = template['title'].format(**notification_data.get('params', {}))
+            body = template['body'].format(**notification_data.get('params', {}))
+            action = template['action']
+
         message = {
             'notification': {
                 'title': title,
                 'body': body
             },
             'data': {
-                'action': template['action'],
+                'action': action,
                 'timestamp': str(int(time.time())),
                 **notification_data.get('data', {})
             }
@@ -225,23 +323,38 @@ class NotificationManager:
         return message
     
     def _can_send_notification(self, notification_data: Dict[str, Any]) -> bool:
-        """Vérifie le rate limiting"""
+        """Vérifie le rate limiting (par type + cap global journalier)"""
         user_id = notification_data.get('user_id', 'anonymous')
         notification_type = notification_data.get('type', 'default')
         key = f"{user_id}_{notification_type}"
-        
+
         now = time.time()
+
+        # --- Cap global : max 2 notifications par utilisateur par jour ---
+        daily_key = f"{user_id}_daily"
+        daily_data = self.rate_limiter.get(daily_key, {'count': 0, 'reset_at': 0})
+
+        # Réinitialiser le compteur si on a passé minuit (ou 24h)
+        if now >= daily_data['reset_at']:
+            daily_data = {'count': 0, 'reset_at': now + 86400}
+
+        if daily_data['count'] >= 2:
+            return False
+
+        # --- Limite par type : 1 notification du même type par heure ---
         last_sent = self.rate_limiter.get(key, 0)
-        
-        # Limite : 1 notification du même type par heure
+
         cooldown = 3600  # 1 heure
         if notification_type == 'daily_reminder':
             cooldown = 86400  # 24 heures pour les rappels quotidiens
-        
+
         if now - last_sent < cooldown:
             return False
-        
+
+        # Tout OK : enregistrer l'envoi
         self.rate_limiter[key] = now
+        daily_data['count'] += 1
+        self.rate_limiter[daily_key] = daily_data
         return True
     
     def _save_notification_metrics(self, notification_data: Dict[str, Any], 
@@ -575,6 +688,231 @@ class NotificationManager:
         journey_topics.extend(inactive_topics)
         
         return base_topics + country_topics + age_topics + journey_topics
+
+    # === MÉTHODES "FLAMME DE L'AFRIQUE" POUR LES STREAKS ===
+
+    def send_streak_notification(self, user_id: str, notification_type: str,
+                                 streak_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Envoie une notification de streak "Flamme de l'Afrique"
+
+        Args:
+            user_id: ID de l'utilisateur
+            notification_type: Type de notification ('streak_at_risk', 'streak_lost', 'streak_milestone_X')
+            streak_data: Données du streak (child_name, streak, etc.)
+        """
+        if not self.db:
+            return {"status": "error", "message": "Base de données non disponible"}
+
+        try:
+            # Récupérer le token FCM de l'utilisateur
+            user_doc = self.db.collection('users').document(user_id).get()
+            if not user_doc.exists:
+                return {"status": "error", "message": "Utilisateur non trouvé"}
+
+            user_data = user_doc.to_dict()
+            fcm_token = user_data.get('fcmToken')
+
+            if not fcm_token:
+                return {"status": "error", "message": "Token FCM non disponible"}
+
+            # Construire la notification
+            notification_data = {
+                'type': notification_type,
+                'token': fcm_token,
+                'params': {
+                    'child_name': streak_data.get('child_name', 'Explorateur'),
+                    'streak': str(streak_data.get('streak', 0))
+                },
+                'data': {
+                    'user_id': user_id,
+                    'child_id': streak_data.get('child_id', ''),
+                    'action': 'streak_notification',
+                    'streak': str(streak_data.get('streak', 0))
+                }
+            }
+
+            result = self.send_notification(notification_data)
+
+            # Logger la notification streak
+            logger.info(f"🔥 Notification streak envoyée: {notification_type} pour {streak_data.get('child_name')}")
+
+            return result
+
+        except Exception as e:
+            logger.error(f"❌ Erreur envoi notification streak: {e}")
+            return {"status": "error", "message": str(e)}
+
+    def check_and_send_streak_at_risk_notifications(self) -> List[Dict[str, Any]]:
+        """
+        Vérifie les streaks en danger et envoie des notifications
+        Appelé quotidiennement en soirée (18h-20h heure locale)
+        """
+        if not self.db:
+            return [{"status": "error", "message": "Base de données non disponible"}]
+
+        results = []
+
+        try:
+            # Récupérer tous les utilisateurs avec un streak actif
+            users_ref = self.db.collection('users')
+            users = users_ref.stream()
+
+            now = datetime.now()
+            today = datetime(now.year, now.month, now.day)
+
+            for user_doc in users:
+                user_data = user_doc.to_dict()
+                user_id = user_doc.id
+
+                # Vérifier les enfants avec un streak
+                children_profiles = user_data.get('childrenProfiles', {})
+
+                for child_id, child_data in children_profiles.items():
+                    current_streak = child_data.get('currentStreak', 0)
+
+                    if current_streak == 0:
+                        continue
+
+                    # Vérifier la dernière activité
+                    last_activity = child_data.get('lastActivityDate')
+                    if not last_activity:
+                        continue
+
+                    # Convertir en datetime si c'est un Timestamp Firestore
+                    if hasattr(last_activity, 'timestamp'):
+                        last_activity_date = last_activity
+                    else:
+                        continue
+
+                    last_activity_dt = datetime.fromtimestamp(last_activity_date.timestamp())
+                    last_activity_day = datetime(last_activity_dt.year, last_activity_dt.month, last_activity_dt.day)
+
+                    # Calculer les jours depuis la dernière activité
+                    days_since_activity = (today - last_activity_day).days
+
+                    # Si pas d'activité aujourd'hui mais activité hier = streak at risk
+                    if days_since_activity == 1:
+                        child_name = child_data.get('name', 'Explorateur')
+
+                        result = self.send_streak_notification(
+                            user_id=user_id,
+                            notification_type='streak_at_risk',
+                            streak_data={
+                                'child_id': child_id,
+                                'child_name': child_name,
+                                'streak': current_streak
+                            }
+                        )
+
+                        result['child_id'] = child_id
+                        result['child_name'] = child_name
+                        result['streak'] = current_streak
+                        results.append(result)
+
+                        logger.info(f"🔥 Streak at risk notification envoyée pour {child_name} ({current_streak} jours)")
+
+            return results
+
+        except Exception as e:
+            logger.error(f"❌ Erreur vérification streaks at risk: {e}")
+            return [{"status": "error", "message": str(e)}]
+
+    def send_streak_milestone_notification(self, user_id: str, child_id: str,
+                                          child_name: str, milestone: int) -> Dict[str, Any]:
+        """
+        Envoie une notification de milestone de streak
+
+        Args:
+            user_id: ID de l'utilisateur
+            child_id: ID de l'enfant
+            child_name: Nom de l'enfant
+            milestone: Milestone atteint (7, 14, 30, 60, 100, 365)
+        """
+        notification_type = f'streak_milestone_{milestone}'
+
+        # Vérifier que le template existe
+        if notification_type not in self.notification_templates:
+            notification_type = 'streak_milestone_7'  # Fallback
+
+        return self.send_streak_notification(
+            user_id=user_id,
+            notification_type=notification_type,
+            streak_data={
+                'child_id': child_id,
+                'child_name': child_name,
+                'streak': milestone
+            }
+        )
+
+    def send_reengagement_notification(self, user_id: str, days_inactive: int,
+                                        trigger_id: str, child_name: str = None) -> Dict[str, Any]:
+        """
+        Envoie une notification de réengagement pour utilisateur inactif
+
+        Args:
+            user_id: ID de l'utilisateur
+            days_inactive: Nombre de jours d'inactivité
+            trigger_id: ID du trigger (inactive_3days, inactive_7days)
+            child_name: Nom de l'enfant (optionnel)
+        """
+        if not self.db:
+            return {"status": "error", "message": "Base de données non disponible"}
+
+        try:
+            # Récupérer le token FCM de l'utilisateur
+            user_doc = self.db.collection('users').document(user_id).get()
+            if not user_doc.exists:
+                return {"status": "error", "message": "Utilisateur non trouvé"}
+
+            user_data = user_doc.to_dict()
+            fcm_token = user_data.get('fcmToken')
+
+            if not fcm_token:
+                return {"status": "error", "message": "Token FCM non disponible"}
+
+            # Choisir le template selon le nombre de jours
+            if days_inactive >= 7:
+                notification_type = 'journey_reengagement'
+                title = '🌍 Tu nous manques !'
+                body = f'{child_name or "Explorateur"}, reviens découvrir de nouvelles histoires africaines ! Ça fait {days_inactive} jours...'
+            else:
+                notification_type = 'journey_reengagement'
+                title = '🌍 Ton aventure t\'attend !'
+                body = f'{child_name or "Explorateur"}, de nouvelles histoires t\'attendent ! ({days_inactive} jours sans nouvelles découvertes)'
+
+            # Construire la notification
+            notification_data = {
+                'type': notification_type,
+                'token': fcm_token,
+                'params': {
+                    'child_name': child_name or 'Explorateur',
+                    'days': str(days_inactive)
+                },
+                'data': {
+                    'user_id': user_id,
+                    'action': 'reengagement',
+                    'days_inactive': str(days_inactive),
+                    'trigger_id': trigger_id
+                }
+            }
+
+            # Override title/body
+            notification_data['notification'] = {
+                'title': title,
+                'body': body
+            }
+
+            result = self.send_notification(notification_data)
+
+            logger.info(f"📩 Notification réengagement envoyée: {child_name or user_id} ({days_inactive} jours)")
+
+            return result
+
+        except Exception as e:
+            logger.error(f"❌ Erreur envoi notification réengagement: {e}")
+            return {"status": "error", "message": str(e)}
+
 
 # Fonctions utilitaires pour l'intégration
 def create_notification_manager(firebase_manager):
