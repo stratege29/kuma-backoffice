@@ -327,24 +327,6 @@ NOTIFICATION_TEMPLATES = {
         'channels': ['push', 'email']
     },
 
-    'comeback_offer': {
-        'id': 'comeback_offer',
-        'category': 'reengagement',
-        'name': 'Offre de retour',
-        'icon': '🎁',
-        'priority': 'urgent',
-        'title': {
-            'default': '🎁 Surprise pour {child_name} !'
-        },
-        'body': {
-            'default': 'Une histoire bonus de {country} t\'attend ! Viens la découvrir ! 🌍'
-        },
-        'variables': ['child_name', 'country'],
-        'special_offer': True,
-        'channels': ['push', 'email'],
-        'cta': 'claim_offer'
-    },
-
     # =========================================================================
     # CATEGORY: PROGRESSION
     # =========================================================================
@@ -359,9 +341,9 @@ NOTIFICATION_TEMPLATES = {
             'default': '✅ {country} terminé !'
         },
         'body': {
-            'default': 'Bravo {child_name} ! Tu as découvert toutes les histoires de {country} ! Direction {next_country} ! 🗺️'
+            'default': 'Bravo {child_name} ! Tu as découvert toutes les histoires de {country} ! Un nouveau pays t\'attend ! 🗺️'
         },
-        'variables': ['child_name', 'country', 'next_country', 'country_flag'],
+        'variables': ['child_name', 'country'],
         'celebration': True,
         'confetti': True,
         'action': 'view_map',
@@ -380,7 +362,7 @@ NOTIFICATION_TEMPLATES = {
         'body': {
             'default': '{child_name}, tu as déjà découvert 10 pays africains ! Continue ton tour d\'Afrique ! 🌍'
         },
-        'variables': ['child_name', 'countries_count'],
+        'variables': ['child_name'],
         'celebration': True,
         'special_reward': 'badge_countries_10'
     },
@@ -439,22 +421,6 @@ NOTIFICATION_TEMPLATES = {
         'action': 'view_completion'
     },
 
-    'level_up': {
-        'id': 'level_up',
-        'category': 'progression',
-        'name': 'Nouveau niveau',
-        'icon': '⬆️🏆',
-        'priority': 'high',
-        'title': {
-            'default': '⬆️ Nouveau niveau : {level} !'
-        },
-        'body': {
-            'default': 'Félicitations {child_name} ! Tu es maintenant {level} ! +{cauris_bonus} cauris bonus ! 💰'
-        },
-        'variables': ['child_name', 'level', 'cauris_bonus'],
-        'celebration': True
-    },
-
     'first_story': {
         'id': 'first_story',
         'category': 'progression',
@@ -511,22 +477,6 @@ NOTIFICATION_TEMPLATES = {
         'confetti': True
     },
 
-    'perfect_quiz_streak': {
-        'id': 'perfect_quiz_streak',
-        'category': 'gamification',
-        'name': 'Serie de quiz parfaits',
-        'icon': '🧠🔥',
-        'priority': 'high',
-        'title': {
-            'default': '🧠🔥 {quiz_count} quiz parfaits d\'affilee !'
-        },
-        'body': {
-            'default': '{child_name} est un génie ! {quiz_count} quiz parfaits consécutifs ! 🌟'
-        },
-        'variables': ['child_name', 'quiz_count'],
-        'celebration': True
-    },
-
     'listening_milestone_1h': {
         'id': 'listening_milestone_1h',
         'category': 'gamification',
@@ -570,7 +520,7 @@ NOTIFICATION_TEMPLATES = {
             'default': '🎧🏆 10 heures d\'écoute !'
         },
         'body': {
-            'default': '{child_name} a écouté 10 heures d\'histoires africaines ! LEGENDAIRE ! 🌟'
+            'default': '{child_name} a écouté 10 heures d\'histoires africaines ! LÉGENDAIRE ! 🌟'
         },
         'variables': ['child_name'],
         'celebration': True,
@@ -611,6 +561,23 @@ NOTIFICATION_TEMPLATES = {
         'confetti': True
     },
 
+    'stories_milestone_25': {
+        'id': 'stories_milestone_25',
+        'category': 'gamification',
+        'name': '25 histoires lues',
+        'icon': '📖🌟',
+        'priority': 'medium',
+        'title': {
+            'default': '📖 25 histoires africaines !'
+        },
+        'body': {
+            'default': '{child_name} a déjà lu 25 histoires ! Un vrai passionné des contes africains ! 🌍'
+        },
+        'variables': ['child_name'],
+        'celebration': True,
+        'special_reward': 'badge_reader_25'
+    },
+
     # =========================================================================
     # CATEGORY: SUBSCRIPTION
     # =========================================================================
@@ -627,7 +594,7 @@ NOTIFICATION_TEMPLATES = {
         'body': {
             'default': '{child_name} peut maintenant explorer toute l\'Afrique sans limites ! Profite bien ! 🌍'
         },
-        'variables': ['child_name', 'trial_days'],
+        'variables': ['child_name'],
         'celebration': True
     },
 
@@ -643,7 +610,7 @@ NOTIFICATION_TEMPLATES = {
         'body': {
             'default': 'Plus que 3 jours d\'essai ! Passez à Premium pour que {child_name} continue son voyage ! 🌍⭐'
         },
-        'variables': ['child_name', 'days_left'],
+        'variables': ['child_name'],
         'cta': 'upgrade_premium',
         'deep_link': 'kuma://subscription'
     },
@@ -694,23 +661,6 @@ NOTIFICATION_TEMPLATES = {
         },
         'variables': ['child_name'],
         'cta': 'view_premium'
-    },
-
-    'special_offer': {
-        'id': 'special_offer',
-        'category': 'subscription',
-        'name': 'Offre spéciale',
-        'icon': '🎁',
-        'priority': 'urgent',
-        'title': {
-            'default': '🎁 Offre spéciale !'
-        },
-        'body': {
-            'default': '-{discount}% sur Premium ! Offre valable {hours}h. Offrez à {child_name} un accès illimité ! 🌍'
-        },
-        'variables': ['discount', 'hours'],
-        'special_offer': True,
-        'cta': 'claim_offer'
     },
 
     'welcome_premium': {
@@ -822,22 +772,6 @@ NOTIFICATION_TEMPLATES = {
         'deep_link': 'kuma://quiz/{story_id}'
     },
 
-    'cultural_bonus': {
-        'id': 'cultural_bonus',
-        'category': 'engagement',
-        'name': 'Bonus culturel',
-        'icon': '💎',
-        'priority': 'medium',
-        'title': {
-            'default': '💎 Surprise culturelle !'
-        },
-        'body': {
-            'default': 'Découvre un {content_type} de {country} ! 🌍'
-        },
-        'variables': ['content_type', 'country'],
-        'action': 'view_bonus'
-    },
-
     'weekend_special': {
         'id': 'weekend_special',
         'category': 'engagement',
@@ -898,6 +832,32 @@ NOTIFICATION_TEMPLATES = {
         'android_channel': 'engagement_channel',
         'ios_category': 'engagement_reminder',
         'channels': ['push', 'email']
+    },
+
+    'parent_weekly_report': {
+        'id': 'parent_weekly_report',
+        'category': 'engagement',
+        'name': 'Rapport hebdomadaire parents',
+        'icon': '📊',
+        'priority': 'low',
+        'title': {
+            'default': '📊 Le voyage de {child_name} cette semaine',
+            'variant_a': '🌍 Résumé hebdomadaire de {child_name}'
+        },
+        'body': {
+            'default': '{child_name} a lu {stories_this_week} histoires cette semaine ! Découvrez ses progrès dans l\'app.',
+            'variant_a': 'Cette semaine : {stories_this_week} histoires lues. Continuez à encourager {child_name} ! 🌟'
+        },
+        'variables': ['child_name', 'stories_this_week'],
+        'recommended_timing': 'morning',
+        'optimal_hours': [9, 10],
+        'recommended_days': ['sunday'],
+        'cooldown_hours': 168,
+        'action': 'view_profile',
+        'deep_link': 'kuma://profile',
+        'android_channel': 'parent_channel',
+        'ios_category': 'parent_report',
+        'channels': ['push']
     }
 }
 
@@ -1140,23 +1100,14 @@ def get_categories_for_ui() -> List[Dict]:
 DEMO_USER_DATA = {
     'child_name': 'Emma',
     'streak': 7,
-    'country': 'Senegal',
-    'next_country': 'Mali',
-    'country_flag': '🇸🇳',
-    'days_inactive': 3,
+    'country': 'Sénégal',
     'story_title': 'Le Lion et la Souris',
     'badge_name': 'Explorateur',
     'badge_icon': '🗺️',
-    'level': 'Aventurier',
-    'cauris_bonus': 50,
-    'quiz_count': 5,
-    'hours': 5,
-    'countries_count': 10,
-    'trial_days': 7,
-    'days_left': 3,
-    'discount': 30,
-    'content_type': 'proverbe',
-    'content_count': 3
+    'days_inactive': 3,
+    'country_flag': '🇸🇳',
+    'content_count': 3,
+    'stories_this_week': 4
 }
 
 
