@@ -47,6 +47,19 @@ except ImportError as e:
     print(f"⚠️ Module email non disponible: {e}")
     EMAIL_AVAILABLE = False
 
+# Unsubscribe Manager
+try:
+    from unsubscribe_manager import (
+        get_all_unsubscribed,
+        add_unsubscribe as unsub_add,
+        remove_unsubscribe as unsub_remove,
+        check_imap_for_stop_replies
+    )
+    UNSUBSCRIBE_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ Module unsubscribe non disponible: {e}")
+    UNSUBSCRIBE_AVAILABLE = False
+
 # Push Notification Manager
 try:
     from push_notification_manager import get_push_notification_manager
@@ -54,6 +67,33 @@ try:
 except ImportError as e:
     print(f"⚠️ Module push non disponible: {e}")
     PUSH_AVAILABLE = False
+
+# Automation Admin Manager
+try:
+    from automation_admin import AutomationAdminManager
+    AUTOMATION_ADMIN_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ Module automation_admin non disponible: {e}")
+    AUTOMATION_ADMIN_AVAILABLE = False
+
+# Notifications V2 Module
+try:
+    from notifications_v2_page import (
+        NotificationsV2APIHandlers,
+        generate_notifications_v2_page
+    )
+    NOTIFICATIONS_V2_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ Module notifications_v2 non disponible: {e}")
+    NOTIFICATIONS_V2_AVAILABLE = False
+
+# Funnel Analytics Manager
+try:
+    from funnel_analytics_manager import FunnelAnalyticsManager
+    FUNNEL_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ Module funnel non disponible: {e}")
+    FUNNEL_AVAILABLE = False
 
 class FirebaseManager:
     """Gestionnaire Firebase pour le backoffice"""
@@ -130,31 +170,63 @@ class FirebaseManager:
         """Initialise la connexion Firebase"""
         try:
             if not firebase_admin._apps:
-                # Chercher les credentials (Cloud Run + local)
-                credentials_paths = [
-                    '/app/firebase-credentials.json',  # Cloud Run
-                    './firebase-credentials.json',     # Relative path
-                    '/Users/arnaudkossea/development/kuma_upload/firebase-credentials.json',
-                    '/Users/arnaudkossea/development/kumacodex/firebase-credentials.json'
-                ]
-                
-                credentials_path = None
-                for path in credentials_paths:
-                    if os.path.exists(path):
-                        credentials_path = path
-                        break
-                
-                if not credentials_path:
-                    print("❌ Aucun fichier de credentials Firebase trouvé")
-                    return False
-                
-                cred = credentials.Certificate(credentials_path)
+                cred = None
+                credentials_source = None
+
+                # 1. Priorite aux variables d'environnement (production/Cloud Run)
+                firebase_credentials_b64 = os.environ.get('FIREBASE_CREDENTIALS_B64')
+                firebase_credentials_json = os.environ.get('FIREBASE_CREDENTIALS')
+
+                if firebase_credentials_b64:
+                    import base64
+                    import tempfile
+                    # Decoder base64 et ecrire dans un fichier temporaire
+                    decoded = base64.b64decode(firebase_credentials_b64).decode('utf-8')
+                    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+                        f.write(decoded)
+                        temp_path = f.name
+                    cred = credentials.Certificate(temp_path)
+                    credentials_source = 'FIREBASE_CREDENTIALS_B64 (env var base64)'
+                    print(f"✅ Credentials Firebase chargés depuis variable d'environnement (base64)")
+                elif firebase_credentials_json:
+                    import tempfile
+                    # Ecrire les credentials JSON dans un fichier temporaire
+                    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+                        f.write(firebase_credentials_json)
+                        temp_path = f.name
+                    cred = credentials.Certificate(temp_path)
+                    credentials_source = 'FIREBASE_CREDENTIALS (env var)'
+                    print(f"✅ Credentials Firebase chargés depuis variable d'environnement")
+
+                # 2. Sinon, chercher les fichiers locaux (dev)
+                if not cred:
+                    credentials_paths = [
+                        '/app/firebase-credentials.json',  # Cloud Run
+                        './firebase-credentials.json',     # Relative path
+                        '/Users/arnaudkossea/development/kuma_upload/firebase-credentials.json',
+                        '/Users/arnaudkossea/development/kumacodex/firebase-credentials.json'
+                    ]
+
+                    credentials_path = None
+                    for path in credentials_paths:
+                        if os.path.exists(path):
+                            credentials_path = path
+                            break
+
+                    if not credentials_path:
+                        print("❌ Aucun fichier de credentials Firebase trouvé")
+                        print("   Definir FIREBASE_CREDENTIALS ou placer firebase-credentials.json")
+                        return False
+
+                    cred = credentials.Certificate(credentials_path)
+                    credentials_source = os.path.basename(credentials_path)
+
                 firebase_admin.initialize_app(cred, {
                     'projectId': 'kumafire-7864b',
                     'storageBucket': 'kumafire-7864b.appspot.com'
                 })
-                
-                print(f"✅ Firebase initialisé avec: {os.path.basename(credentials_path)}")
+
+                print(f"✅ Firebase initialisé avec: {credentials_source}")
             
             self.db = firestore.client()
             self.bucket = storage.bucket()
@@ -401,7 +473,443 @@ class FirebaseManager:
                 value_count[value] = value_count.get(value, 0) + 1
         
         return dict(sorted(value_count.items(), key=lambda x: x[1], reverse=True)[:10])
-    
+
+    # ===== GESTION DES SOUVENIRS =====
+
+    def get_souvenirs(self):
+        """Récupère tous les souvenirs depuis Firestore"""
+        if not self.initialized:
+            return self.get_demo_souvenirs()
+
+        try:
+            souvenirs_ref = self.db.collection('souvenirs')
+            docs = souvenirs_ref.stream()
+            souvenirs = []
+
+            for doc in docs:
+                souvenir_data = doc.to_dict()
+                souvenir_data['docId'] = doc.id
+                souvenirs.append(souvenir_data)
+
+            print(f"✅ {len(souvenirs)} souvenirs récupérés depuis Firestore")
+            return souvenirs
+        except Exception as e:
+            print(f"❌ Erreur récupération souvenirs: {e}")
+            return self.get_demo_souvenirs()
+
+    def get_souvenirs_by_country(self, country_code):
+        """Récupère les souvenirs pour un pays spécifique"""
+        if not self.initialized:
+            return []
+
+        try:
+            souvenirs_ref = self.db.collection('souvenirs').where('countryCode', '==', country_code.upper())
+            docs = souvenirs_ref.stream()
+            souvenirs = []
+
+            for doc in docs:
+                souvenir_data = doc.to_dict()
+                souvenir_data['docId'] = doc.id
+                souvenirs.append(souvenir_data)
+
+            return souvenirs
+        except Exception as e:
+            print(f"❌ Erreur récupération souvenirs pour {country_code}: {e}")
+            return []
+
+    def get_souvenir_by_id(self, souvenir_id):
+        """Récupère un souvenir par son ID"""
+        if not self.initialized:
+            return None
+
+        try:
+            doc = self.db.collection('souvenirs').document(souvenir_id).get()
+            if doc.exists:
+                data = doc.to_dict()
+                data['docId'] = doc.id
+                return data
+            return None
+        except Exception as e:
+            print(f"❌ Erreur récupération souvenir {souvenir_id}: {e}")
+            return None
+
+    def save_souvenir(self, souvenir_data):
+        """Sauvegarde un souvenir"""
+        if not self.initialized:
+            return False, "Firebase non initialisé"
+
+        try:
+            # Générer l'ID si nouveau souvenir
+            if not souvenir_data.get('souvenirId'):
+                country_code = souvenir_data.get('countryCode', 'XX').upper()
+                existing = self.get_souvenirs_by_country(country_code)
+                next_num = len(existing) + 1
+                souvenir_data['souvenirId'] = f"{country_code}_{next_num:03d}"
+                souvenir_data['id'] = souvenir_data['souvenirId']
+                souvenir_data['createdAt'] = datetime.now().isoformat()
+
+            souvenir_data['updatedAt'] = datetime.now().isoformat()
+
+            doc_ref = self.db.collection('souvenirs').document(souvenir_data['souvenirId'])
+            doc_ref.set(souvenir_data)
+
+            print(f"✅ Souvenir {souvenir_data['souvenirId']} sauvegardé")
+            return True, f"Souvenir {souvenir_data['souvenirId']} sauvegardé avec succès"
+        except Exception as e:
+            print(f"❌ Erreur sauvegarde souvenir: {e}")
+            return False, str(e)
+
+    def delete_souvenir(self, souvenir_id):
+        """Supprime un souvenir"""
+        if not self.initialized:
+            return False, "Firebase non initialisé"
+
+        try:
+            self.db.collection('souvenirs').document(souvenir_id).delete()
+            print(f"✅ Souvenir {souvenir_id} supprimé")
+            return True, "Souvenir supprimé avec succès"
+        except Exception as e:
+            print(f"❌ Erreur suppression souvenir: {e}")
+            return False, str(e)
+
+    def get_demo_souvenirs(self):
+        """Données de démo pour les souvenirs"""
+        return [
+            {
+                'souvenirId': 'SN_001',
+                'id': 'SN_001',
+                'countryCode': 'SN',
+                'countryName': 'Sénégal',
+                'flag': '🇸🇳',
+                'name': 'Peinture sous verre',
+                'nameEn': 'Glass painting',
+                'description': 'Art traditionnel sénégalais',
+                'funFact': 'Le Souwer est un art populaire unique au Sénégal',
+                'category': 'symbol',
+                'region': 'westAfrica',
+                'imageUrl': ''
+            },
+            {
+                'souvenirId': 'GH_001',
+                'id': 'GH_001',
+                'countryCode': 'GH',
+                'countryName': 'Ghana',
+                'flag': '🇬🇭',
+                'name': 'Tissu Kente',
+                'nameEn': 'Kente cloth',
+                'description': 'Tissu royal tissé à la main',
+                'funFact': 'Chaque motif Kente a une signification particulière',
+                'category': 'textile',
+                'region': 'westAfrica',
+                'imageUrl': ''
+            }
+        ]
+
+    def get_souvenirs_stats(self):
+        """Statistiques sur les souvenirs"""
+        souvenirs = self.get_souvenirs()
+
+        # Compteur actifs/inactifs
+        active_count = sum(1 for s in souvenirs if s.get('isActive', True))
+        inactive_count = len(souvenirs) - active_count
+
+        # Par pays
+        by_country = {}
+        for s in souvenirs:
+            cc = s.get('countryCode', 'XX')
+            if cc not in by_country:
+                by_country[cc] = {'count': 0, 'name': s.get('countryName', cc), 'flag': s.get('flag', '')}
+            by_country[cc]['count'] += 1
+
+        # Par catégorie
+        by_category = {}
+        for s in souvenirs:
+            cat = s.get('category', 'symbol')
+            by_category[cat] = by_category.get(cat, 0) + 1
+
+        # Par région
+        by_region = {}
+        for s in souvenirs:
+            region = s.get('region', 'westAfrica')
+            by_region[region] = by_region.get(region, 0) + 1
+
+        return {
+            'total': len(souvenirs),
+            'active': active_count,
+            'inactive': inactive_count,
+            'countries': len(by_country),
+            'by_country': by_country,
+            'by_category': by_category,
+            'by_region': by_region
+        }
+
+    # ===== GESTION DES BADGES =====
+
+    # Constantes pour les badges
+    BADGE_RARITIES = ['common', 'rare', 'epic', 'legendary']
+    BADGE_CATEGORIES = ['exploration', 'streaks', 'quiz', 'lecture']
+    BADGE_CONDITION_TYPES = [
+        'storiesRead', 'countriesVisited', 'streakDays',
+        'perfectQuizzes', 'totalQuizzes', 'listeningTime', 'readingTime'
+    ]
+
+    def get_badges(self):
+        """Récupère tous les badges depuis Firestore"""
+        if not self.initialized:
+            return self.get_demo_badges()
+
+        try:
+            badges_ref = self.db.collection('badges')
+            docs = badges_ref.stream()
+            badges = []
+
+            for doc in docs:
+                badge_data = doc.to_dict()
+                badge_data['docId'] = doc.id
+                badges.append(badge_data)
+
+            # Trier par ordre
+            badges.sort(key=lambda x: x.get('order', 0))
+            print(f"✅ {len(badges)} badges récupérés depuis Firestore")
+            return badges
+        except Exception as e:
+            print(f"❌ Erreur récupération badges: {e}")
+            return self.get_demo_badges()
+
+    def get_badges_by_rarity(self, rarity):
+        """Récupère les badges pour une rareté spécifique"""
+        if not self.initialized:
+            return []
+
+        try:
+            badges_ref = self.db.collection('badges').where('rarity', '==', rarity)
+            docs = badges_ref.stream()
+            badges = []
+
+            for doc in docs:
+                badge_data = doc.to_dict()
+                badge_data['docId'] = doc.id
+                badges.append(badge_data)
+
+            return badges
+        except Exception as e:
+            print(f"❌ Erreur récupération badges {rarity}: {e}")
+            return []
+
+    def get_badges_by_category(self, category):
+        """Récupère les badges pour une catégorie spécifique"""
+        if not self.initialized:
+            return []
+
+        try:
+            badges_ref = self.db.collection('badges').where('category', '==', category)
+            docs = badges_ref.stream()
+            badges = []
+
+            for doc in docs:
+                badge_data = doc.to_dict()
+                badge_data['docId'] = doc.id
+                badges.append(badge_data)
+
+            return badges
+        except Exception as e:
+            print(f"❌ Erreur récupération badges catégorie {category}: {e}")
+            return []
+
+    def get_badge_by_id(self, badge_id):
+        """Récupère un badge par son ID"""
+        if not self.initialized:
+            return None
+
+        try:
+            doc = self.db.collection('badges').document(badge_id).get()
+            if doc.exists:
+                data = doc.to_dict()
+                data['docId'] = doc.id
+                return data
+            return None
+        except Exception as e:
+            print(f"❌ Erreur récupération badge {badge_id}: {e}")
+            return None
+
+    def save_badge(self, badge_data):
+        """Sauvegarde un badge (création ou mise à jour)"""
+        if not self.initialized:
+            return False, "Firebase non initialisé"
+
+        try:
+            # Générer l'ID si nouveau badge
+            if not badge_data.get('badgeId'):
+                # Utiliser l'ID fourni ou générer un nouveau
+                badge_id = badge_data.get('badgeIdInput', '')
+                if not badge_id:
+                    category = badge_data.get('category', 'custom')
+                    condition_value = badge_data.get('conditionValue', 0)
+                    badge_id = f"{category}_{condition_value}"
+                badge_data['badgeId'] = badge_id
+                badge_data['id'] = badge_id
+                badge_data['createdAt'] = datetime.now().isoformat()
+
+            badge_data['updatedAt'] = datetime.now().isoformat()
+
+            # Validation de la rareté
+            if badge_data.get('rarity') not in self.BADGE_RARITIES:
+                return False, f"Rareté invalide: {badge_data.get('rarity')}"
+
+            # Nettoyer les champs temporaires
+            badge_data.pop('badgeIdInput', None)
+
+            doc_ref = self.db.collection('badges').document(badge_data['badgeId'])
+            doc_ref.set(badge_data)
+
+            print(f"✅ Badge {badge_data['badgeId']} sauvegardé")
+            return True, f"Badge {badge_data['badgeId']} sauvegardé avec succès"
+        except Exception as e:
+            print(f"❌ Erreur sauvegarde badge: {e}")
+            return False, str(e)
+
+    def delete_badge(self, badge_id):
+        """Supprime un badge"""
+        if not self.initialized:
+            return False, "Firebase non initialisé"
+
+        try:
+            self.db.collection('badges').document(badge_id).delete()
+            print(f"✅ Badge {badge_id} supprimé")
+            return True, "Badge supprimé avec succès"
+        except Exception as e:
+            print(f"❌ Erreur suppression badge: {e}")
+            return False, str(e)
+
+    def upload_badge_image(self, badge_id, image_data, content_type='image/png'):
+        """Upload une image de badge vers Firebase Storage"""
+        if not self.initialized:
+            return None, "Firebase non initialisé"
+
+        try:
+            # Déterminer l'extension selon le content_type
+            ext = 'png'
+            if 'jpeg' in content_type or 'jpg' in content_type:
+                ext = 'jpg'
+            elif 'webp' in content_type:
+                ext = 'webp'
+
+            # Upload vers Firebase Storage
+            bucket = storage.bucket('kumafire-7864b.firebasestorage.app')
+            blob = bucket.blob(f'badges/{badge_id}.{ext}')
+            blob.upload_from_string(image_data, content_type=content_type)
+
+            # Rendre public
+            blob.make_public()
+
+            # URL publique
+            public_url = f"https://storage.googleapis.com/kumafire-7864b.firebasestorage.app/badges/{badge_id}.{ext}"
+
+            print(f"✅ Image badge uploadée: {public_url}")
+            return public_url, None
+        except Exception as e:
+            print(f"❌ Erreur upload image badge: {e}")
+            return None, str(e)
+
+    def get_badges_stats(self):
+        """Statistiques sur les badges"""
+        badges = self.get_badges()
+
+        # Par rareté
+        by_rarity = {'common': 0, 'rare': 0, 'epic': 0, 'legendary': 0}
+        for b in badges:
+            rarity = b.get('rarity', 'common')
+            by_rarity[rarity] = by_rarity.get(rarity, 0) + 1
+
+        # Par catégorie
+        by_category = {}
+        for b in badges:
+            cat = b.get('category', 'other')
+            by_category[cat] = by_category.get(cat, 0) + 1
+
+        # Par type de condition
+        by_condition = {}
+        for b in badges:
+            cond = b.get('conditionType', 'other')
+            by_condition[cond] = by_condition.get(cond, 0) + 1
+
+        # Badges stackables
+        stackable_count = sum(1 for b in badges if b.get('isStackable', False))
+
+        return {
+            'total': len(badges),
+            'by_rarity': by_rarity,
+            'by_category': by_category,
+            'by_condition': by_condition,
+            'stackable': stackable_count,
+            'active': sum(1 for b in badges if b.get('isActive', True))
+        }
+
+    def get_demo_badges(self):
+        """Données de démo pour les badges"""
+        return [
+            {
+                'badgeId': 'first_story',
+                'id': 'first_story',
+                'name': {'fr': 'Premier Conte', 'en': 'First Story'},
+                'description': {'fr': 'Tu as lu ta première histoire africaine !', 'en': 'You read your first African story!'},
+                'iconPath': 'assets/badges/first_story.png',
+                'emoji': '📖',
+                'rarity': 'common',
+                'category': 'exploration',
+                'conditionType': 'storiesRead',
+                'conditionValue': 1,
+                'isStackable': False,
+                'isActive': True,
+                'order': 1
+            },
+            {
+                'badgeId': 'explorer_5',
+                'id': 'explorer_5',
+                'name': {'fr': 'Petit Explorateur', 'en': 'Little Explorer'},
+                'description': {'fr': 'Tu as visité 5 pays africains !', 'en': 'You visited 5 African countries!'},
+                'iconPath': 'assets/badges/explorer_5.png',
+                'emoji': '🗺️',
+                'rarity': 'common',
+                'category': 'exploration',
+                'conditionType': 'countriesVisited',
+                'conditionValue': 5,
+                'isStackable': False,
+                'isActive': True,
+                'order': 2
+            },
+            {
+                'badgeId': 'streak_7',
+                'id': 'streak_7',
+                'name': {'fr': 'Flamme Naissante', 'en': 'Rising Flame'},
+                'description': {'fr': 'Tu as lu pendant 7 jours de suite !', 'en': 'You read for 7 days in a row!'},
+                'iconPath': 'assets/badges/streak_7.png',
+                'emoji': '🔥',
+                'rarity': 'common',
+                'category': 'streaks',
+                'conditionType': 'streakDays',
+                'conditionValue': 7,
+                'isStackable': False,
+                'isActive': True,
+                'order': 6
+            },
+            {
+                'badgeId': 'quiz_perfect',
+                'id': 'quiz_perfect',
+                'name': {'fr': 'Sans Faute', 'en': 'Perfect Score'},
+                'description': {'fr': 'Tu as obtenu 100% à un quiz !', 'en': 'You got 100% on a quiz!'},
+                'iconPath': 'assets/badges/quiz_perfect.png',
+                'emoji': '🏆',
+                'rarity': 'common',
+                'category': 'quiz',
+                'conditionType': 'perfectQuizzes',
+                'conditionValue': 1,
+                'isStackable': True,
+                'isActive': True,
+                'order': 10
+            }
+        ]
+
     def get_demo_stories(self):
         """Données de démo si Firebase indisponible"""
         return [
@@ -633,7 +1141,16 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
         self.firebase_manager = firebase_manager
         self.security_manager = SecurityManager(firebase_manager)
         super().__init__(*args, **kwargs)
-    
+
+    def do_OPTIONS(self):
+        """Gere les requetes OPTIONS pour CORS preflight"""
+        self.send_response(200)
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+        self.send_header('Access-Control-Max-Age', '86400')
+        self.end_headers()
+
     def do_GET(self):
         """Gère les requêtes GET"""
         if self.path == '/' or self.path == '/index.html':
@@ -650,18 +1167,16 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
             self.send_story_view(story_id)
         elif self.path == '/countries':
             self.send_countries_page()
+        elif self.path == '/souvenirs':
+            self.send_souvenirs_page()
+        elif self.path == '/badges':
+            self.send_badges_page()
         elif self.path == '/users':
             self.send_users_page()
-        elif self.path == '/analytics':
-            self.send_analytics_page()
         elif self.path == '/test':
             self.send_test_page()
         elif self.path == '/security':
             self.send_security_page()
-        elif self.path == '/notifications':
-            self.send_notifications_page()
-        elif self.path == '/journey-notifications':
-            self.send_journey_notifications_page()
         elif self.path == '/logs-analytics':
             self.send_logs_analytics_page()
         elif self.path == '/trash':
@@ -670,6 +1185,25 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
             self.send_mailing_page()
         elif self.path == '/kpis':
             self.send_kpis_page()
+        elif self.path == '/funnel':
+            self.send_funnel_page()
+        elif self.path.startswith('/api/funnel/overview'):
+            self.handle_funnel_overview()
+        elif self.path.startswith('/api/funnel/'):
+            self.handle_funnel_api()
+        elif self.path == '/notifications-v2':
+            self.send_notifications_v2_page()
+        elif self.path == '/api/notifications-v2/templates':
+            self.handle_get_templates_v2()
+        elif self.path == '/api/notifications-v2/lists':
+            self.handle_get_lists_v2()
+        elif self.path.startswith('/api/notifications-v2/lists/') and '/users' in self.path:
+            list_id = self.path.split('/')[4]
+            self.handle_get_list_users_v2(list_id)
+        elif self.path == '/api/notifications-v2/automation/rules':
+            self.handle_get_automation_rules_v2()
+        elif self.path.startswith('/api/notifications-v2/automation/logs'):
+            self.handle_get_automation_logs_v2()
         elif self.path == '/api/kpis':
             self.handle_get_kpis()
         elif self.path == '/api/mailing/lists':
@@ -677,10 +1211,14 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
         elif self.path.startswith('/api/mailing/list/'):
             list_id = self.path.split('/')[-1]
             self.handle_get_list_users(list_id)
+        elif self.path == '/api/mailing/unsubscribes':
+            self.handle_get_unsubscribes()
         elif self.path == '/api/mailing/status':
             self.handle_get_mailing_status()
         elif self.path == '/api/mailing/templates':
             self.handle_get_email_templates()
+        elif self.path == '/api/landing/subscribers':
+            self.handle_get_landing_subscribers()
         elif self.path == '/api/status':
             self.send_json_response({
                 'status': 'OK', 
@@ -696,6 +1234,45 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
         elif self.path == '/api/countries':
             countries = self.firebase_manager.get_countries()
             self.send_json_response({'countries': countries})
+        elif self.path == '/api/souvenirs':
+            souvenirs = self.firebase_manager.get_souvenirs()
+            self.send_json_response({'souvenirs': souvenirs})
+        elif self.path == '/api/souvenirs/stats':
+            stats = self.firebase_manager.get_souvenirs_stats()
+            self.send_json_response(stats)
+        elif self.path.startswith('/api/souvenirs/country/'):
+            country_code = self.path.split('/')[-1]
+            souvenirs = self.firebase_manager.get_souvenirs_by_country(country_code)
+            self.send_json_response({'souvenirs': souvenirs})
+        elif self.path.startswith('/api/souvenirs/') and not self.path.endswith('/stats'):
+            souvenir_id = self.path.split('/')[-1]
+            souvenir = self.firebase_manager.get_souvenir_by_id(souvenir_id)
+            if souvenir:
+                self.send_json_response({'souvenir': souvenir})
+            else:
+                self.send_json_response({'error': 'Souvenir non trouvé'}, status=404)
+        # ===== API BADGES =====
+        elif self.path == '/api/badges':
+            badges = self.firebase_manager.get_badges()
+            self.send_json_response({'badges': badges})
+        elif self.path == '/api/badges/stats':
+            stats = self.firebase_manager.get_badges_stats()
+            self.send_json_response(stats)
+        elif self.path.startswith('/api/badges/rarity/'):
+            rarity = self.path.split('/')[-1]
+            badges = self.firebase_manager.get_badges_by_rarity(rarity)
+            self.send_json_response({'badges': badges})
+        elif self.path.startswith('/api/badges/category/'):
+            category = self.path.split('/')[-1]
+            badges = self.firebase_manager.get_badges_by_category(category)
+            self.send_json_response({'badges': badges})
+        elif self.path.startswith('/api/badges/') and not self.path.endswith('/stats'):
+            badge_id = self.path.split('/')[-1]
+            badge = self.firebase_manager.get_badge_by_id(badge_id)
+            if badge:
+                self.send_json_response({'badge': badge})
+            else:
+                self.send_json_response({'error': 'Badge non trouvé'}, status=404)
         elif self.path == '/api/users':
             users_data = self.get_users_data()
             self.send_json_response(users_data)
@@ -750,87 +1327,6 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
         elif self.path == '/api/security/mode':
             mode_info = self.security_manager.get_current_mode_info()
             self.send_json_response(mode_info)
-        elif self.path == '/api/notifications/templates':
-            templates = self.firebase_manager.notification_manager.notification_templates if self.firebase_manager.notification_manager else {}
-            self.send_json_response({'templates': templates})
-        elif self.path == '/api/notifications/topics':
-            topics = self.firebase_manager.notification_manager.get_available_topics() if self.firebase_manager.notification_manager else []
-            self.send_json_response({'topics': topics})
-        elif self.path == '/api/notifications/metrics':
-            if self.firebase_manager.notification_manager:
-                metrics = self.firebase_manager.notification_manager.get_notification_metrics()
-            else:
-                metrics = {"error": "Gestionnaire de notifications non disponible"}
-            self.send_json_response(metrics)
-        elif self.path == '/api/journey/analytics':
-            # Obtenir des analytics de parcours basées sur les données des pays
-            countries = self.firebase_manager.get_countries()
-            
-            # Distribution par pays avec population
-            country_distribution = {}
-            for country in countries:
-                country_code = country.get('id', 'Unknown')
-                if country_code in self.firebase_manager.AFRICAN_COUNTRIES:
-                    country_name = self.firebase_manager.AFRICAN_COUNTRIES[country_code]['fr']
-                    # Simuler des utilisateurs par pays basé sur la population
-                    population = country.get('population', 0)
-                    try:
-                        pop_int = int(population) if population else 0
-                        # Simuler 0.1% de la population comme utilisateurs actifs
-                        estimated_users = max(10, int(pop_int * 0.001)) if pop_int > 0 else 10
-                    except (ValueError, TypeError):
-                        estimated_users = 10
-                    
-                    country_distribution[country_name] = estimated_users
-            
-            analytics = {
-                'country_distribution': country_distribution,
-                'total_users': sum(country_distribution.values()),
-                'total_countries': len(country_distribution)
-            }
-            self.send_json_response(analytics)
-        elif self.path == '/api/journey/timezones':
-            # Calculer la distribution par fuseau horaire basée sur les pays africains
-            timezone_distribution = {
-                'UTC+0 (GMT)': 0,
-                'UTC+1 (WAT)': 0, 
-                'UTC+2 (EET)': 0,
-                'UTC+3 (EAT)': 0,
-                'UTC+4': 0
-            }
-            
-            countries = self.firebase_manager.get_countries()
-            
-            # Mapping des pays vers leurs fuseaux horaires
-            timezone_mapping = {
-                'GM': 'UTC+0 (GMT)', 'GH': 'UTC+0 (GMT)', 'SL': 'UTC+0 (GMT)', 'LR': 'UTC+0 (GMT)',
-                'GN': 'UTC+0 (GMT)', 'GW': 'UTC+0 (GMT)', 'SN': 'UTC+0 (GMT)', 'ML': 'UTC+0 (GMT)',
-                'MR': 'UTC+0 (GMT)', 'CI': 'UTC+0 (GMT)', 'BF': 'UTC+0 (GMT)',
-                
-                'NG': 'UTC+1 (WAT)', 'NE': 'UTC+1 (WAT)', 'TD': 'UTC+1 (WAT)', 'CM': 'UTC+1 (WAT)',
-                'CF': 'UTC+1 (WAT)', 'GQ': 'UTC+1 (WAT)', 'GA': 'UTC+1 (WAT)', 'AO': 'UTC+1 (WAT)',
-                'CD': 'UTC+1 (WAT)', 'CG': 'UTC+1 (WAT)', 'BJ': 'UTC+1 (WAT)', 'TG': 'UTC+1 (WAT)',
-                
-                'EG': 'UTC+2 (EET)', 'LY': 'UTC+2 (EET)', 'SD': 'UTC+2 (EET)', 'SS': 'UTC+2 (EET)',
-                'ZA': 'UTC+2 (EET)', 'ZW': 'UTC+2 (EET)', 'BW': 'UTC+2 (EET)', 'ZM': 'UTC+2 (EET)',
-                'MW': 'UTC+2 (EET)', 'MZ': 'UTC+2 (EET)', 'SZ': 'UTC+2 (EET)', 'LS': 'UTC+2 (EET)',
-                'NA': 'UTC+2 (EET)', 'DZ': 'UTC+1 (WAT)', 'TN': 'UTC+1 (WAT)', 'MA': 'UTC+1 (WAT)',
-                
-                'KE': 'UTC+3 (EAT)', 'UG': 'UTC+3 (EAT)', 'TZ': 'UTC+3 (EAT)', 'RW': 'UTC+3 (EAT)',
-                'BI': 'UTC+3 (EAT)', 'ET': 'UTC+3 (EAT)', 'ER': 'UTC+3 (EAT)', 'DJ': 'UTC+3 (EAT)',
-                'SO': 'UTC+3 (EAT)', 'KM': 'UTC+3 (EAT)', 'MG': 'UTC+3 (EAT)', 'MU': 'UTC+4',
-                'SC': 'UTC+4'
-            }
-            
-            for country in countries:
-                country_code = country.get('id', 'Unknown')
-                if country_code in timezone_mapping:
-                    timezone = timezone_mapping[country_code]
-                    # Compter le nombre de pays par fuseau
-                    if timezone in timezone_distribution:
-                        timezone_distribution[timezone] += 1
-            
-            self.send_json_response(timezone_distribution)
         elif self.path.startswith('/api/logs/comprehensive'):
             # Analytics complètes avec paramètre de période
             query_params = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
@@ -987,8 +1483,6 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
             self.handle_admin_login(post_data)
         elif self.path == '/api/security/logout':
             self.handle_admin_logout()
-        elif self.path == '/api/notifications/send':
-            self.handle_send_notification(post_data)
         elif self.path.startswith('/api/trash/restore/'):
             trash_id = self.path.split('/')[-1]
             self.handle_restore_story(trash_id)
@@ -1008,10 +1502,53 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
             self.handle_preview_email(post_data)
         elif self.path == '/api/mailing/templates':
             self.handle_save_email_template(post_data)
-        elif self.path == '/api/mailing/send-push':
-            self.handle_send_push_notification(post_data)
-        elif self.path == '/api/mailing/send-both':
-            self.handle_send_both(post_data)
+        elif self.path == '/api/mailing/unsubscribe':
+            self.handle_unsubscribe(post_data)
+        elif self.path == '/api/mailing/resubscribe':
+            self.handle_resubscribe(post_data)
+        elif self.path == '/api/mailing/check-unsubscribes':
+            self.handle_check_unsubscribes()
+        elif self.path == '/api/notifications-v2/preview':
+            self.handle_preview_template_v2(post_data)
+        elif self.path == '/api/notifications-v2/send':
+            self.handle_send_notification_v2(post_data)
+        elif self.path == '/api/notifications-v2/automation/rules':
+            self.handle_save_automation_rule_v2(post_data)
+        elif self.path.startswith('/api/notifications-v2/automation/rules/') and '/toggle' in self.path:
+            rule_id = self.path.split('/')[5]
+            self.handle_toggle_automation_rule_v2(rule_id, post_data)
+        elif self.path.startswith('/api/notifications-v2/automation/rules/') and '/execute' in self.path:
+            rule_id = self.path.split('/')[5]
+            self.handle_execute_automation_rule_v2(rule_id)
+        elif self.path.startswith('/api/users/') and self.path.endswith('/delete'):
+            # Suppression d'un utilisateur individuel avec vérification PIN
+            user_id = self.path.split('/')[-2]
+            self.handle_secure_delete_user(user_id, post_data)
+        elif self.path == '/api/users/bulk-delete':
+            # Suppression en masse avec vérification PIN
+            self.handle_secure_bulk_delete(post_data)
+        elif self.path == '/api/souvenirs':
+            self.handle_create_souvenir(post_data)
+        elif self.path.startswith('/api/souvenirs/') and '/update' in self.path:
+            souvenir_id = self.path.split('/')[-2]
+            self.handle_update_souvenir(souvenir_id, post_data)
+        elif self.path.startswith('/api/souvenirs/') and '/delete' in self.path:
+            souvenir_id = self.path.split('/')[-2]
+            self.handle_delete_souvenir(souvenir_id)
+        elif self.path == '/api/souvenirs/upload-image':
+            self.handle_souvenir_image_upload()
+        # ===== API BADGES =====
+        elif self.path == '/api/badges':
+            self.handle_create_badge(post_data)
+        elif self.path.startswith('/api/badges/') and '/update' in self.path:
+            badge_id = self.path.split('/')[-2]
+            self.handle_update_badge(badge_id, post_data)
+        elif self.path.startswith('/api/badges/') and '/delete' in self.path:
+            badge_id = self.path.split('/')[-2]
+            self.handle_delete_badge(badge_id)
+        # ===== API LANDING PAGE =====
+        elif self.path == '/api/landing/subscribe':
+            self.handle_landing_subscribe(post_data)
         else:
             self.send_error_response(404, 'Endpoint non trouvé')
     
@@ -1038,7 +1575,7 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                 'tags': [t.strip() for t in form_data.get('tags', [''])[0].split(',') if t.strip()],
                 'isPublished': form_data.get('isPublished', ['false'])[0] == 'true',
                 'order': int(form_data.get('order', ['0'])[0]),
-                'quizQuestions': [],  # À remplir plus tard
+                'quizQuestions': json.loads(form_data.get('quizQuestionsJson', ['[]'])[0]),
                 'metadata': {
                     'author': form_data.get('author', [''])[0],
                     'origin': form_data.get('origin', [''])[0],
@@ -1099,7 +1636,12 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                 'isPublished': form_data.get('isPublished', ['false'])[0] == 'true',
                 'order': int(form_data.get('order', [str(story_data.get('order', 0))])[0])
             })
-            
+
+            # Mettre à jour les questions de quiz
+            quiz_json = form_data.get('quizQuestionsJson', [''])[0]
+            if quiz_json:
+                story_data['quizQuestions'] = json.loads(quiz_json)
+
             # Mettre à jour les métadonnées
             metadata = story_data.get('metadata', {})
             metadata.update({
@@ -1274,50 +1816,7 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
         except Exception as e:
             print(f"❌ Erreur logout admin: {e}")
             self.send_error_response(500, f'Erreur: {str(e)}')
-    
-    def handle_send_notification(self, post_data):
-        """Gère l'envoi d'une notification push"""
-        try:
-            import json
-            import asyncio
-            
-            data = json.loads(post_data)
-            
-            # Vérification Firebase
-            if not self.firebase_manager.initialized or not self.firebase_manager.notification_manager:
-                self.send_error_response(503, 'Service de notifications non disponible')
-                return
-            
-            # Validation des données requises
-            if not data.get('type'):
-                self.send_error_response(400, 'Type de notification requis')
-                return
-            
-            if not (data.get('token') or data.get('topic')):
-                self.send_error_response(400, 'Token utilisateur ou topic requis')
-                return
-            
-            # Envoyer la notification
-            result = self.firebase_manager.notification_manager.send_notification(data)
-            
-            if result['status'] == 'success':
-                self.send_json_response({
-                    'status': 'success',
-                    'message': 'Notification envoyée avec succès',
-                    'response_id': result.get('response')
-                })
-            else:
-                self.send_json_response({
-                    'status': 'error',
-                    'message': result.get('message', 'Erreur inconnue')
-                })
-                
-        except json.JSONDecodeError:
-            self.send_error_response(400, 'Données JSON invalides')
-        except Exception as e:
-            print(f"❌ Erreur envoi notification: {e}")
-            self.send_error_response(500, f'Erreur: {str(e)}')
-    
+
     def handle_restore_story(self, trash_id):
         """Gère la restauration d'une histoire depuis la corbeille"""
         try:
@@ -1377,7 +1876,11 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
         age_group = metadata.get('ageGroup', '6-9')
         difficulty = metadata.get('difficulty', 'Easy')
         region = metadata.get('region', '')
-        
+
+        # Questions de quiz existantes
+        quiz_questions_data = story_data.get('quizQuestions', [])
+        quiz_questions_json = json.dumps(quiz_questions_data, ensure_ascii=False).replace("\\", "\\\\").replace("'", "\\'")
+
         form_title = f"✏️ Modifier l'histoire" if is_edit else "➕ Nouvelle Histoire"
         submit_action = f"/api/stories/{story_id}/update" if is_edit else "/api/stories"
         submit_text = "💾 Mettre à jour" if is_edit else "✅ Créer l'histoire"
@@ -1554,6 +2057,17 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                         </div>
                     </div>
                     
+                    <!-- Quiz Questions -->
+                    <div class="form-section">
+                        <h3>🧠 Quiz Questions</h3>
+                        <p style="color: #666; margin-bottom: 15px;">Ajoutez des questions pour tester la compréhension de l'histoire. Minimum 3 questions recommandées.</p>
+                        <input type="hidden" id="quizQuestionsJson" name="quizQuestionsJson" value="">
+                        <div id="quiz-questions-container"></div>
+                        <button type="button" class="btn-add-question" onclick="addQuizQuestion()">
+                            ➕ Ajouter une question
+                        </button>
+                    </div>
+
                     <!-- Publication -->
                     <div class="form-section">
                         <h3>🚀 Publication</h3>
@@ -1581,8 +2095,11 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                     e.preventDefault();
                     
                     const formData = new FormData(this);
+                    // Sérialiser les questions de quiz dans le champ hidden
+                    const quizData = serializeQuizQuestions();
+                    formData.set('quizQuestionsJson', JSON.stringify(quizData));
                     const data = new URLSearchParams(formData);
-                    
+
                     showLoading(true);
                     
                     fetch('{submit_action}', {{
@@ -1742,7 +2259,185 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                 if (document.getElementById('audioUrl').value) {{
                     document.getElementById('audioUrl').dispatchEvent(new Event('input'));
                 }}
+
+                // ====== QUIZ MANAGEMENT ======
+                let quizQuestionCount = 0;
+
+                function generateQuizId() {{
+                    return 'q_' + Math.random().toString(36).substr(2, 9);
+                }}
+
+                function addQuizQuestion(data) {{
+                    const container = document.getElementById('quiz-questions-container');
+                    const index = quizQuestionCount++;
+                    const qId = (data && data.id) ? data.id : generateQuizId();
+                    const question = (data && data.question) ? data.question : '';
+                    const options = (data && data.options) ? data.options : ['', '', '', ''];
+                    const correctAnswer = (data && data.correctAnswer !== undefined) ? data.correctAnswer : 0;
+                    const explanation = (data && data.explanation) ? data.explanation : '';
+
+                    const block = document.createElement('div');
+                    block.className = 'quiz-question-block';
+                    block.dataset.index = index;
+                    block.innerHTML = `
+                        <div class="quiz-question-header">
+                            <h4>Question ${{container.children.length + 1}}</h4>
+                            <button type="button" class="btn-remove-question" onclick="removeQuizQuestion(this)">🗑️ Supprimer</button>
+                        </div>
+                        <input type="hidden" class="quiz-q-id" value="${{qId}}">
+                        <div class="form-group">
+                            <label>Question *</label>
+                            <input type="text" class="quiz-q-text" value="${{question.replace(/"/g, '&quot;')}}" placeholder="Ex: Quel animal était le héros de l'histoire ?" required>
+                        </div>
+                        <div class="quiz-options-grid">
+                            <div class="quiz-option-row">
+                                <input type="radio" name="correct_${{index}}" value="0" ${{correctAnswer === 0 ? 'checked' : ''}}>
+                                <input type="text" class="quiz-option" data-opt="0" value="${{(options[0] || '').replace(/"/g, '&quot;')}}" placeholder="Option A *" required>
+                            </div>
+                            <div class="quiz-option-row">
+                                <input type="radio" name="correct_${{index}}" value="1" ${{correctAnswer === 1 ? 'checked' : ''}}>
+                                <input type="text" class="quiz-option" data-opt="1" value="${{(options[1] || '').replace(/"/g, '&quot;')}}" placeholder="Option B *" required>
+                            </div>
+                            <div class="quiz-option-row">
+                                <input type="radio" name="correct_${{index}}" value="2" ${{correctAnswer === 2 ? 'checked' : ''}}>
+                                <input type="text" class="quiz-option" data-opt="2" value="${{(options[2] || '').replace(/"/g, '&quot;')}}" placeholder="Option C *" required>
+                            </div>
+                            <div class="quiz-option-row">
+                                <input type="radio" name="correct_${{index}}" value="3" ${{correctAnswer === 3 ? 'checked' : ''}}>
+                                <input type="text" class="quiz-option" data-opt="3" value="${{(options[3] || '').replace(/"/g, '&quot;')}}" placeholder="Option D *" required>
+                            </div>
+                        </div>
+                        <small style="color: #666;">🔘 Sélectionnez le bouton radio à côté de la bonne réponse</small>
+                        <div class="form-group" style="margin-top: 10px;">
+                            <label>Explication</label>
+                            <input type="text" class="quiz-q-explanation" value="${{explanation.replace(/"/g, '&quot;')}}" placeholder="Explication affichée après la réponse">
+                        </div>
+                    `;
+                    container.appendChild(block);
+                    renumberQuestions();
+                }}
+
+                function removeQuizQuestion(btn) {{
+                    if (confirm('Supprimer cette question ?')) {{
+                        btn.closest('.quiz-question-block').remove();
+                        renumberQuestions();
+                    }}
+                }}
+
+                function renumberQuestions() {{
+                    const blocks = document.querySelectorAll('.quiz-question-block');
+                    blocks.forEach((block, i) => {{
+                        block.querySelector('h4').textContent = `Question ${{i + 1}}`;
+                    }});
+                }}
+
+                function serializeQuizQuestions() {{
+                    const blocks = document.querySelectorAll('.quiz-question-block');
+                    const questions = [];
+                    blocks.forEach(block => {{
+                        const id = block.querySelector('.quiz-q-id').value;
+                        const question = block.querySelector('.quiz-q-text').value;
+                        const options = [];
+                        block.querySelectorAll('.quiz-option').forEach(opt => {{
+                            options[parseInt(opt.dataset.opt)] = opt.value;
+                        }});
+                        const correctRadio = block.querySelector('input[type="radio"]:checked');
+                        const correctAnswer = correctRadio ? parseInt(correctRadio.value) : 0;
+                        const explanation = block.querySelector('.quiz-q-explanation').value;
+
+                        if (question.trim()) {{
+                            questions.push({{ id, question, options, correctAnswer, explanation }});
+                        }}
+                    }});
+                    return questions;
+                }}
+
+                // Charger les questions existantes en mode édition
+                const existingQuiz = JSON.parse('{quiz_questions_json}');
+                if (existingQuiz && existingQuiz.length > 0) {{
+                    existingQuiz.forEach(q => addQuizQuestion(q));
+                }}
             </script>
+
+            <style>
+                .quiz-question-block {{
+                    border: 1px solid #ddd;
+                    border-radius: 8px;
+                    padding: 15px;
+                    margin-bottom: 15px;
+                    background: #fafafa;
+                }}
+                .quiz-question-header {{
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    margin-bottom: 10px;
+                }}
+                .quiz-question-header h4 {{
+                    margin: 0;
+                    color: #333;
+                }}
+                .btn-remove-question {{
+                    background: #ff4444;
+                    color: white;
+                    border: none;
+                    padding: 5px 12px;
+                    border-radius: 5px;
+                    cursor: pointer;
+                    font-size: 13px;
+                }}
+                .btn-remove-question:hover {{
+                    background: #cc0000;
+                }}
+                .btn-add-question {{
+                    background: #FF6B35;
+                    color: white;
+                    border: none;
+                    padding: 10px 20px;
+                    border-radius: 8px;
+                    cursor: pointer;
+                    font-size: 14px;
+                    font-weight: bold;
+                    width: 100%;
+                    margin-top: 5px;
+                }}
+                .btn-add-question:hover {{
+                    background: #e55a2b;
+                }}
+                .quiz-options-grid {{
+                    display: grid;
+                    grid-template-columns: 1fr 1fr;
+                    gap: 8px;
+                    margin: 10px 0;
+                }}
+                .quiz-option-row {{
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    background: white;
+                    padding: 8px;
+                    border-radius: 5px;
+                    border: 1px solid #eee;
+                }}
+                .quiz-option-row input[type="radio"] {{
+                    width: 18px;
+                    height: 18px;
+                    accent-color: #4CAF50;
+                    cursor: pointer;
+                    flex-shrink: 0;
+                }}
+                .quiz-option-row input[type="text"] {{
+                    flex: 1;
+                    border: none;
+                    outline: none;
+                    font-size: 14px;
+                    padding: 4px;
+                }}
+                .quiz-option-row:has(input[type="radio"]:checked) {{
+                    border-color: #4CAF50;
+                    background: #f0fff0;
+                }}
+            </style>
         """)
         self.send_html_response(html)
     
@@ -2005,54 +2700,612 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
         except Exception as e:
             print(f"❌ Erreur toggle pays: {e}")
             self.send_error_response(500, f"Erreur serveur: {e}")
-    
+
+    # ===== HANDLERS SOUVENIRS =====
+
+    def handle_create_souvenir(self, post_data):
+        """Gère la création d'un souvenir"""
+        try:
+            import json
+            souvenir_data = json.loads(post_data)
+
+            success, message = self.firebase_manager.save_souvenir(souvenir_data)
+
+            if success:
+                self.send_json_response({
+                    'success': True,
+                    'message': message,
+                    'souvenirId': souvenir_data.get('souvenirId')
+                })
+            else:
+                self.send_error_response(500, message)
+
+        except Exception as e:
+            print(f"❌ Erreur création souvenir: {e}")
+            self.send_error_response(500, f"Erreur serveur: {e}")
+
+    def handle_update_souvenir(self, souvenir_id, post_data):
+        """Gère la mise à jour d'un souvenir"""
+        try:
+            import json
+            souvenir_data = json.loads(post_data)
+            souvenir_data['souvenirId'] = souvenir_id
+
+            success, message = self.firebase_manager.save_souvenir(souvenir_data)
+
+            if success:
+                self.send_json_response({
+                    'success': True,
+                    'message': message
+                })
+            else:
+                self.send_error_response(500, message)
+
+        except Exception as e:
+            print(f"❌ Erreur mise à jour souvenir: {e}")
+            self.send_error_response(500, f"Erreur serveur: {e}")
+
+    def handle_delete_souvenir(self, souvenir_id):
+        """Gère la suppression d'un souvenir"""
+        try:
+            success, message = self.firebase_manager.delete_souvenir(souvenir_id)
+
+            if success:
+                self.send_json_response({
+                    'success': True,
+                    'message': message
+                })
+            else:
+                self.send_error_response(500, message)
+
+        except Exception as e:
+            print(f"❌ Erreur suppression souvenir: {e}")
+            self.send_error_response(500, f"Erreur serveur: {e}")
+
+    def handle_souvenir_image_upload(self):
+        """Gère l'upload et l'optimisation d'une image de souvenir"""
+        try:
+            import io
+            import cgi
+            from PIL import Image
+
+            # Parse multipart form data
+            content_type = self.headers.get('Content-Type', '')
+            if 'multipart/form-data' not in content_type:
+                self.send_json_response({'success': False, 'error': 'Content-Type doit etre multipart/form-data'})
+                return
+
+            # Parse the multipart data
+            content_length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(content_length)
+
+            # Extract boundary from content type
+            boundary = content_type.split('boundary=')[-1].encode()
+
+            # Parse parts
+            parts = body.split(b'--' + boundary)
+            image_data = None
+            souvenir_id = None
+
+            for part in parts:
+                if b'Content-Disposition' not in part:
+                    continue
+
+                # Get field name
+                if b'name="image"' in part:
+                    # Find start of image data (after double newline)
+                    header_end = part.find(b'\r\n\r\n')
+                    if header_end > 0:
+                        image_data = part[header_end + 4:]
+                        # Remove trailing boundary markers
+                        if image_data.endswith(b'\r\n'):
+                            image_data = image_data[:-2]
+                        if image_data.endswith(b'--'):
+                            image_data = image_data[:-2]
+                        if image_data.endswith(b'\r\n'):
+                            image_data = image_data[:-2]
+
+                elif b'name="souvenirId"' in part:
+                    header_end = part.find(b'\r\n\r\n')
+                    if header_end > 0:
+                        souvenir_id = part[header_end + 4:].strip().decode('utf-8')
+                        if souvenir_id.endswith('\r\n'):
+                            souvenir_id = souvenir_id[:-2]
+                        if souvenir_id.endswith('--'):
+                            souvenir_id = souvenir_id[:-2]
+                        souvenir_id = souvenir_id.strip()
+
+            if not image_data:
+                self.send_json_response({'success': False, 'error': 'Aucune image trouvee'})
+                return
+
+            if not souvenir_id:
+                souvenir_id = f"TEMP_{int(datetime.now().timestamp())}"
+
+            print(f"📤 Upload image pour souvenir: {souvenir_id}")
+
+            # Optimize image: resize to 360x360 and convert to WebP
+            try:
+                img = Image.open(io.BytesIO(image_data))
+
+                # Convert to RGB if necessary
+                if img.mode in ('RGBA', 'P', 'LA'):
+                    background = Image.new('RGB', img.size, (255, 255, 255))
+                    if img.mode == 'P':
+                        img = img.convert('RGBA')
+                    if img.mode in ('RGBA', 'LA'):
+                        background.paste(img, mask=img.split()[-1])
+                    img = background
+                elif img.mode != 'RGB':
+                    img = img.convert('RGB')
+
+                # Crop to square (center crop)
+                width, height = img.size
+                min_dim = min(width, height)
+                left = (width - min_dim) // 2
+                top = (height - min_dim) // 2
+                img = img.crop((left, top, left + min_dim, top + min_dim))
+
+                # Resize to 360x360
+                img = img.resize((360, 360), Image.LANCZOS)
+
+                # Convert to WebP
+                output = io.BytesIO()
+                img.save(output, format='WEBP', quality=80, optimize=True)
+                optimized_data = output.getvalue()
+
+                original_size = len(image_data) / 1024
+                optimized_size = len(optimized_data) / 1024
+                print(f"✅ Image optimisee: {original_size:.1f}KB -> {optimized_size:.1f}KB")
+
+            except Exception as e:
+                print(f"❌ Erreur optimisation image: {e}")
+                self.send_json_response({'success': False, 'error': f'Erreur optimisation: {str(e)}'})
+                return
+
+            # Upload to Firebase Storage
+            try:
+                from firebase_admin import storage
+                bucket = storage.bucket()
+                blob_path = f"souvenirs/{souvenir_id}/image_optimized.webp"
+                blob = bucket.blob(blob_path)
+                blob.upload_from_string(optimized_data, content_type='image/webp')
+                blob.make_public()
+                public_url = blob.public_url
+
+                print(f"✅ Image uploadee: {public_url}")
+
+                self.send_json_response({
+                    'success': True,
+                    'url': public_url,
+                    'originalSize': f"{original_size:.1f}KB",
+                    'optimizedSize': f"{optimized_size:.1f}KB"
+                })
+
+            except Exception as e:
+                print(f"❌ Erreur upload Firebase: {e}")
+                self.send_json_response({'success': False, 'error': f'Erreur upload: {str(e)}'})
+
+        except Exception as e:
+            print(f"❌ Erreur upload image souvenir: {e}")
+            import traceback
+            traceback.print_exc()
+            self.send_json_response({'success': False, 'error': str(e)})
+
+    # ===== HANDLERS BADGES =====
+
+    def handle_create_badge(self, post_data):
+        """Gère la création d'un badge"""
+        try:
+            import json
+            import base64
+            badge_data = json.loads(post_data)
+
+            # Handle image upload if provided
+            if 'imageBase64' in badge_data and badge_data['imageBase64']:
+                image_base64 = badge_data.pop('imageBase64')
+                content_type = badge_data.pop('imageContentType', 'image/png')
+                badge_id = badge_data.get('badgeId')
+
+                # Extract actual base64 data (remove data:image/...;base64, prefix)
+                if ',' in image_base64:
+                    image_base64 = image_base64.split(',')[1]
+
+                image_data = base64.b64decode(image_base64)
+                icon_url, error = self.firebase_manager.upload_badge_image(badge_id, image_data, content_type)
+
+                if icon_url:
+                    badge_data['iconPath'] = icon_url
+                    print(f"✅ Image uploadée pour badge {badge_id}: {icon_url}")
+                else:
+                    print(f"⚠️ Erreur upload image: {error}")
+
+            success, message = self.firebase_manager.save_badge(badge_data)
+
+            if success:
+                self.send_json_response({
+                    'success': True,
+                    'message': message,
+                    'badgeId': badge_data.get('badgeId')
+                })
+            else:
+                self.send_error_response(500, message)
+
+        except Exception as e:
+            print(f"❌ Erreur création badge: {e}")
+            self.send_error_response(500, f"Erreur serveur: {e}")
+
+    def handle_update_badge(self, badge_id, post_data):
+        """Gère la mise à jour d'un badge"""
+        try:
+            import json
+            import base64
+            badge_data = json.loads(post_data)
+            badge_data['badgeId'] = badge_id
+
+            # Handle image upload if provided
+            if 'imageBase64' in badge_data and badge_data['imageBase64']:
+                image_base64 = badge_data.pop('imageBase64')
+                content_type = badge_data.pop('imageContentType', 'image/png')
+
+                # Extract actual base64 data (remove data:image/...;base64, prefix)
+                if ',' in image_base64:
+                    image_base64 = image_base64.split(',')[1]
+
+                image_data = base64.b64decode(image_base64)
+                icon_url, error = self.firebase_manager.upload_badge_image(badge_id, image_data, content_type)
+
+                if icon_url:
+                    badge_data['iconPath'] = icon_url
+                    print(f"✅ Image uploadée pour badge {badge_id}: {icon_url}")
+                else:
+                    print(f"⚠️ Erreur upload image: {error}")
+            else:
+                # Remove empty image fields if present
+                badge_data.pop('imageBase64', None)
+                badge_data.pop('imageContentType', None)
+
+            success, message = self.firebase_manager.save_badge(badge_data)
+
+            if success:
+                self.send_json_response({
+                    'success': True,
+                    'message': message
+                })
+            else:
+                self.send_error_response(500, message)
+
+        except Exception as e:
+            print(f"❌ Erreur mise à jour badge: {e}")
+            self.send_error_response(500, f"Erreur serveur: {e}")
+
+    def handle_delete_badge(self, badge_id):
+        """Gère la suppression d'un badge"""
+        try:
+            success, message = self.firebase_manager.delete_badge(badge_id)
+
+            if success:
+                self.send_json_response({
+                    'success': True,
+                    'message': message
+                })
+            else:
+                self.send_error_response(500, message)
+
+        except Exception as e:
+            print(f"❌ Erreur suppression badge: {e}")
+            self.send_error_response(500, f"Erreur serveur: {e}")
+
     def send_homepage(self):
-        """Page d'accueil avec statut Firebase"""
+        """Page d'accueil avec dashboard amélioré"""
         firebase_status = "🔥 Firebase connecté" if self.firebase_manager.initialized else "🔧 Mode démo (Firebase déconnecté)"
         firebase_class = "alert-success" if self.firebase_manager.initialized else "alert-warning"
-        
+
         html = self.get_base_html('home', f"""
-            <div class="{firebase_class}">
-                <h3>🎭 Kuma Backoffice avec Firebase</h3>
-                <p><strong>Statut:</strong> {firebase_status}</p>
-                <p>Interface web complète avec intégration Firebase en temps réel.</p>
+            <style>
+                .dashboard-header {{
+                    background: linear-gradient(135deg, #FF6B35 0%, #F7931E 100%);
+                    color: white;
+                    padding: 30px;
+                    border-radius: 15px;
+                    margin-bottom: 30px;
+                    text-align: center;
+                }}
+                .dashboard-header h2 {{
+                    margin: 0 0 10px 0;
+                    font-size: 2em;
+                    border: none;
+                    color: white;
+                }}
+                .dashboard-header p {{
+                    margin: 0;
+                    opacity: 0.9;
+                    font-size: 1.1em;
+                }}
+                .metrics-row {{
+                    display: grid;
+                    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+                    gap: 20px;
+                    margin-bottom: 30px;
+                }}
+                .metric-box {{
+                    background: white;
+                    border-radius: 12px;
+                    padding: 20px;
+                    text-align: center;
+                    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+                    border-top: 4px solid #FF6B35;
+                    transition: transform 0.3s, box-shadow 0.3s;
+                }}
+                .metric-box:hover {{
+                    transform: translateY(-5px);
+                    box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+                }}
+                .metric-box .icon {{
+                    font-size: 2.5em;
+                    margin-bottom: 10px;
+                }}
+                .metric-box .value {{
+                    font-size: 2.2em;
+                    font-weight: bold;
+                    color: #FF6B35;
+                }}
+                .metric-box .label {{
+                    color: #666;
+                    font-size: 0.9em;
+                    margin-top: 5px;
+                }}
+                .dashboard-grid {{
+                    display: grid;
+                    grid-template-columns: 2fr 1fr;
+                    gap: 25px;
+                    margin-bottom: 30px;
+                }}
+                @media (max-width: 900px) {{
+                    .dashboard-grid {{
+                        grid-template-columns: 1fr;
+                    }}
+                }}
+                .dashboard-card {{
+                    background: white;
+                    border-radius: 12px;
+                    padding: 25px;
+                    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+                }}
+                .dashboard-card h3 {{
+                    margin: 0 0 20px 0;
+                    color: #333;
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
+                }}
+                .quick-actions {{
+                    display: grid;
+                    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+                    gap: 15px;
+                }}
+                .quick-action-btn {{
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    padding: 20px 15px;
+                    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+                    border: none;
+                    border-radius: 10px;
+                    cursor: pointer;
+                    transition: all 0.3s;
+                    text-decoration: none;
+                    color: #333;
+                }}
+                .quick-action-btn:hover {{
+                    background: linear-gradient(135deg, #FF6B35 0%, #F7931E 100%);
+                    color: white;
+                    transform: scale(1.05);
+                }}
+                .quick-action-btn .icon {{
+                    font-size: 2em;
+                    margin-bottom: 8px;
+                }}
+                .quick-action-btn .label {{
+                    font-size: 0.85em;
+                    font-weight: 500;
+                }}
+                .automation-status {{
+                    display: flex;
+                    flex-direction: column;
+                    gap: 12px;
+                }}
+                .service-item {{
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    padding: 12px;
+                    background: #f8f9fa;
+                    border-radius: 8px;
+                }}
+                .service-item .name {{
+                    font-weight: 500;
+                }}
+                .service-badge {{
+                    padding: 4px 10px;
+                    border-radius: 20px;
+                    font-size: 0.8em;
+                    font-weight: bold;
+                }}
+                .badge-active {{
+                    background: #d4edda;
+                    color: #155724;
+                }}
+                .badge-paused {{
+                    background: #fff3cd;
+                    color: #856404;
+                }}
+                .system-info {{
+                    display: grid;
+                    gap: 10px;
+                }}
+                .system-info-item {{
+                    display: flex;
+                    justify-content: space-between;
+                    padding: 10px;
+                    background: #f8f9fa;
+                    border-radius: 6px;
+                }}
+                .recent-activity {{
+                    max-height: 200px;
+                    overflow-y: auto;
+                }}
+                .activity-item {{
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
+                    padding: 10px;
+                    border-bottom: 1px solid #eee;
+                }}
+                .activity-item:last-child {{
+                    border-bottom: none;
+                }}
+                .activity-icon {{
+                    width: 35px;
+                    height: 35px;
+                    border-radius: 50%;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    background: #f0f0f0;
+                }}
+            </style>
+
+            <div class="dashboard-header">
+                <h2>🎭 Kuma Tales Backoffice</h2>
+                <p>Tableau de bord de gestion - {datetime.now().strftime('%d/%m/%Y %H:%M')}</p>
             </div>
-            
-            <div class="status-grid">
-                <div class="status-card">
-                    <h4>🔍 État Firebase</h4>
-                    <p><strong>Connexion:</strong> {"✅ Active" if self.firebase_manager.initialized else "❌ Indisponible"}</p>
-                    <p><strong>Base de données:</strong> {"Firestore" if self.firebase_manager.initialized else "Démo locale"}</p>
-                    <p><strong>Storage:</strong> {"Firebase Storage" if self.firebase_manager.initialized else "Non connecté"}</p>
+
+            <div class="metrics-row">
+                <div class="metric-box">
+                    <div class="icon">📚</div>
+                    <div class="value" id="stories-count">-</div>
+                    <div class="label">Histoires</div>
                 </div>
-                
-                <div class="status-card">
-                    <h4>📊 Aperçu rapide</h4>
-                    <div id="quick-stats">🔄 Chargement...</div>
+                <div class="metric-box">
+                    <div class="icon">🌍</div>
+                    <div class="value" id="countries-count">-</div>
+                    <div class="label">Pays actifs</div>
                 </div>
-                
-                <div class="status-card">
-                    <h4>⚙️ Système</h4>
-                    <p><strong>Python:</strong> {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}</p>
-                    <p><strong>Heure:</strong> {datetime.now().strftime('%H:%M:%S')}</p>
+                <div class="metric-box">
+                    <div class="icon">👥</div>
+                    <div class="value" id="users-count">-</div>
+                    <div class="label">Utilisateurs</div>
+                </div>
+                <div class="metric-box">
+                    <div class="icon">📢</div>
+                    <a href="/notifications-v2" style="text-decoration: none; color: inherit;">
+                        <div class="value" style="font-size: 1.2em;">Go</div>
+                        <div class="label">Marketing</div>
+                    </a>
                 </div>
             </div>
-            
+
+            <div class="dashboard-grid">
+                <div class="dashboard-card">
+                    <h3>⚡ Actions Rapides</h3>
+                    <div class="quick-actions">
+                        <a href="/stories/new" class="quick-action-btn">
+                            <span class="icon">➕</span>
+                            <span class="label">Nouvelle Histoire</span>
+                        </a>
+                        <a href="/notifications-v2" class="quick-action-btn">
+                            <span class="icon">📢</span>
+                            <span class="label">Marketing</span>
+                        </a>
+                        <a href="/mailing" class="quick-action-btn">
+                            <span class="icon">📧</span>
+                            <span class="label">Campagne Email</span>
+                        </a>
+                        <a href="/users" class="quick-action-btn">
+                            <span class="icon">👥</span>
+                            <span class="label">Utilisateurs</span>
+                        </a>
+                        <a href="/kpis" class="quick-action-btn">
+                            <span class="icon">📈</span>
+                            <span class="label">KPIs</span>
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <div class="dashboard-grid">
+                <div class="dashboard-card">
+                    <h3>⚙️ Informations Système</h3>
+                    <div class="system-info">
+                        <div class="system-info-item">
+                            <span>🔥 Firebase</span>
+                            <span>{"✅ Connecté" if self.firebase_manager.initialized else "❌ Déconnecté"}</span>
+                        </div>
+                        <div class="system-info-item">
+                            <span>🐍 Python</span>
+                            <span>{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}</span>
+                        </div>
+                        <div class="system-info-item">
+                            <span>🕐 Heure serveur</span>
+                            <span>{datetime.now().strftime('%H:%M:%S UTC')}</span>
+                        </div>
+                        <div class="system-info-item">
+                            <span>📦 Version</span>
+                            <span>v1.2.0</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="dashboard-card">
+                    <h3>📅 Prochains Schedules</h3>
+                    <div class="automation-status" id="next-schedules">
+                        <div class="service-item">
+                            <span class="name">🌅 Notif. Matin</span>
+                            <span class="service-badge badge-active">08:00 UTC</span>
+                        </div>
+                        <div class="service-item">
+                            <span class="name">🌆 Notif. Soir</span>
+                            <span class="service-badge badge-active">19:00 UTC</span>
+                        </div>
+                        <div class="service-item">
+                            <span class="name">📧 Onboarding</span>
+                            <span class="service-badge badge-active">Toutes les heures</span>
+                        </div>
+                        <div class="service-item">
+                            <span class="name">🔍 Inactifs</span>
+                            <span class="service-badge badge-active">10:00 UTC</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <script>
-                // Charger les stats rapides
-                fetch('/api/stories')
-                    .then(response => response.json())
-                    .then(data => {{
-                        const stats = document.getElementById('quick-stats');
-                        const stories = data.stories || [];
-                        stats.innerHTML = `
-                            <p><strong>Histoires:</strong> ${{stories.length}}</p>
-                            <p><strong>Publiées:</strong> ${{stories.filter(s => s.isPublished !== false).length}}</p>
-                        `;
-                    }})
-                    .catch(e => {{
-                        document.getElementById('quick-stats').innerHTML = '<p>❌ Erreur chargement</p>';
-                    }});
+                // Charger les statistiques
+                async function loadDashboardStats() {{
+                    try {{
+                        // Stories count
+                        const storiesRes = await fetch('/api/stories');
+                        const storiesData = await storiesRes.json();
+                        document.getElementById('stories-count').textContent = (storiesData.stories || []).length;
+
+                        // Countries count
+                        const countriesRes = await fetch('/api/countries');
+                        const countriesData = await countriesRes.json();
+                        const activeCountries = (countriesData.countries || []).filter(c => c.storyCount > 0).length;
+                        document.getElementById('countries-count').textContent = activeCountries;
+
+                        // Users count
+                        const usersRes = await fetch('/api/users');
+                        const usersData = await usersRes.json();
+                        document.getElementById('users-count').textContent = (usersData.users || []).length;
+                    }} catch(e) {{
+                        console.error('Erreur chargement stats:', e);
+                    }}
+                }}
+
+                // Charger tout au démarrage
+                loadDashboardStats();
             </script>
         """)
         self.send_html_response(html)
@@ -3897,8 +5150,8 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                 'both': 0
             }
             
-            from datetime import datetime, timedelta
-            now = datetime.now()
+            from datetime import datetime, timedelta, timezone
+            now = datetime.now(timezone.utc)
             
             # Créer un ensemble de tous les IDs utilisateur uniques
             all_user_ids = set(auth_users.keys()) | set(firestore_users.keys())
@@ -3936,22 +5189,26 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                 # Calculer la dernière activité (priorité aux données Auth pour les connexions)
                 last_activity = None
                 hours_since_activity = None
-                
+
                 if auth_data and auth_data.get('hours_since_activity') is not None:
                     hours_since_activity = auth_data['hours_since_activity']
-                    # Convertir timestamp en datetime (peut être int ou datetime)
+                    # Convertir timestamp en datetime UTC-aware
                     if auth_data.get('last_sign_in_time'):
                         ts = auth_data['last_sign_in_time']
                         if isinstance(ts, (int, float)):
-                            last_activity = datetime.fromtimestamp(ts / 1000)
-                        elif hasattr(ts, 'replace'):
-                            last_activity = ts.replace(tzinfo=None)
+                            last_activity = datetime.fromtimestamp(ts / 1000, tz=timezone.utc)
+                        elif hasattr(ts, 'tzinfo') and ts.tzinfo is None:
+                            last_activity = ts.replace(tzinfo=timezone.utc)
+                        else:
+                            last_activity = ts
                     elif auth_data.get('creation_time'):
                         ts = auth_data['creation_time']
                         if isinstance(ts, (int, float)):
-                            last_activity = datetime.fromtimestamp(ts / 1000)
-                        elif hasattr(ts, 'replace'):
-                            last_activity = ts.replace(tzinfo=None)
+                            last_activity = datetime.fromtimestamp(ts / 1000, tz=timezone.utc)
+                        elif hasattr(ts, 'tzinfo') and ts.tzinfo is None:
+                            last_activity = ts.replace(tzinfo=timezone.utc)
+                        else:
+                            last_activity = ts
                 
                 # Si pas de données Auth, utiliser Firestore
                 if not last_activity:
@@ -4022,9 +5279,12 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                             try:
                                 # Firestore Timestamp a un attribut 'seconds'
                                 if hasattr(completed_at, 'seconds'):
-                                    completed_dt = datetime.fromtimestamp(completed_at.seconds)
+                                    completed_dt = datetime.fromtimestamp(completed_at.seconds, tz=timezone.utc)
                                 elif isinstance(completed_at, datetime):
-                                    completed_dt = completed_at.replace(tzinfo=None) if completed_at.tzinfo else completed_at
+                                    if completed_at.tzinfo is None:
+                                        completed_dt = completed_at.replace(tzinfo=timezone.utc)
+                                    else:
+                                        completed_dt = completed_at
                                 else:
                                     completed_dt = None
 
@@ -4047,8 +5307,20 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                 # Convertir le temps d'écoute en minutes
                 total_listening_minutes = total_listening_time // 60 if total_listening_time > 0 else 0
 
-                # Pas de quiz score dans la structure actuelle - on met 0
-                avg_quiz_score = 0
+                # Calculer le score quiz moyen depuis progress
+                # Chaque histoire dans progress peut avoir un quizScore (0-3)
+                quiz_scores = []
+                for story_id, story_progress in progress_data.items():
+                    if isinstance(story_progress, dict):
+                        quiz_score = story_progress.get('quizScore')
+                        if quiz_score is not None and isinstance(quiz_score, (int, float)):
+                            quiz_scores.append(quiz_score)
+
+                # Calculer la moyenne en pourcentage (score max = 3)
+                if quiz_scores:
+                    avg_quiz_score = round((sum(quiz_scores) / len(quiz_scores)) / 3 * 100)
+                else:
+                    avg_quiz_score = 0
 
                 # Fallback pour le pays de départ si pas trouvé dans children_progress
                 if not start_country:
@@ -4063,25 +5335,48 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                 subscription_type = subscription_data.get('type', 'free')
                 subscription_active = subscription_data.get('active', False)
 
-                # Les statistiques des enfants ne sont plus dans children_progress
-                # On utilise les données du profil si disponibles
+                # Lire childrenProfiles - stocké comme Map/dict dans Flutter (pas une liste!)
+                # Structure: childrenProfiles: {childId: {id, name, age, ageGroup, ...}}
                 children_count = 0
                 children_stats = []
-                children_data = user_data.get('children', [])
-                if isinstance(children_data, list):
-                    children_count = len(children_data)
-                    for child in children_data:
+
+                # Essayer d'abord childrenProfiles (nouveau format Map)
+                children_profiles_data = user_data.get('childrenProfiles', {})
+                if isinstance(children_profiles_data, dict) and children_profiles_data:
+                    children_count = len(children_profiles_data)
+                    for child_id, child in children_profiles_data.items():
                         if isinstance(child, dict):
                             children_stats.append({
-                                'id': child.get('id', ''),
+                                'id': child_id,
                                 'name': child.get('name') or child.get('childName', 'Sans nom'),
                                 'age': child.get('age') or child.get('childAge'),
                                 'ageGroup': child.get('ageGroup'),
-                                'completedStories': stories_completed,  # Même valeur que l'utilisateur
-                                'currentStreak': current_streak,
+                                'completedStories': len(child.get('completedStories', [])) if isinstance(child.get('completedStories'), list) else stories_completed,
+                                'currentStreak': child.get('currentStreak', 0) or current_streak,
                                 'level': child.get('level', 1),
-                                'startCountry': start_country
+                                'startCountry': start_country,
+                                'avatarUrl': child.get('avatarUrl'),
+                                'animalAvatar': child.get('animalAvatar'),
+                                'isActive': child.get('isActive', True)
                             })
+
+                # Fallback: essayer l'ancien format 'children' (liste)
+                if children_count == 0:
+                    children_data = user_data.get('children', [])
+                    if isinstance(children_data, list):
+                        children_count = len(children_data)
+                        for child in children_data:
+                            if isinstance(child, dict):
+                                children_stats.append({
+                                    'id': child.get('id', ''),
+                                    'name': child.get('name') or child.get('childName', 'Sans nom'),
+                                    'age': child.get('age') or child.get('childAge'),
+                                    'ageGroup': child.get('ageGroup'),
+                                    'completedStories': stories_completed,
+                                    'currentStreak': current_streak,
+                                    'level': child.get('level', 1),
+                                    'startCountry': start_country
+                                })
 
                 # Créer les informations utilisateur
                 user_info = {
@@ -4121,7 +5416,10 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                         'emailVerified': auth_data.get('email_verified') if auth_data else None,
                         'disabled': auth_data.get('disabled') if auth_data else None,
                         'phoneNumber': auth_data.get('phone_number') if auth_data else None
-                    } if auth_data else None
+                    } if auth_data else None,
+                    # FCM token pour les notifications push
+                    'fcmToken': user_data.get('fcmToken'),
+                    'hasFcmToken': bool(user_data.get('fcmToken'))
                 }
                 
                 users.append(user_info)
@@ -4337,32 +5635,41 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
         return None
     
     def parse_date(self, date_value):
-        """Parse différents formats de date"""
-        from datetime import datetime
-        
+        """Parse différents formats de date - retourne toujours un datetime UTC-aware"""
+        from datetime import datetime, timezone
+
         if not date_value:
             return None
-            
+
         if isinstance(date_value, datetime):
+            # Si naive, ajouter UTC
+            if date_value.tzinfo is None:
+                return date_value.replace(tzinfo=timezone.utc)
             return date_value
-        
+
         if hasattr(date_value, 'timestamp'):  # Firestore Timestamp
-            return date_value.replace(tzinfo=None)
-            
+            # Convertir en datetime UTC-aware
+            try:
+                dt = datetime.fromtimestamp(date_value.timestamp(), tz=timezone.utc)
+                return dt
+            except:
+                return None
+
         if isinstance(date_value, str):
             try:
                 # Essayer différents formats
                 for fmt in ['%Y-%m-%dT%H:%M:%S.%fZ', '%Y-%m-%dT%H:%M:%SZ', '%Y-%m-%dT%H:%M:%S']:
                     try:
-                        return datetime.strptime(date_value.replace('Z', ''), fmt.replace('Z', ''))
+                        dt = datetime.strptime(date_value.replace('Z', ''), fmt.replace('Z', ''))
+                        return dt.replace(tzinfo=timezone.utc)
                     except:
                         continue
-                        
+
                 # Format ISO avec timezone
                 return datetime.fromisoformat(date_value.replace('Z', '+00:00'))
             except:
                 pass
-        
+
         return None
     
     def delete_single_user(self, user_id):
@@ -4370,50 +5677,189 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
         try:
             if not self.firebase_manager.initialized:
                 return {'success': False, 'error': 'Firebase non connecté'}
-            
-            # Import du script de nettoyage pour utiliser ses méthodes
-            from cleanup_anonymous_users import AnonymousUsersCleanup
-            
-            # Créer une instance du nettoyeur en mode réel
-            cleanup = AnonymousUsersCleanup(dry_run=False, max_deletions=1)
-            if not cleanup.initialize_firebase():
-                return {'success': False, 'error': 'Impossible d\'initialiser Firebase'}
-            
-            # Récupérer les données utilisateur pour backup
-            user_doc = self.firebase_manager.db.collection('users').document(user_id).get()
-            if not user_doc.exists:
-                return {'success': False, 'error': 'Utilisateur non trouvé'}
-            
-            user_data = user_doc.to_dict()
-            
-            # Créer un objet AnonymousUser pour la suppression
-            from cleanup_anonymous_users import AnonymousUser
-            from datetime import datetime
-            
-            anonymous_user = AnonymousUser(
-                user_id=user_id,
-                collection='users',
-                last_activity=datetime.now(),
-                inactive_hours=0,
-                data_size=len(str(user_data)),
-                related_collections=cleanup.find_related_data(user_id)
-            )
-            
-            # Effectuer la suppression
-            success = cleanup.delete_user_data(anonymous_user)
-            
-            if success:
-                return {
-                    'success': True,
-                    'message': f'Utilisateur {user_id} supprimé avec succès',
-                    'backup_created': True
-                }
-            else:
-                return {'success': False, 'error': 'Erreur lors de la suppression'}
-                
+
+            db = self.firebase_manager.db
+            deleted_collections = []
+            user_email = 'N/A'
+
+            # Vérifier si l'utilisateur existe dans Firestore
+            user_doc = db.collection('users').document(user_id).get()
+            user_exists_in_firestore = user_doc.exists
+
+            if user_exists_in_firestore:
+                user_data = user_doc.to_dict()
+                user_email = user_data.get('email', 'N/A')
+
+                # 1. Supprimer le document utilisateur principal
+                db.collection('users').document(user_id).delete()
+                deleted_collections.append('users')
+
+                # 2. Supprimer les données liées dans d'autres collections
+                related_collections = [
+                    ('user_journeys', user_id),      # Document avec user_id comme ID
+                    ('progress', 'user_id'),          # Documents avec champ user_id
+                    ('user_sessions', 'user_id'),
+                    ('user_preferences', 'user_id'),
+                    ('user_analytics', 'user_id'),
+                    ('notifications', 'user_id'),
+                    ('user_email_queue', 'user_id'),
+                ]
+
+                for collection_name, field_or_id in related_collections:
+                    try:
+                        if field_or_id == user_id:
+                            # Document direct avec l'ID
+                            doc_ref = db.collection(collection_name).document(user_id)
+                            if doc_ref.get().exists:
+                                doc_ref.delete()
+                                deleted_collections.append(collection_name)
+                        else:
+                            # Recherche par champ user_id
+                            query = db.collection(collection_name).where(field_or_id, '==', user_id)
+                            docs = list(query.stream())
+                            for doc in docs:
+                                doc.reference.delete()
+                            if docs:
+                                deleted_collections.append(f"{collection_name} ({len(docs)})")
+                    except Exception:
+                        # Continuer même si une collection n'existe pas
+                        pass
+
+            # 3. Toujours essayer de supprimer de Firebase Auth
+            deleted_from_auth = False
+            try:
+                from firebase_admin import auth
+                # Récupérer l'email avant suppression si pas encore connu
+                if user_email == 'N/A':
+                    try:
+                        auth_user = auth.get_user(user_id)
+                        user_email = auth_user.email or 'N/A'
+                    except:
+                        pass
+                auth.delete_user(user_id)
+                deleted_collections.append('firebase_auth')
+                deleted_from_auth = True
+            except Exception as auth_err:
+                # L'utilisateur peut ne pas exister en Auth
+                print(f"[DEBUG] Auth delete failed: {auth_err}")
+
+            # Vérifier qu'au moins une suppression a réussi
+            if not user_exists_in_firestore and not deleted_from_auth:
+                return {'success': False, 'error': 'Utilisateur non trouvé (ni dans Firestore, ni dans Auth)'}
+
+            return {
+                'success': True,
+                'message': f'Utilisateur {user_id} supprimé avec succès',
+                'deleted_from': deleted_collections,
+                'email': user_email
+            }
+
         except Exception as e:
-            return {'success': False, 'error': str(e)}
-    
+            import traceback
+            return {
+                'success': False,
+                'error': f'Erreur: {str(e)}',
+                'details': traceback.format_exc()
+            }
+
+    def handle_secure_delete_user(self, user_id, post_data):
+        """Gère la suppression d'un utilisateur avec vérification du PIN admin"""
+        try:
+            import json
+            data = json.loads(post_data) if post_data else {}
+            admin_pin = data.get('admin_pin', '')
+
+            # Vérifier le PIN administrateur
+            if not admin_pin:
+                self.send_json_response({
+                    'success': False,
+                    'error': 'Code PIN administrateur requis'
+                })
+                return
+
+            # Vérifier le PIN avec le security_manager
+            expected_pin = self.security_manager.settings.get('admin_pin', '22160')
+            if admin_pin != expected_pin:
+                self.send_json_response({
+                    'success': False,
+                    'error': 'Code PIN administrateur incorrect'
+                })
+                return
+
+            # PIN correct, procéder à la suppression
+            result = self.delete_single_user(user_id)
+            self.send_json_response(result)
+
+        except Exception as e:
+            self.send_json_response({
+                'success': False,
+                'error': f'Erreur: {str(e)}'
+            })
+
+    def handle_secure_bulk_delete(self, post_data):
+        """Gère la suppression en masse avec vérification du PIN admin"""
+        try:
+            import json
+            data = json.loads(post_data) if post_data else {}
+            admin_pin = data.get('admin_pin', '')
+            user_ids = data.get('userIds', [])
+
+            # Vérifier le PIN administrateur
+            if not admin_pin:
+                self.send_json_response({
+                    'success': False,
+                    'error': 'Code PIN administrateur requis'
+                })
+                return
+
+            # Vérifier le PIN avec le security_manager
+            expected_pin = self.security_manager.settings.get('admin_pin', '22160')
+            if admin_pin != expected_pin:
+                self.send_json_response({
+                    'success': False,
+                    'error': 'Code PIN administrateur incorrect'
+                })
+                return
+
+            # Vérifications de sécurité
+            if not user_ids:
+                self.send_json_response({
+                    'success': False,
+                    'error': 'Aucun utilisateur spécifié'
+                })
+                return
+
+            if len(user_ids) > 100:
+                self.send_json_response({
+                    'success': False,
+                    'error': 'Maximum 100 utilisateurs par opération'
+                })
+                return
+
+            # PIN correct, procéder aux suppressions
+            deleted_count = 0
+            errors = []
+
+            for user_id in user_ids:
+                result = self.delete_single_user(user_id)
+                if result['success']:
+                    deleted_count += 1
+                else:
+                    errors.append(f"{user_id}: {result['error']}")
+
+            self.send_json_response({
+                'success': True,
+                'deletedCount': deleted_count,
+                'errors': errors[:5],
+                'totalRequested': len(user_ids)
+            })
+
+        except Exception as e:
+            self.send_json_response({
+                'success': False,
+                'error': f'Erreur: {str(e)}'
+            })
+
     def handle_bulk_delete(self):
         """Gère la suppression en masse d'utilisateurs"""
         try:
@@ -4590,7 +6036,1451 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                 
         except Exception as e:
             self.send_json_response({'success': False, 'error': str(e)})
-    
+
+    def send_souvenirs_page(self):
+        """Page de gestion des souvenirs"""
+        souvenirs = self.firebase_manager.get_souvenirs()
+        stats = self.firebase_manager.get_souvenirs_stats()
+
+        # Catégories avec emojis
+        category_labels = {
+            'mask': '🎭 Masques',
+            'instrument': '🎵 Instruments',
+            'textile': '🧵 Textiles',
+            'sculpture': '🗿 Sculptures',
+            'jewelry': '💎 Bijoux',
+            'pottery': '🏺 Poterie',
+            'basket': '🧺 Paniers',
+            'symbol': '✨ Symboles'
+        }
+
+        region_labels = {
+            'northAfrica': 'Afrique du Nord',
+            'westAfrica': 'Afrique de l\'Ouest',
+            'centralAfrica': 'Afrique Centrale',
+            'eastAfrica': 'Afrique de l\'Est',
+            'southernAfrica': 'Afrique Australe'
+        }
+
+        # Organiser par pays
+        by_country = {}
+        for s in souvenirs:
+            cc = s.get('countryCode', 'XX')
+            if cc not in by_country:
+                by_country[cc] = {
+                    'name': s.get('countryName', cc),
+                    'flag': s.get('flag', '🏳️'),
+                    'souvenirs': []
+                }
+            by_country[cc]['souvenirs'].append(s)
+
+        # Générer les cartes de statistiques
+        stats_html = f"""
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-number">{stats.get('total', 0)}</div>
+                <div class="stat-label">Total Souvenirs</div>
+            </div>
+            <div class="stat-card" style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%);">
+                <div class="stat-number">{stats.get('active', 0)}</div>
+                <div class="stat-label">✅ Actifs</div>
+            </div>
+            <div class="stat-card" style="background: linear-gradient(135deg, #dc3545 0%, #e83e8c 100%);">
+                <div class="stat-number">{stats.get('inactive', 0)}</div>
+                <div class="stat-label">⏸️ Inactifs</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">{stats.get('countries', 0)}</div>
+                <div class="stat-label">Pays</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">{len(stats.get('by_category', {}))}</div>
+                <div class="stat-label">Catégories</div>
+            </div>
+        </div>
+        """
+
+        # Générer les cartes par catégorie
+        cat_stats = stats.get('by_category', {})
+        cat_cards = ""
+        for cat, count in sorted(cat_stats.items()):
+            label = category_labels.get(cat, cat)
+            cat_cards += f'<span class="badge badge-category">{label}: {count}</span> '
+
+        # Générer la liste des souvenirs par pays
+        souvenirs_html = ""
+        for cc, data in sorted(by_country.items()):
+            souvenirs_html += f"""
+            <div class="country-section">
+                <h3 class="country-title">{data['flag']} {data['name']} ({cc}) - {len(data['souvenirs'])} souvenirs</h3>
+                <div class="souvenirs-grid">
+            """
+            for s in sorted(data['souvenirs'], key=lambda x: x.get('souvenirId', '')):
+                sid = s.get('souvenirId', s.get('id', 'N/A'))
+                name = s.get('name', 'Sans nom')
+                cat = s.get('category', 'symbol')
+                cat_label = category_labels.get(cat, cat)
+                img_url = s.get('imageUrl', '')
+                is_active = s.get('isActive', True)
+                status_badge = '✅' if is_active else '⏸️'
+                status_style = 'background: #28a745;' if is_active else 'background: #dc3545;'
+                card_opacity = '' if is_active else 'opacity: 0.6;'
+                img_html = f'<img src="{img_url}" alt="{name}" class="souvenir-img">' if img_url else '<div class="souvenir-img-placeholder">📷</div>'
+
+                souvenirs_html += f"""
+                <div class="souvenir-card" data-id="{sid}" style="{card_opacity}">
+                    <div style="position: absolute; top: 5px; right: 5px; {status_style} color: white; padding: 2px 6px; border-radius: 4px; font-size: 12px;">{status_badge}</div>
+                    {img_html}
+                    <div class="souvenir-info">
+                        <div class="souvenir-id">{sid}</div>
+                        <div class="souvenir-name">{name}</div>
+                        <div class="souvenir-category">{cat_label}</div>
+                    </div>
+                    <div class="souvenir-actions">
+                        <button class="btn btn-sm btn-edit" onclick="editSouvenir('{sid}')">✏️</button>
+                        <button class="btn btn-sm btn-delete" onclick="deleteSouvenir('{sid}')">🗑️</button>
+                    </div>
+                </div>
+                """
+            souvenirs_html += "</div></div>"
+
+        html = self.get_base_html('souvenirs', f"""
+            <style>
+                .stats-grid {{
+                    display: grid;
+                    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+                    gap: 20px;
+                    margin-bottom: 30px;
+                }}
+                .stat-card {{
+                    background: linear-gradient(135deg, #FF6B35 0%, #F7931E 100%);
+                    color: white;
+                    padding: 20px;
+                    border-radius: 10px;
+                    text-align: center;
+                }}
+                .stat-number {{
+                    font-size: 2.5em;
+                    font-weight: bold;
+                }}
+                .stat-label {{
+                    font-size: 0.9em;
+                    opacity: 0.9;
+                }}
+                .badge-category {{
+                    background: #e0e0e0;
+                    color: #333;
+                    padding: 5px 10px;
+                    border-radius: 15px;
+                    margin: 2px;
+                    display: inline-block;
+                }}
+                .country-section {{
+                    margin-bottom: 30px;
+                    background: #f9f9f9;
+                    padding: 20px;
+                    border-radius: 10px;
+                }}
+                .country-title {{
+                    margin: 0 0 15px 0;
+                    color: #333;
+                    border-bottom: 2px solid #FF6B35;
+                    padding-bottom: 10px;
+                }}
+                .souvenirs-grid {{
+                    display: grid;
+                    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+                    gap: 15px;
+                }}
+                .souvenir-card {{
+                    background: white;
+                    border-radius: 10px;
+                    padding: 15px;
+                    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+                    display: flex;
+                    flex-direction: column;
+                    transition: transform 0.2s;
+                    position: relative;
+                }}
+                .souvenir-card:hover {{
+                    transform: translateY(-3px);
+                    box-shadow: 0 4px 15px rgba(0,0,0,0.15);
+                }}
+                .souvenir-img {{
+                    width: 100%;
+                    height: 120px;
+                    object-fit: cover;
+                    border-radius: 8px;
+                    margin-bottom: 10px;
+                }}
+                .souvenir-img-placeholder {{
+                    width: 100%;
+                    height: 120px;
+                    background: #f0f0f0;
+                    border-radius: 8px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    font-size: 2em;
+                    margin-bottom: 10px;
+                }}
+                .souvenir-id {{
+                    font-size: 0.8em;
+                    color: #888;
+                    font-family: monospace;
+                }}
+                .souvenir-name {{
+                    font-weight: bold;
+                    margin: 5px 0;
+                }}
+                .souvenir-category {{
+                    font-size: 0.85em;
+                    color: #666;
+                }}
+                .souvenir-actions {{
+                    margin-top: auto;
+                    padding-top: 10px;
+                    display: flex;
+                    gap: 10px;
+                }}
+                .btn-sm {{
+                    padding: 5px 10px;
+                    border: none;
+                    border-radius: 5px;
+                    cursor: pointer;
+                }}
+                .btn-edit {{
+                    background: #4CAF50;
+                    color: white;
+                }}
+                .btn-delete {{
+                    background: #f44336;
+                    color: white;
+                }}
+                .filter-bar {{
+                    display: flex;
+                    gap: 15px;
+                    margin-bottom: 20px;
+                    flex-wrap: wrap;
+                }}
+                .filter-bar select, .filter-bar input {{
+                    padding: 8px 12px;
+                    border: 1px solid #ddd;
+                    border-radius: 5px;
+                }}
+
+                /* Modal */
+                .modal {{
+                    display: none;
+                    position: fixed;
+                    top: 0;
+                    left: 0;
+                    width: 100%;
+                    height: 100%;
+                    background: rgba(0,0,0,0.5);
+                    z-index: 1000;
+                    justify-content: center;
+                    align-items: center;
+                }}
+                .modal.active {{
+                    display: flex;
+                }}
+                .modal-content {{
+                    background: white;
+                    padding: 30px;
+                    border-radius: 15px;
+                    max-width: 600px;
+                    width: 90%;
+                    max-height: 80vh;
+                    overflow-y: auto;
+                }}
+                .modal-header {{
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    margin-bottom: 20px;
+                }}
+                .modal-close {{
+                    background: none;
+                    border: none;
+                    font-size: 1.5em;
+                    cursor: pointer;
+                }}
+                .form-group {{
+                    margin-bottom: 15px;
+                }}
+                .form-group label {{
+                    display: block;
+                    margin-bottom: 5px;
+                    font-weight: bold;
+                }}
+                .form-group input, .form-group select, .form-group textarea {{
+                    width: 100%;
+                    padding: 10px;
+                    border: 1px solid #ddd;
+                    border-radius: 5px;
+                }}
+                .form-row {{
+                    display: grid;
+                    grid-template-columns: 1fr 1fr;
+                    gap: 15px;
+                }}
+            </style>
+
+            <h2>🎁 Gestion des Souvenirs</h2>
+
+            {stats_html}
+
+            <div style="margin-bottom: 20px;">
+                <h4>📊 Par catégorie</h4>
+                {cat_cards}
+            </div>
+
+            <div class="filter-bar">
+                <select id="filterCountry" onchange="filterSouvenirs()">
+                    <option value="">Tous les pays</option>
+                    {''.join([f'<option value="{cc}">{data["flag"]} {data["name"]}</option>' for cc, data in sorted(by_country.items())])}
+                </select>
+                <select id="filterCategory" onchange="filterSouvenirs()">
+                    <option value="">Toutes catégories</option>
+                    {''.join([f'<option value="{cat}">{label}</option>' for cat, label in category_labels.items()])}
+                </select>
+                <input type="text" id="searchSouvenir" placeholder="🔍 Rechercher..." oninput="filterSouvenirs()">
+                <button class="btn btn-primary" onclick="openNewSouvenirModal()">➕ Nouveau Souvenir</button>
+            </div>
+
+            <div id="souvenirsList">
+                {souvenirs_html}
+            </div>
+
+            <!-- Modal Edition -->
+            <div id="souvenirModal" class="modal">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3 id="modalTitle">Éditer Souvenir</h3>
+                        <button class="modal-close" onclick="closeModal()">&times;</button>
+                    </div>
+                    <form id="souvenirForm" onsubmit="saveSouvenir(event)">
+                        <input type="hidden" id="souvenirId" name="souvenirId">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Code Pays</label>
+                                <input type="text" id="countryCode" name="countryCode" maxlength="2" required>
+                            </div>
+                            <div class="form-group">
+                                <label>Nom du Pays</label>
+                                <input type="text" id="countryName" name="countryName">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Drapeau (emoji)</label>
+                                <input type="text" id="flag" name="flag">
+                            </div>
+                            <div class="form-group">
+                                <label>Catégorie</label>
+                                <select id="category" name="category">
+                                    {''.join([f'<option value="{cat}">{label}</option>' for cat, label in category_labels.items()])}
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Nom du Souvenir (FR)</label>
+                            <input type="text" id="name" name="name" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Nom du Souvenir (EN)</label>
+                            <input type="text" id="nameEn" name="nameEn">
+                        </div>
+                        <div class="form-group">
+                            <label>Description</label>
+                            <textarea id="description" name="description" rows="3"></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label>Fun Fact (FR)</label>
+                            <textarea id="funFact" name="funFact" rows="3"></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label>Fun Fact (EN)</label>
+                            <textarea id="funFactEn" name="funFactEn" rows="3"></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label>Image</label>
+                            <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 10px;">
+                                <input type="file" id="imageFile" accept="image/*" onchange="uploadImage(this)" style="flex: 1;">
+                                <span id="uploadStatus"></span>
+                            </div>
+                            <small style="color: #666; display: block; margin-bottom: 10px;">📤 Upload direct (optimise automatiquement en 360x360 WebP)</small>
+                            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+                                <span style="color: #999;">— ou —</span>
+                            </div>
+                            <input type="url" id="imageUrl" name="imageUrl" placeholder="https://..." style="width: 100%;">
+                            <small style="color: #666; display: block; margin-top: 5px;">🔗 URL directe (Firebase Storage, etc.)</small>
+                            <div id="imagePreview" style="margin-top: 10px; display: none;">
+                                <img id="previewImg" style="max-width: 150px; max-height: 150px; border-radius: 8px; border: 2px solid #ddd;">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Région</label>
+                            <select id="region" name="region">
+                                {''.join([f'<option value="{region}">{label}</option>' for region, label in region_labels.items()])}
+                            </select>
+                        </div>
+                        <div class="form-group" style="display: flex; align-items: center; gap: 10px; margin-top: 15px; padding: 10px; background: #f8f9fa; border-radius: 8px;">
+                            <label style="margin: 0; font-weight: bold;">⚡ Statut:</label>
+                            <label class="toggle-switch" style="position: relative; display: inline-block; width: 50px; height: 26px;">
+                                <input type="checkbox" id="isActive" name="isActive" checked style="opacity: 0; width: 0; height: 0;">
+                                <span style="position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .3s; border-radius: 26px;"></span>
+                            </label>
+                            <span id="isActiveLabel" style="color: #28a745; font-weight: bold;">✅ Actif</span>
+                        </div>
+                        <div style="display: flex; gap: 10px; margin-top: 20px;">
+                            <button type="submit" class="btn btn-primary">💾 Sauvegarder</button>
+                            <button type="button" class="btn btn-secondary" onclick="closeModal()">Annuler</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <script>
+                function filterSouvenirs() {{
+                    const country = document.getElementById('filterCountry').value;
+                    const category = document.getElementById('filterCategory').value;
+                    const search = document.getElementById('searchSouvenir').value.toLowerCase();
+
+                    document.querySelectorAll('.country-section').forEach(section => {{
+                        const sectionCountry = section.querySelector('.country-title').textContent;
+                        let hasVisibleSouvenirs = false;
+
+                        section.querySelectorAll('.souvenir-card').forEach(card => {{
+                            const cardCategory = card.querySelector('.souvenir-category').textContent;
+                            const cardName = card.querySelector('.souvenir-name').textContent.toLowerCase();
+                            const cardId = card.dataset.id;
+
+                            let visible = true;
+                            if (country && !sectionCountry.includes('(' + country + ')')) visible = false;
+                            if (category && !cardCategory.toLowerCase().includes(category)) visible = false;
+                            if (search && !cardName.includes(search) && !cardId.toLowerCase().includes(search)) visible = false;
+
+                            card.style.display = visible ? 'flex' : 'none';
+                            if (visible) hasVisibleSouvenirs = true;
+                        }});
+
+                        section.style.display = hasVisibleSouvenirs ? 'block' : 'none';
+                    }});
+                }}
+
+                function openNewSouvenirModal() {{
+                    document.getElementById('modalTitle').textContent = 'Nouveau Souvenir';
+                    document.getElementById('souvenirForm').reset();
+                    document.getElementById('souvenirId').value = '';
+                    // Initialiser le toggle isActive en mode actif
+                    document.getElementById('isActive').checked = true;
+                    updateIsActiveLabel(true);
+                    document.getElementById('souvenirModal').classList.add('active');
+                }}
+
+                function editSouvenir(id) {{
+                    fetch('/api/souvenirs/' + id)
+                        .then(r => r.json())
+                        .then(data => {{
+                            const s = data.souvenir;
+                            document.getElementById('modalTitle').textContent = 'Éditer: ' + id;
+                            document.getElementById('souvenirId').value = s.souvenirId || s.id;
+                            document.getElementById('countryCode').value = s.countryCode || '';
+                            document.getElementById('countryName').value = s.countryName || '';
+                            document.getElementById('flag').value = s.flag || '';
+                            document.getElementById('name').value = s.name || '';
+                            document.getElementById('nameEn').value = s.nameEn || '';
+                            document.getElementById('description').value = s.description || '';
+                            document.getElementById('funFact').value = s.funFact || '';
+                            document.getElementById('funFactEn').value = s.funFactEn || '';
+                            document.getElementById('imageUrl').value = s.imageUrl || '';
+                            showExistingImage(s.imageUrl);
+                            document.getElementById('category').value = s.category || 'symbol';
+                            document.getElementById('region').value = s.region || 'westAfrica';
+                            // Gérer le toggle isActive
+                            const isActive = s.isActive !== false;  // true par défaut
+                            document.getElementById('isActive').checked = isActive;
+                            updateIsActiveLabel(isActive);
+                            document.getElementById('souvenirModal').classList.add('active');
+                        }});
+                }}
+
+                // Met à jour le label et style du toggle isActive
+                function updateIsActiveLabel(isActive) {{
+                    const label = document.getElementById('isActiveLabel');
+                    const toggle = document.getElementById('isActive').parentElement.querySelector('span');
+                    if (isActive) {{
+                        label.textContent = '✅ Actif';
+                        label.style.color = '#28a745';
+                        toggle.style.background = '#28a745';
+                    }} else {{
+                        label.textContent = '⏸️ Inactif';
+                        label.style.color = '#dc3545';
+                        toggle.style.background = '#dc3545';
+                    }}
+                }}
+
+                // Event listener pour le toggle
+                document.getElementById('isActive').addEventListener('change', function() {{
+                    updateIsActiveLabel(this.checked);
+                }});
+
+                function closeModal() {{
+                    document.getElementById('souvenirModal').classList.remove('active');
+                }}
+
+                function saveSouvenir(event) {{
+                    event.preventDefault();
+                    const form = document.getElementById('souvenirForm');
+                    const formData = new FormData(form);
+                    const data = Object.fromEntries(formData.entries());
+                    data.countryCode = data.countryCode.toUpperCase();
+
+                    // Gérer le checkbox isActive manuellement (non inclus si non coché)
+                    data.isActive = document.getElementById('isActive').checked;
+
+                    const isNew = !data.souvenirId;
+                    const url = isNew ? '/api/souvenirs' : '/api/souvenirs/' + data.souvenirId + '/update';
+
+                    fetch(url, {{
+                        method: 'POST',
+                        headers: {{'Content-Type': 'application/json'}},
+                        body: JSON.stringify(data)
+                    }})
+                    .then(r => r.json())
+                    .then(result => {{
+                        if (result.success) {{
+                            showToast(result.message, 'success');
+                            setTimeout(() => location.reload(), 1000);
+                        }} else {{
+                            showToast(result.error || 'Erreur', 'error');
+                        }}
+                    }})
+                    .catch(err => showToast('Erreur: ' + err, 'error'));
+                }}
+
+                function deleteSouvenir(id) {{
+                    if (!confirm('Supprimer le souvenir ' + id + ' ?')) return;
+
+                    fetch('/api/souvenirs/' + id + '/delete', {{method: 'POST'}})
+                        .then(r => r.json())
+                        .then(result => {{
+                            if (result.success) {{
+                                showToast('Souvenir supprimé', 'success');
+                                setTimeout(() => location.reload(), 1000);
+                            }} else {{
+                                showToast(result.error || 'Erreur', 'error');
+                            }}
+                        }});
+                }}
+
+                // Toast notification
+                function showToast(message, type) {{
+                    const toast = document.createElement('div');
+                    toast.style.cssText = 'position:fixed;bottom:20px;right:20px;padding:15px 25px;border-radius:8px;color:white;z-index:9999;';
+                    toast.style.background = type === 'success' ? '#4CAF50' : '#f44336';
+                    toast.textContent = message;
+                    document.body.appendChild(toast);
+                    setTimeout(() => toast.remove(), 3000);
+                }}
+
+                // Upload image
+                async function uploadImage(input) {{
+                    if (!input.files || !input.files[0]) return;
+
+                    const file = input.files[0];
+                    const statusEl = document.getElementById('uploadStatus');
+                    const previewDiv = document.getElementById('imagePreview');
+                    const previewImg = document.getElementById('previewImg');
+
+                    // Validate file type
+                    if (!file.type.startsWith('image/')) {{
+                        showToast('Veuillez selectionner une image', 'error');
+                        return;
+                    }}
+
+                    // Show preview
+                    const reader = new FileReader();
+                    reader.onload = (e) => {{
+                        previewImg.src = e.target.result;
+                        previewDiv.style.display = 'block';
+                    }};
+                    reader.readAsDataURL(file);
+
+                    // Get souvenir ID for naming
+                    let souvenirId = document.getElementById('souvenirId').value;
+                    if (!souvenirId) {{
+                        const countryCode = document.getElementById('countryCode').value || 'XX';
+                        souvenirId = countryCode.toUpperCase() + '_' + Date.now();
+                    }}
+
+                    // Upload
+                    statusEl.innerHTML = '<span style="color: #FF6B35;">⏳ Upload en cours...</span>';
+
+                    const formData = new FormData();
+                    formData.append('image', file);
+                    formData.append('souvenirId', souvenirId);
+
+                    try {{
+                        const response = await fetch('/api/souvenirs/upload-image', {{
+                            method: 'POST',
+                            body: formData
+                        }});
+
+                        const result = await response.json();
+
+                        if (result.success) {{
+                            document.getElementById('imageUrl').value = result.url;
+                            statusEl.innerHTML = '<span style="color: #28a745;">✅ Image uploadee!</span>';
+                            showToast('Image optimisee et uploadee!', 'success');
+                            // Update preview with optimized image
+                            previewImg.src = result.url;
+                        }} else {{
+                            statusEl.innerHTML = '<span style="color: #dc3545;">❌ Erreur</span>';
+                            showToast(result.error || 'Erreur upload', 'error');
+                        }}
+                    }} catch (err) {{
+                        statusEl.innerHTML = '<span style="color: #dc3545;">❌ Erreur</span>';
+                        showToast('Erreur: ' + err.message, 'error');
+                    }}
+                }}
+
+                // Show existing image on edit
+                function showExistingImage(url) {{
+                    if (url) {{
+                        document.getElementById('previewImg').src = url;
+                        document.getElementById('imagePreview').style.display = 'block';
+                    }} else {{
+                        document.getElementById('imagePreview').style.display = 'none';
+                    }}
+                }}
+
+                // Preview image when URL changes
+                document.getElementById('imageUrl').addEventListener('change', function() {{
+                    showExistingImage(this.value);
+                }});
+                document.getElementById('imageUrl').addEventListener('input', function() {{
+                    if (this.value && this.value.startsWith('http')) {{
+                        showExistingImage(this.value);
+                    }}
+                }})
+            </script>
+        """)
+
+        self.send_html_response(html)
+
+    def send_badges_page(self):
+        """Page de gestion des badges"""
+        badges = self.firebase_manager.get_badges()
+        stats = self.firebase_manager.get_badges_stats()
+
+        # Labels pour l'affichage
+        rarity_labels = {
+            'common': {'label': 'Commun', 'color': '#9E9E9E', 'emoji': '⚪'},
+            'rare': {'label': 'Rare', 'color': '#2196F3', 'emoji': '🔵'},
+            'epic': {'label': 'Épique', 'color': '#9C27B0', 'emoji': '🟣'},
+            'legendary': {'label': 'Légendaire', 'color': '#FFD700', 'emoji': '🟡'}
+        }
+
+        category_labels = {
+            'exploration': {'label': 'Exploration', 'emoji': '🗺️'},
+            'streaks': {'label': 'Flammes', 'emoji': '🔥'},
+            'quiz': {'label': 'Quiz', 'emoji': '❓'},
+            'lecture': {'label': 'Lecture', 'emoji': '📚'}
+        }
+
+        condition_labels = {
+            'storiesRead': 'Histoires lues',
+            'countriesVisited': 'Pays visités',
+            'streakDays': 'Jours consécutifs',
+            'perfectQuizzes': 'Quiz parfaits',
+            'totalQuizzes': 'Quiz complétés',
+            'listeningTime': "Minutes d'écoute",
+            'readingTime': 'Minutes de lecture'
+        }
+
+        # Générer les cartes de statistiques
+        stats_html = f"""
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-number">{stats.get('total', 0)}</div>
+                <div class="stat-label">Total Badges</div>
+            </div>
+            <div class="stat-card" style="background: linear-gradient(135deg, #9E9E9E 0%, #757575 100%);">
+                <div class="stat-number">{stats.get('by_rarity', {}).get('common', 0)}</div>
+                <div class="stat-label">Communs</div>
+            </div>
+            <div class="stat-card" style="background: linear-gradient(135deg, #2196F3 0%, #1976D2 100%);">
+                <div class="stat-number">{stats.get('by_rarity', {}).get('rare', 0)}</div>
+                <div class="stat-label">Rares</div>
+            </div>
+            <div class="stat-card" style="background: linear-gradient(135deg, #9C27B0 0%, #7B1FA2 100%);">
+                <div class="stat-number">{stats.get('by_rarity', {}).get('epic', 0)}</div>
+                <div class="stat-label">Épiques</div>
+            </div>
+            <div class="stat-card" style="background: linear-gradient(135deg, #FFD700 0%, #FFA000 100%);">
+                <div class="stat-number">{stats.get('by_rarity', {}).get('legendary', 0)}</div>
+                <div class="stat-label">Légendaires</div>
+            </div>
+        </div>
+        """
+
+        # Organiser par catégorie
+        by_category = {}
+        for b in badges:
+            cat = b.get('category', 'other')
+            if cat not in by_category:
+                by_category[cat] = []
+            by_category[cat].append(b)
+
+        # Générer la liste des badges par catégorie
+        badges_html = ""
+        for cat in ['exploration', 'streaks', 'quiz', 'lecture']:
+            cat_badges = by_category.get(cat, [])
+            if not cat_badges:
+                continue
+            cat_info = category_labels.get(cat, {'label': cat, 'emoji': '❓'})
+            badges_html += f"""
+            <div class="category-section" data-category="{cat}">
+                <h3 class="category-title">{cat_info['emoji']} {cat_info['label']} ({len(cat_badges)} badges)</h3>
+                <div class="badges-grid">
+            """
+            for b in sorted(cat_badges, key=lambda x: x.get('order', 0)):
+                bid = b.get('badgeId', b.get('id', 'N/A'))
+                name_data = b.get('name', {})
+                name_fr = name_data.get('fr', name_data) if isinstance(name_data, dict) else str(name_data)
+                rarity = b.get('rarity', 'common')
+                rarity_info = rarity_labels.get(rarity, {'label': rarity, 'color': '#9E9E9E', 'emoji': '⚪'})
+                condition = b.get('conditionType', 'other')
+                condition_label = condition_labels.get(condition, condition)
+                condition_value = b.get('conditionValue', 0)
+                is_stackable = b.get('isStackable', False)
+                is_active = b.get('isActive', True)
+                emoji = b.get('emoji', '🏅')
+                icon_path = b.get('iconPath', '')
+
+                stackable_badge = '<span class="badge stackable">Empilable</span>' if is_stackable else ''
+                active_class = '' if is_active else 'inactive'
+
+                # Afficher l'image si c'est une URL, sinon l'emoji
+                if icon_path and icon_path.startswith('http'):
+                    icon_html = f'<img src="{icon_path}" alt="{name_fr}" class="badge-image" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'block\'"><span class="badge-emoji-fallback" style="display:none">{emoji}</span>'
+                else:
+                    icon_html = emoji
+
+                badges_html += f"""
+                <div class="badge-card {active_class}" data-id="{bid}" data-rarity="{rarity}">
+                    <div class="badge-header">
+                        <span class="badge-rarity" style="background: {rarity_info['color']}">{rarity_info['emoji']} {rarity_info['label']}</span>
+                        {stackable_badge}
+                    </div>
+                    <div class="badge-icon">{icon_html}</div>
+                    <div class="badge-info">
+                        <div class="badge-id">{bid}</div>
+                        <div class="badge-name">{name_fr}</div>
+                        <div class="badge-condition">{condition_label}: {condition_value}</div>
+                    </div>
+                    <div class="badge-actions">
+                        <button class="btn btn-sm btn-edit" onclick="editBadge('{bid}')">✏️ Éditer</button>
+                        <button class="btn btn-sm btn-delete" onclick="deleteBadge('{bid}')">🗑️</button>
+                    </div>
+                </div>
+                """
+            badges_html += "</div></div>"
+
+        # Si aucun badge
+        if not badges_html:
+            badges_html = """
+            <div class="alert alert-info">
+                <p>Aucun badge trouvé. Cliquez sur "Migrer badges Flutter" pour importer les 15 badges depuis le code Flutter.</p>
+            </div>
+            """
+
+        html = self.get_base_html('badges', f"""
+            <style>
+                .stats-grid {{
+                    display: grid;
+                    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+                    gap: 20px;
+                    margin-bottom: 30px;
+                }}
+                .stat-card {{
+                    background: linear-gradient(135deg, #FF6B35 0%, #F7931E 100%);
+                    color: white;
+                    padding: 20px;
+                    border-radius: 10px;
+                    text-align: center;
+                }}
+                .stat-number {{
+                    font-size: 2.5em;
+                    font-weight: bold;
+                }}
+                .stat-label {{
+                    font-size: 0.9em;
+                    opacity: 0.9;
+                }}
+                .category-section {{
+                    margin-bottom: 30px;
+                    background: #f9f9f9;
+                    padding: 20px;
+                    border-radius: 10px;
+                }}
+                .category-title {{
+                    margin: 0 0 15px 0;
+                    color: #333;
+                    border-bottom: 2px solid #FF6B35;
+                    padding-bottom: 10px;
+                }}
+                .badges-grid {{
+                    display: grid;
+                    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+                    gap: 15px;
+                }}
+                .badge-card {{
+                    background: white;
+                    border-radius: 10px;
+                    padding: 15px;
+                    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+                    transition: transform 0.2s;
+                }}
+                .badge-card:hover {{
+                    transform: translateY(-3px);
+                    box-shadow: 0 4px 15px rgba(0,0,0,0.15);
+                }}
+                .badge-card.inactive {{
+                    opacity: 0.5;
+                }}
+                .badge-header {{
+                    display: flex;
+                    gap: 5px;
+                    margin-bottom: 10px;
+                    flex-wrap: wrap;
+                }}
+                .badge-rarity {{
+                    padding: 3px 8px;
+                    border-radius: 10px;
+                    font-size: 0.75em;
+                    color: white;
+                }}
+                .badge.stackable {{
+                    background: #4CAF50;
+                    color: white;
+                    padding: 3px 8px;
+                    border-radius: 10px;
+                    font-size: 0.75em;
+                }}
+                .badge-icon {{
+                    font-size: 3em;
+                    text-align: center;
+                    margin: 10px 0;
+                    min-height: 80px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                }}
+                .badge-image {{
+                    width: 80px;
+                    height: 80px;
+                    object-fit: contain;
+                    border-radius: 10px;
+                }}
+                .badge-emoji-fallback {{
+                    font-size: 3em;
+                }}
+                .badge-id {{
+                    font-size: 0.8em;
+                    color: #888;
+                    font-family: monospace;
+                }}
+                .badge-name {{
+                    font-weight: bold;
+                    margin: 5px 0;
+                }}
+                .badge-condition {{
+                    font-size: 0.85em;
+                    color: #666;
+                }}
+                .badge-actions {{
+                    margin-top: 10px;
+                    display: flex;
+                    gap: 10px;
+                }}
+                .btn-sm {{
+                    padding: 5px 10px;
+                    border: none;
+                    border-radius: 5px;
+                    cursor: pointer;
+                }}
+                .btn-edit {{
+                    background: #4CAF50;
+                    color: white;
+                }}
+                .btn-delete {{
+                    background: #f44336;
+                    color: white;
+                }}
+                .filter-bar {{
+                    display: flex;
+                    gap: 15px;
+                    margin-bottom: 20px;
+                    flex-wrap: wrap;
+                }}
+                .filter-bar select, .filter-bar input {{
+                    padding: 8px 12px;
+                    border: 1px solid #ddd;
+                    border-radius: 5px;
+                }}
+                .modal {{
+                    display: none;
+                    position: fixed;
+                    top: 0;
+                    left: 0;
+                    width: 100%;
+                    height: 100%;
+                    background: rgba(0,0,0,0.5);
+                    z-index: 1000;
+                    justify-content: center;
+                    align-items: center;
+                }}
+                .modal.active {{
+                    display: flex;
+                }}
+                .modal-content {{
+                    background: white;
+                    padding: 30px;
+                    border-radius: 15px;
+                    max-width: 700px;
+                    width: 90%;
+                    max-height: 85vh;
+                    overflow-y: auto;
+                }}
+                .modal-header {{
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    margin-bottom: 20px;
+                }}
+                .modal-close {{
+                    background: none;
+                    border: none;
+                    font-size: 1.5em;
+                    cursor: pointer;
+                }}
+                .form-group {{
+                    margin-bottom: 15px;
+                }}
+                .form-group label {{
+                    display: block;
+                    margin-bottom: 5px;
+                    font-weight: bold;
+                }}
+                .form-group input, .form-group select, .form-group textarea {{
+                    width: 100%;
+                    padding: 10px;
+                    border: 1px solid #ddd;
+                    border-radius: 5px;
+                    box-sizing: border-box;
+                }}
+                .form-row {{
+                    display: grid;
+                    grid-template-columns: 1fr 1fr;
+                    gap: 15px;
+                }}
+                .form-row-3 {{
+                    display: grid;
+                    grid-template-columns: 1fr 1fr 1fr;
+                    gap: 15px;
+                }}
+                .checkbox-group {{
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
+                }}
+                .checkbox-group input {{
+                    width: auto;
+                }}
+                /* Image Upload Styles */
+                .image-upload-container {{
+                    display: flex;
+                    flex-direction: column;
+                    gap: 10px;
+                }}
+                .image-preview-box {{
+                    width: 100px;
+                    height: 100px;
+                    border: 2px dashed #ddd;
+                    border-radius: 10px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    overflow: hidden;
+                    background: #f9f9f9;
+                }}
+                .image-preview-box img {{
+                    max-width: 100%;
+                    max-height: 100%;
+                    object-fit: contain;
+                    display: none;
+                }}
+                .image-preview-box img.visible {{
+                    display: block;
+                }}
+                .image-preview-box #previewPlaceholder {{
+                    color: #999;
+                    font-size: 0.8em;
+                    text-align: center;
+                }}
+                .image-upload-controls {{
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
+                }}
+                .image-upload-controls input[type="file"] {{
+                    display: none;
+                }}
+                .image-url-input {{
+                    display: flex;
+                    flex-direction: column;
+                    gap: 5px;
+                }}
+                .image-url-input label {{
+                    font-size: 0.85em;
+                    color: #666;
+                }}
+                .image-url-input input {{
+                    flex: 1;
+                }}
+            </style>
+
+            <h2>🏅 Gestion des Badges</h2>
+
+            {stats_html}
+
+            <div class="filter-bar">
+                <select id="filterRarity" onchange="filterBadges()">
+                    <option value="">Toutes les raretés</option>
+                    <option value="common">⚪ Commun</option>
+                    <option value="rare">🔵 Rare</option>
+                    <option value="epic">🟣 Épique</option>
+                    <option value="legendary">🟡 Légendaire</option>
+                </select>
+                <select id="filterCategory" onchange="filterBadges()">
+                    <option value="">Toutes catégories</option>
+                    <option value="exploration">🗺️ Exploration</option>
+                    <option value="streaks">🔥 Flammes</option>
+                    <option value="quiz">❓ Quiz</option>
+                    <option value="lecture">📚 Lecture</option>
+                </select>
+                <input type="text" id="searchBadge" placeholder="🔍 Rechercher..." oninput="filterBadges()">
+                <button class="btn btn-primary" onclick="openNewBadgeModal()">➕ Nouveau Badge</button>
+                <button class="btn btn-secondary" onclick="migrateFlutterBadges()">🔄 Migrer badges Flutter</button>
+            </div>
+
+            <div id="badgesList">
+                {badges_html}
+            </div>
+
+            <!-- Modal Edition -->
+            <div id="badgeModal" class="modal">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3 id="modalTitle">Éditer Badge</h3>
+                        <button class="modal-close" onclick="closeModal()">&times;</button>
+                    </div>
+                    <form id="badgeForm" onsubmit="saveBadge(event)">
+                        <input type="hidden" id="badgeId" name="badgeId">
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>ID du Badge</label>
+                                <input type="text" id="badgeIdInput" name="badgeIdInput" placeholder="ex: explorer_5">
+                            </div>
+                            <div class="form-group">
+                                <label>Ordre d'affichage</label>
+                                <input type="number" id="order" name="order" value="0">
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Nom (FR) *</label>
+                                <input type="text" id="nameFr" name="nameFr" required>
+                            </div>
+                            <div class="form-group">
+                                <label>Nom (EN)</label>
+                                <input type="text" id="nameEn" name="nameEn">
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Description (FR)</label>
+                                <textarea id="descriptionFr" name="descriptionFr" rows="2"></textarea>
+                            </div>
+                            <div class="form-group">
+                                <label>Description (EN)</label>
+                                <textarea id="descriptionEn" name="descriptionEn" rows="2"></textarea>
+                            </div>
+                        </div>
+
+                        <div class="form-row-3">
+                            <div class="form-group">
+                                <label>Rareté *</label>
+                                <select id="rarity" name="rarity" required>
+                                    <option value="common">⚪ Commun</option>
+                                    <option value="rare">🔵 Rare</option>
+                                    <option value="epic">🟣 Épique</option>
+                                    <option value="legendary">🟡 Légendaire</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Catégorie *</label>
+                                <select id="category" name="category" required>
+                                    <option value="exploration">🗺️ Exploration</option>
+                                    <option value="streaks">🔥 Flammes</option>
+                                    <option value="quiz">❓ Quiz</option>
+                                    <option value="lecture">📚 Lecture</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Emoji</label>
+                                <input type="text" id="emoji" name="emoji" placeholder="🏅">
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Type de condition *</label>
+                                <select id="conditionType" name="conditionType" required>
+                                    <option value="storiesRead">📖 Histoires lues</option>
+                                    <option value="countriesVisited">🌍 Pays visités</option>
+                                    <option value="streakDays">🔥 Jours consécutifs</option>
+                                    <option value="perfectQuizzes">💯 Quiz parfaits</option>
+                                    <option value="totalQuizzes">❓ Quiz complétés</option>
+                                    <option value="listeningTime">🎧 Minutes d'écoute</option>
+                                    <option value="readingTime">📚 Minutes de lecture</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Valeur seuil *</label>
+                                <input type="number" id="conditionValue" name="conditionValue" required min="1" value="1">
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Image du badge</label>
+                            <div class="image-upload-container">
+                                <div class="image-preview-box" id="imagePreviewBox">
+                                    <img id="imagePreview" src="" alt="Preview">
+                                    <span id="previewPlaceholder">Aucune image</span>
+                                </div>
+                                <div class="image-upload-controls">
+                                    <input type="file" id="badgeImageFile" accept="image/*" onchange="previewImage(this)">
+                                    <label for="badgeImageFile" class="btn btn-secondary btn-sm">📁 Choisir une image</label>
+                                    <button type="button" class="btn btn-sm" onclick="clearImage()" style="background:#dc3545;color:white;">✕</button>
+                                </div>
+                                <div class="image-url-input">
+                                    <label>Ou URL directe:</label>
+                                    <input type="text" id="iconPath" name="iconPath" placeholder="https://storage.googleapis.com/...">
+                                </div>
+                            </div>
+                            <input type="hidden" id="imageBase64" name="imageBase64">
+                            <input type="hidden" id="imageContentType" name="imageContentType">
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group checkbox-group">
+                                <input type="checkbox" id="isStackable" name="isStackable">
+                                <label for="isStackable">Empilable (peut être obtenu plusieurs fois)</label>
+                            </div>
+                            <div class="form-group checkbox-group">
+                                <input type="checkbox" id="isActive" name="isActive" checked>
+                                <label for="isActive">Actif</label>
+                            </div>
+                        </div>
+
+                        <div style="display: flex; gap: 10px; margin-top: 20px;">
+                            <button type="submit" class="btn btn-primary">💾 Sauvegarder</button>
+                            <button type="button" class="btn btn-secondary" onclick="closeModal()">Annuler</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <script>
+                function filterBadges() {{
+                    const rarity = document.getElementById('filterRarity').value;
+                    const category = document.getElementById('filterCategory').value;
+                    const search = document.getElementById('searchBadge').value.toLowerCase();
+
+                    document.querySelectorAll('.category-section').forEach(section => {{
+                        const sectionCategory = section.dataset.category;
+                        let hasVisibleBadges = false;
+
+                        // Vérifier si la catégorie correspond
+                        if (category && sectionCategory !== category) {{
+                            section.style.display = 'none';
+                            return;
+                        }}
+
+                        section.querySelectorAll('.badge-card').forEach(card => {{
+                            const cardName = card.querySelector('.badge-name').textContent.toLowerCase();
+                            const cardId = card.dataset.id.toLowerCase();
+                            const cardRarity = card.dataset.rarity;
+
+                            let visible = true;
+                            if (rarity && cardRarity !== rarity) visible = false;
+                            if (search && !cardName.includes(search) && !cardId.includes(search)) visible = false;
+
+                            card.style.display = visible ? 'block' : 'none';
+                            if (visible) hasVisibleBadges = true;
+                        }});
+
+                        section.style.display = hasVisibleBadges ? 'block' : 'none';
+                    }});
+                }}
+
+                function openNewBadgeModal() {{
+                    document.getElementById('modalTitle').textContent = 'Nouveau Badge';
+                    document.getElementById('badgeForm').reset();
+                    document.getElementById('badgeId').value = '';
+                    document.getElementById('isActive').checked = true;
+                    document.getElementById('badgeModal').classList.add('active');
+                }}
+
+                function editBadge(id) {{
+                    fetch('/api/badges/' + id)
+                        .then(r => r.json())
+                        .then(data => {{
+                            const b = data.badge;
+                            document.getElementById('modalTitle').textContent = 'Éditer: ' + id;
+                            document.getElementById('badgeId').value = b.badgeId || b.id;
+                            document.getElementById('badgeIdInput').value = b.badgeId || b.id;
+                            document.getElementById('order').value = b.order || 0;
+
+                            // Noms multilingues
+                            if (typeof b.name === 'object') {{
+                                document.getElementById('nameFr').value = b.name.fr || '';
+                                document.getElementById('nameEn').value = b.name.en || '';
+                            }} else {{
+                                document.getElementById('nameFr').value = b.name || '';
+                            }}
+
+                            // Descriptions multilingues
+                            if (typeof b.description === 'object') {{
+                                document.getElementById('descriptionFr').value = b.description.fr || '';
+                                document.getElementById('descriptionEn').value = b.description.en || '';
+                            }} else {{
+                                document.getElementById('descriptionFr').value = b.description || '';
+                            }}
+
+                            document.getElementById('rarity').value = b.rarity || 'common';
+                            document.getElementById('category').value = b.category || 'exploration';
+                            document.getElementById('emoji').value = b.emoji || '';
+                            document.getElementById('conditionType').value = b.conditionType || 'storiesRead';
+                            document.getElementById('conditionValue').value = b.conditionValue || 1;
+                            document.getElementById('iconPath').value = b.iconPath || '';
+                            document.getElementById('isStackable').checked = b.isStackable || false;
+                            document.getElementById('isActive').checked = b.isActive !== false;
+
+                            // Show existing image preview
+                            setImagePreviewFromUrl(b.iconPath);
+
+                            document.getElementById('badgeModal').classList.add('active');
+                        }});
+                }}
+
+                function closeModal() {{
+                    document.getElementById('badgeModal').classList.remove('active');
+                    clearImage();
+                }}
+
+                // Image preview functions
+                function previewImage(input) {{
+                    if (input.files && input.files[0]) {{
+                        const file = input.files[0];
+                        const reader = new FileReader();
+
+                        reader.onload = function(e) {{
+                            const preview = document.getElementById('imagePreview');
+                            const placeholder = document.getElementById('previewPlaceholder');
+
+                            preview.src = e.target.result;
+                            preview.classList.add('visible');
+                            placeholder.style.display = 'none';
+
+                            // Store base64 for upload
+                            document.getElementById('imageBase64').value = e.target.result;
+                            document.getElementById('imageContentType').value = file.type;
+                        }};
+
+                        reader.readAsDataURL(file);
+                    }}
+                }}
+
+                function clearImage() {{
+                    const preview = document.getElementById('imagePreview');
+                    const placeholder = document.getElementById('previewPlaceholder');
+                    const fileInput = document.getElementById('badgeImageFile');
+
+                    preview.src = '';
+                    preview.classList.remove('visible');
+                    placeholder.style.display = 'block';
+                    fileInput.value = '';
+                    document.getElementById('imageBase64').value = '';
+                    document.getElementById('imageContentType').value = '';
+                }}
+
+                function setImagePreviewFromUrl(url) {{
+                    if (url && url.startsWith('http')) {{
+                        const preview = document.getElementById('imagePreview');
+                        const placeholder = document.getElementById('previewPlaceholder');
+                        preview.src = url;
+                        preview.classList.add('visible');
+                        placeholder.style.display = 'none';
+                    }}
+                }}
+
+                function saveBadge(event) {{
+                    event.preventDefault();
+
+                    const imageBase64 = document.getElementById('imageBase64').value;
+                    const imageContentType = document.getElementById('imageContentType').value;
+
+                    const data = {{
+                        badgeId: document.getElementById('badgeIdInput').value || document.getElementById('badgeId').value,
+                        name: {{
+                            fr: document.getElementById('nameFr').value,
+                            en: document.getElementById('nameEn').value
+                        }},
+                        description: {{
+                            fr: document.getElementById('descriptionFr').value,
+                            en: document.getElementById('descriptionEn').value
+                        }},
+                        rarity: document.getElementById('rarity').value,
+                        category: document.getElementById('category').value,
+                        emoji: document.getElementById('emoji').value || '🏅',
+                        conditionType: document.getElementById('conditionType').value,
+                        conditionValue: parseInt(document.getElementById('conditionValue').value),
+                        iconPath: document.getElementById('iconPath').value,
+                        isStackable: document.getElementById('isStackable').checked,
+                        isActive: document.getElementById('isActive').checked,
+                        order: parseInt(document.getElementById('order').value) || 0
+                    }};
+
+                    // Add image data if an image was selected
+                    if (imageBase64) {{
+                        data.imageBase64 = imageBase64;
+                        data.imageContentType = imageContentType;
+                    }}
+
+                    const existingId = document.getElementById('badgeId').value;
+                    const isNew = !existingId;
+                    const url = isNew ? '/api/badges' : '/api/badges/' + existingId + '/update';
+
+                    fetch(url, {{
+                        method: 'POST',
+                        headers: {{'Content-Type': 'application/json'}},
+                        body: JSON.stringify(data)
+                    }})
+                    .then(r => r.json())
+                    .then(result => {{
+                        if (result.success) {{
+                            showToast(result.message, 'success');
+                            setTimeout(() => location.reload(), 1000);
+                        }} else {{
+                            showToast(result.error || 'Erreur', 'error');
+                        }}
+                    }})
+                    .catch(err => showToast('Erreur: ' + err, 'error'));
+                }}
+
+                function deleteBadge(id) {{
+                    if (!confirm('Supprimer le badge ' + id + ' ?')) return;
+
+                    fetch('/api/badges/' + id + '/delete', {{method: 'POST'}})
+                        .then(r => r.json())
+                        .then(result => {{
+                            if (result.success) {{
+                                showToast('Badge supprimé', 'success');
+                                setTimeout(() => location.reload(), 1000);
+                            }} else {{
+                                showToast(result.error || 'Erreur', 'error');
+                            }}
+                        }});
+                }}
+
+                function migrateFlutterBadges() {{
+                    if (!confirm('Migrer les 15 badges définis dans le code Flutter vers Firestore ?')) return;
+
+                    const flutterBadges = [
+                        {{ badgeId: 'first_story', name: {{fr: 'Premier Conte', en: 'First Story'}}, description: {{fr: 'Tu as lu ta première histoire africaine !', en: 'You read your first African story!'}}, iconPath: 'assets/badges/first_story.png', emoji: '📖', rarity: 'common', category: 'exploration', conditionType: 'storiesRead', conditionValue: 1, isStackable: false, isActive: true, order: 1 }},
+                        {{ badgeId: 'explorer_5', name: {{fr: 'Petit Explorateur', en: 'Little Explorer'}}, description: {{fr: 'Tu as visité 5 pays africains !', en: 'You visited 5 African countries!'}}, iconPath: 'assets/badges/explorer_5.png', emoji: '🗺️', rarity: 'common', category: 'exploration', conditionType: 'countriesVisited', conditionValue: 5, isStackable: false, isActive: true, order: 2 }},
+                        {{ badgeId: 'explorer_20', name: {{fr: 'Grand Voyageur', en: 'Great Traveler'}}, description: {{fr: 'Tu as visité 20 pays africains !', en: 'You visited 20 African countries!'}}, iconPath: 'assets/badges/explorer_20.png', emoji: '✈️', rarity: 'rare', category: 'exploration', conditionType: 'countriesVisited', conditionValue: 20, isStackable: false, isActive: true, order: 3 }},
+                        {{ badgeId: 'explorer_40', name: {{fr: 'Globe-Trotteur', en: 'Globe-Trotter'}}, description: {{fr: 'Tu as visité 40 pays africains !', en: 'You visited 40 African countries!'}}, iconPath: 'assets/badges/explorer_40.png', emoji: '🌍', rarity: 'epic', category: 'exploration', conditionType: 'countriesVisited', conditionValue: 40, isStackable: false, isActive: true, order: 4 }},
+                        {{ badgeId: 'explorer_54', name: {{fr: "Maître de l'Afrique", en: 'Master of Africa'}}, description: {{fr: 'Tu as visité tous les 54 pays africains !', en: 'You visited all 54 African countries!'}}, iconPath: 'assets/badges/explorer_54.png', emoji: '👑', rarity: 'legendary', category: 'exploration', conditionType: 'countriesVisited', conditionValue: 54, isStackable: false, isActive: true, order: 5 }},
+                        {{ badgeId: 'streak_7', name: {{fr: 'Flamme Naissante', en: 'Rising Flame'}}, description: {{fr: 'Tu as lu pendant 7 jours de suite !', en: 'You read for 7 days in a row!'}}, iconPath: 'assets/badges/streak_7.png', emoji: '🔥', rarity: 'common', category: 'streaks', conditionType: 'streakDays', conditionValue: 7, isStackable: false, isActive: true, order: 6 }},
+                        {{ badgeId: 'streak_14', name: {{fr: 'Flamme Ardente', en: 'Blazing Flame'}}, description: {{fr: 'Tu as lu pendant 14 jours de suite !', en: 'You read for 14 days in a row!'}}, iconPath: 'assets/badges/streak_14.png', emoji: '🔥', rarity: 'rare', category: 'streaks', conditionType: 'streakDays', conditionValue: 14, isStackable: false, isActive: true, order: 7 }},
+                        {{ badgeId: 'streak_30', name: {{fr: 'Flamme Éternelle', en: 'Eternal Flame'}}, description: {{fr: 'Tu as lu pendant 30 jours de suite !', en: 'You read for 30 days in a row!'}}, iconPath: 'assets/badges/streak_30.png', emoji: '🔥', rarity: 'epic', category: 'streaks', conditionType: 'streakDays', conditionValue: 30, isStackable: false, isActive: true, order: 8 }},
+                        {{ badgeId: 'streak_100', name: {{fr: 'Gardien du Feu', en: 'Keeper of the Flame'}}, description: {{fr: 'Tu as lu pendant 100 jours de suite !', en: 'You read for 100 days in a row!'}}, iconPath: 'assets/badges/streak_100.png', emoji: '🌟', rarity: 'legendary', category: 'streaks', conditionType: 'streakDays', conditionValue: 100, isStackable: false, isActive: true, order: 9 }},
+                        {{ badgeId: 'quiz_perfect', name: {{fr: 'Sans Faute', en: 'Perfect Score'}}, description: {{fr: 'Tu as obtenu 100% à un quiz !', en: 'You got 100% on a quiz!'}}, iconPath: 'assets/badges/quiz_perfect.png', emoji: '💯', rarity: 'common', category: 'quiz', conditionType: 'perfectQuizzes', conditionValue: 1, isStackable: true, isActive: true, order: 10 }},
+                        {{ badgeId: 'quiz_master_5', name: {{fr: 'Quiz Master', en: 'Quiz Master'}}, description: {{fr: 'Tu as obtenu 100% à 5 quiz !', en: 'You got 100% on 5 quizzes!'}}, iconPath: 'assets/badges/quiz_master_5.png', emoji: '🎓', rarity: 'rare', category: 'quiz', conditionType: 'perfectQuizzes', conditionValue: 5, isStackable: false, isActive: true, order: 11 }},
+                        {{ badgeId: 'quiz_legend', name: {{fr: 'Sage du Village', en: 'Village Sage'}}, description: {{fr: 'Tu as obtenu 100% à 20 quiz !', en: 'You got 100% on 20 quizzes!'}}, iconPath: 'assets/badges/quiz_legend.png', emoji: '🧙', rarity: 'epic', category: 'quiz', conditionType: 'perfectQuizzes', conditionValue: 20, isStackable: false, isActive: true, order: 12 }},
+                        {{ badgeId: 'reader_10', name: {{fr: 'Lecteur Curieux', en: 'Curious Reader'}}, description: {{fr: 'Tu as lu 10 histoires !', en: 'You read 10 stories!'}}, iconPath: 'assets/badges/reader_10.png', emoji: '📚', rarity: 'common', category: 'lecture', conditionType: 'storiesRead', conditionValue: 10, isStackable: false, isActive: true, order: 13 }},
+                        {{ badgeId: 'reader_50', name: {{fr: 'Bibliophile', en: 'Bookworm'}}, description: {{fr: 'Tu as lu 50 histoires !', en: 'You read 50 stories!'}}, iconPath: 'assets/badges/reader_50.png', emoji: '📖', rarity: 'rare', category: 'lecture', conditionType: 'storiesRead', conditionValue: 50, isStackable: false, isActive: true, order: 14 }},
+                        {{ badgeId: 'reader_100', name: {{fr: 'Griot en Herbe', en: 'Budding Griot'}}, description: {{fr: 'Tu as lu 100 histoires !', en: 'You read 100 stories!'}}, iconPath: 'assets/badges/reader_100.png', emoji: '🎭', rarity: 'epic', category: 'lecture', conditionType: 'storiesRead', conditionValue: 100, isStackable: false, isActive: true, order: 15 }}
+                    ];
+
+                    let migrated = 0;
+                    let errors = 0;
+                    const total = flutterBadges.length;
+
+                    showToast('Migration en cours...', 'info');
+
+                    flutterBadges.forEach((badge, index) => {{
+                        fetch('/api/badges', {{
+                            method: 'POST',
+                            headers: {{'Content-Type': 'application/json'}},
+                            body: JSON.stringify(badge)
+                        }})
+                        .then(r => r.json())
+                        .then(result => {{
+                            if (result.success) migrated++;
+                            else errors++;
+
+                            if (index === total - 1) {{
+                                setTimeout(() => {{
+                                    showToast(`Migration terminée: ${{migrated}} badges migrés, ${{errors}} erreurs`, migrated > 0 ? 'success' : 'error');
+                                    setTimeout(() => location.reload(), 1500);
+                                }}, 500);
+                            }}
+                        }})
+                        .catch(() => {{
+                            errors++;
+                            if (index === total - 1) {{
+                                showToast(`Migration terminée avec erreurs: ${{migrated}} badges migrés, ${{errors}} erreurs`, 'error');
+                            }}
+                        }});
+                    }});
+                }}
+
+                function showToast(message, type) {{
+                    const toast = document.createElement('div');
+                    toast.style.cssText = 'position:fixed;bottom:20px;right:20px;padding:15px 25px;border-radius:8px;color:white;z-index:9999;';
+                    if (type === 'success') toast.style.background = '#4CAF50';
+                    else if (type === 'error') toast.style.background = '#f44336';
+                    else toast.style.background = '#2196F3';
+                    toast.textContent = message;
+                    document.body.appendChild(toast);
+                    setTimeout(() => toast.remove(), 3000);
+                }}
+            </script>
+        """)
+
+        self.send_html_response(html)
+
     def send_users_page(self):
         """Page de gestion des utilisateurs avec analytics et suppression"""
         firebase_notice = "👥 Gestion des utilisateurs en temps réel avec Firebase" if self.firebase_manager.initialized else "🔧 Mode démonstration - données limitées"
@@ -4891,6 +7781,7 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                                 <th onclick="sortUsers('storiesCompleted')">📚 Histoires</th>
                                 <th onclick="sortUsers('subscription')">💳 Abo</th>
                                 <th onclick="sortUsers('lastActivity')">⏰ Activité</th>
+                                <th onclick="sortUsers('createdAt')">📅 Ancienneté</th>
                                 <th>⚙️ Actions</th>
                             </tr>
                     </thead>
@@ -5782,6 +8673,11 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                             </div>
                         </td>
                         <td>
+                            <span class="registration-duration">
+                                ${{formatRegistrationDuration(user.createdAt)}}
+                            </span>
+                        </td>
+                        <td>
                             <div class="user-actions">
                                 <button onclick="viewUserDetails('${{user.userId}}')" class="btn-sm btn-info">
                                     👁️
@@ -5979,22 +8875,48 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
             
             function formatLastActivity(lastActivity) {{
                 if (!lastActivity) return 'Inconnue';
-                
+
                 const date = new Date(lastActivity);
                 const now = new Date();
                 const diffMs = now - date;
                 const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-                
+
                 if (diffHours < 1) return 'À l\\'instant';
                 if (diffHours < 24) return `Il y a ${{diffHours}}h`;
-                
+
                 const diffDays = Math.floor(diffHours / 24);
                 if (diffDays === 1) return 'Hier';
                 if (diffDays < 7) return `Il y a ${{diffDays}} jours`;
-                
+
                 return date.toLocaleDateString('fr-FR');
             }}
-            
+
+            function formatRegistrationDuration(createdAt) {{
+                if (!createdAt) return 'N/A';
+
+                const date = new Date(createdAt);
+                const now = new Date();
+                const diffMs = now - date;
+
+                const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+                const diffMonths = Math.floor(diffDays / 30);
+                const diffYears = Math.floor(diffMonths / 12);
+
+                if (diffDays < 1) return "Aujourd'hui";
+                if (diffDays === 1) return '1 jour';
+                if (diffDays < 30) return `${{diffDays}} jours`;
+                if (diffMonths < 12) {{
+                    const remainingDays = diffDays % 30;
+                    return remainingDays > 0
+                        ? `${{diffMonths}} mois, ${{remainingDays}}j`
+                        : `${{diffMonths}} mois`;
+                }}
+                const remainingMonths = diffMonths % 12;
+                return remainingMonths > 0
+                    ? `${{diffYears}} an${{diffYears > 1 ? 's' : ''}}, ${{remainingMonths}} mois`
+                    : `${{diffYears}} an${{diffYears > 1 ? 's' : ''}}`;
+            }}
+
             function updateStats(stats) {{
                 // Métriques principales
                 document.getElementById('stat-total').textContent = stats.total || 0;
@@ -6211,14 +9133,25 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                 if (!confirm(`⚠️ Supprimer définitivement l'utilisateur ${{userId}} ?\\n\\nCette action est irréversible.`)) {{
                     return;
                 }}
-                
+
+                // Demander le PIN administrateur pour confirmer
+                const adminPin = prompt('🔐 Entrez le code PIN administrateur pour confirmer la suppression:');
+                if (!adminPin) {{
+                    alert('❌ Code PIN requis pour supprimer un utilisateur');
+                    return;
+                }}
+
                 try {{
                     const response = await fetch(`/api/users/${{userId}}/delete`, {{
-                        method: 'DELETE'
+                        method: 'POST',
+                        headers: {{
+                            'Content-Type': 'application/json'
+                        }},
+                        body: JSON.stringify({{ admin_pin: adminPin }})
                     }});
-                    
+
                     const result = await response.json();
-                    
+
                     if (result.success) {{
                         alert('✅ Utilisateur supprimé avec succès');
                         loadUsers();
@@ -6233,22 +9166,29 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
             
             async function bulkDelete() {{
                 if (selectedUsers.length === 0) return;
-                
+
                 if (!confirm(`⚠️ Supprimer définitivement ${{selectedUsers.length}} utilisateur(s) ?\\n\\nCette action est irréversible.`)) {{
                     return;
                 }}
-                
+
+                // Demander le PIN administrateur pour confirmer
+                const adminPin = prompt('🔐 Entrez le code PIN administrateur pour confirmer la suppression:');
+                if (!adminPin) {{
+                    alert('❌ Code PIN requis pour supprimer des utilisateurs');
+                    return;
+                }}
+
                 try {{
                     const response = await fetch('/api/users/bulk-delete', {{
                         method: 'POST',
                         headers: {{
                             'Content-Type': 'application/json'
                         }},
-                        body: JSON.stringify({{ userIds: selectedUsers }})
+                        body: JSON.stringify({{ userIds: selectedUsers, admin_pin: adminPin }})
                     }});
-                    
+
                     const result = await response.json();
-                    
+
                     if (result.success) {{
                         alert(`✅ ${{result.deletedCount}} utilisateur(s) supprimé(s)`);
                         selectedUsers = [];
@@ -6701,128 +9641,6 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
         
         self.send_html_response(html)
     
-    def send_analytics_page(self):
-        """Page analytics avec vraies données Firebase"""
-        analytics = self.firebase_manager.get_analytics()
-        
-        # Métriques principales
-        metrics_html = f"""
-            <div class="metrics-grid">
-                <div class="metric-card">
-                    <h3>📚 Histoires</h3>
-                    <div class="metric-number">{analytics['total_stories']}</div>
-                    <p>Total d'histoires</p>
-                    <small>{analytics['published_stories']} publiées</small>
-                </div>
-                
-                <div class="metric-card">
-                    <h3>🌍 Pays</h3>
-                    <div class="metric-number">{analytics['total_countries']}</div>
-                    <p>Pays couverts</p>
-                </div>
-                
-                <div class="metric-card">
-                    <h3>🧠 Questions</h3>
-                    <div class="metric-number">{analytics['total_quiz_questions']}</div>
-                    <p>Questions de quiz</p>
-                </div>
-                
-                <div class="metric-card">
-                    <h3>🎯 Valeurs</h3>
-                    <div class="metric-number">{analytics['unique_values']}</div>
-                    <p>Valeurs uniques</p>
-                </div>
-                
-                <div class="metric-card">
-                    <h3>👥 Utilisateurs</h3>
-                    <div class="metric-number">{analytics.get('total_users', 0)}</div>
-                    <p>Utilisateurs inscrits</p>
-                </div>
-                
-                <div class="metric-card">
-                    <h3>📈 Progrès</h3>
-                    <div class="metric-number">{analytics.get('total_progress_entries', 0)}</div>
-                    <p>Entrées de progrès</p>
-                </div>
-            </div>
-        """
-        
-        # Graphiques de répartition
-        stories_by_country = analytics.get('stories_by_country', {})
-        country_chart_html = ""
-        for country, count in stories_by_country.items():
-            percentage = (count / analytics['total_stories'] * 100) if analytics['total_stories'] > 0 else 0
-            country_chart_html += f"""
-                <div class="chart-item">
-                    <span class="chart-label">{country}</span>
-                    <div class="chart-bar">
-                        <div class="chart-fill" style="width: {percentage}%"></div>
-                    </div>
-                    <span class="chart-value">{count}</span>
-                </div>
-            """
-        
-        # Top valeurs
-        top_values = analytics.get('top_values', {})
-        values_chart_html = ""
-        max_value = max(top_values.values()) if top_values else 1
-        for value, count in list(top_values.items())[:8]:
-            percentage = (count / max_value * 100)
-            values_chart_html += f"""
-                <div class="chart-item">
-                    <span class="chart-label">{value}</span>
-                    <div class="chart-bar">
-                        <div class="chart-fill" style="width: {percentage}%"></div>
-                    </div>
-                    <span class="chart-value">{count}</span>
-                </div>
-            """
-        
-        firebase_notice = "🔥 Analytics calculées depuis Firestore en temps réel" if self.firebase_manager.initialized else "🔧 Analytics de démonstration"
-        notice_class = "alert-success" if self.firebase_manager.initialized else "alert-warning"
-        
-        html = self.get_base_html('analytics', f"""
-            <h2>📊 Analytics</h2>
-            
-            <div class="{notice_class}">
-                {firebase_notice}
-            </div>
-            
-            {metrics_html}
-            
-            <div class="charts-container">
-                <div class="chart-section">
-                    <h3>📈 Histoires par pays</h3>
-                    <div class="chart-list">
-                        {country_chart_html if country_chart_html else '<p>Aucune donnée disponible</p>'}
-                    </div>
-                </div>
-                
-                <div class="chart-section">
-                    <h3>🎯 Valeurs les plus enseignées</h3>
-                    <div class="chart-list">
-                        {values_chart_html if values_chart_html else '<p>Aucune donnée disponible</p>'}
-                    </div>
-                </div>
-            </div>
-            
-            <div class="actions-bar">
-                <button class="btn-secondary" onclick="refreshAnalytics()">🔄 Actualiser</button>
-                <button class="btn-secondary" onclick="exportAnalytics()">📥 Exporter</button>
-            </div>
-            
-            <script>
-                function refreshAnalytics() {{
-                    location.reload();
-                }}
-                
-                function exportAnalytics() {{
-                    alert('📥 Export des analytics\\n\\n📝 Fonctionnalité à venir');
-                }}
-            </script>
-        """)
-        self.send_html_response(html)
-    
     def send_security_page(self):
         """Page de gestion de la sécurité"""
         mode_info = self.security_manager.get_current_mode_info()
@@ -7156,1517 +9974,6 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                 // Actualiser le statut toutes les 30 secondes
                 setInterval(loadSecurityStatus, 30000);
             </script>
-        """)
-        self.send_html_response(html)
-    
-    def send_notifications_page(self):
-        """Page de gestion des notifications push"""
-        firebase_notice = "📱 Gestionnaire de notifications push connecté" if self.firebase_manager.initialized else "⚠️ Firebase déconnecté - fonctionnalités limitées"
-        notice_class = "alert-success" if self.firebase_manager.initialized else "alert-warning"
-        
-        html = self.get_base_html('notifications', f"""
-            <h2>🔔 Gestionnaire de Notifications Push</h2>
-            
-            <div class="{notice_class}">
-                {firebase_notice}
-            </div>
-            
-            <!-- Section Envoi Rapide -->
-            <div class="section">
-                <h3>⚡ Envoi Rapide</h3>
-                <div class="quick-send-form">
-                    <div class="form-group">
-                        <label>Type de notification:</label>
-                        <select id="notification-type" onchange="updateNotificationForm()">
-                            <option value="story_unlock">🌍 Histoire débloquée</option>
-                            <option value="quiz_reminder">🧠 Rappel quiz</option>
-                            <option value="level_up">🏆 Nouveau niveau</option>
-                            <option value="cultural_bonus">💎 Bonus culturel</option>
-                            <option value="daily_reminder">🌙 Rappel quotidien</option>
-                        </select>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label>Type de cible:</label>
-                        <select id="target-type" onchange="updateTargetOptions()">
-                            <option value="topic">📢 Topic (groupe d'utilisateurs)</option>
-                            <option value="token">👤 Utilisateur spécifique</option>
-                        </select>
-                    </div>
-                    
-                    <div class="form-group" id="topic-group">
-                        <label>Topic:</label>
-                        <select id="notification-topic">
-                            <option value="all_users">Tous les utilisateurs</option>
-                        </select>
-                    </div>
-                    
-                    <div class="form-group hidden" id="token-group">
-                        <label>Token FCM utilisateur:</label>
-                        <input type="text" id="user-token" placeholder="Token Firebase Messaging">
-                    </div>
-                    
-                    <div id="notification-params">
-                        <!-- Paramètres dynamiques selon le type -->
-                    </div>
-                    
-                    <div class="form-actions">
-                        <button onclick="sendNotification()" class="btn-primary">📤 Envoyer Notification</button>
-                        <button onclick="testNotification()" class="btn-secondary">🧪 Test</button>
-                    </div>
-                </div>
-            </div>
-            
-            <!-- Section Templates -->
-            <div class="section">
-                <h3>📝 Templates Disponibles</h3>
-                <div id="templates-list" class="templates-grid">
-                    <!-- Chargé dynamiquement -->
-                </div>
-            </div>
-            
-            <!-- Section Topics -->
-            <div class="section">
-                <h3>📢 Topics de Segmentation</h3>
-                <div id="topics-list" class="topics-grid">
-                    <!-- Chargé dynamiquement -->
-                </div>
-            </div>
-            
-            <!-- Section Métriques -->
-            <div class="section">
-                <h3>📊 Métriques et Historique</h3>
-                <div class="metrics-container">
-                    <div class="metric-card">
-                        <h4>📈 Dernières 24h</h4>
-                        <div id="metrics-daily" class="metric-content">
-                            <!-- Chargé dynamiquement -->
-                        </div>
-                    </div>
-                    <div class="metric-card">
-                        <h4>📅 Dernière semaine</h4>
-                        <div id="metrics-weekly" class="metric-content">
-                            <!-- Chargé dynamiquement -->
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="recent-notifications">
-                    <h4>🕒 Notifications Récentes</h4>
-                    <div id="recent-notifications-list">
-                        <!-- Chargé dynamiquement -->
-                    </div>
-                </div>
-            </div>
-            
-            <script>
-                // Variables globales
-                let templates = {{}};
-                let topics = [];
-                let currentStories = [];
-                
-                // Chargement initial
-                document.addEventListener('DOMContentLoaded', function() {{
-                    loadTemplates();
-                    loadTopics();
-                    loadMetrics();
-                    loadStories();
-                    updateNotificationForm();
-                }});
-                
-                async function loadTemplates() {{
-                    try {{
-                        const response = await fetch('/api/notifications/templates');
-                        const data = await response.json();
-                        templates = data.templates || {{}};
-                        displayTemplates();
-                    }} catch (error) {{
-                        console.error('Erreur chargement templates:', error);
-                    }}
-                }}
-                
-                async function loadTopics() {{
-                    try {{
-                        const response = await fetch('/api/notifications/topics');
-                        const data = await response.json();
-                        topics = data.topics || [];
-                        updateTopicSelect();
-                        displayTopics();
-                    }} catch (error) {{
-                        console.error('Erreur chargement topics:', error);
-                    }}
-                }}
-                
-                async function loadMetrics() {{
-                    try {{
-                        const response = await fetch('/api/notifications/metrics');
-                        const data = await response.json();
-                        displayMetrics(data);
-                    }} catch (error) {{
-                        console.error('Erreur chargement métriques:', error);
-                    }}
-                }}
-                
-                async function loadStories() {{
-                    try {{
-                        const response = await fetch('/api/stories');
-                        const data = await response.json();
-                        currentStories = data.stories || [];
-                    }} catch (error) {{
-                        console.error('Erreur chargement histoires:', error);
-                    }}
-                }}
-                
-                function updateTopicSelect() {{
-                    const select = document.getElementById('notification-topic');
-                    select.innerHTML = '';
-                    
-                    topics.forEach(topic => {{
-                        const option = document.createElement('option');
-                        option.value = topic;
-                        option.textContent = formatTopicName(topic);
-                        select.appendChild(option);
-                    }});
-                }}
-                
-                function formatTopicName(topic) {{
-                    if (topic.startsWith('country_')) {{
-                        return `🌍 ${{topic.replace('country_', '').toUpperCase()}} (Pays)`;
-                    }} else if (topic.startsWith('age_')) {{
-                        return `👶 ${{topic.replace('age_', '').replace('_', '-')}} ans`;
-                    }} else {{
-                        return `📢 ${{topic.replace('_', ' ').toUpperCase()}}`;
-                    }}
-                }}
-                
-                function updateTargetOptions() {{
-                    const targetType = document.getElementById('target-type').value;
-                    const topicGroup = document.getElementById('topic-group');
-                    const tokenGroup = document.getElementById('token-group');
-                    
-                    if (targetType === 'topic') {{
-                        topicGroup.classList.remove('hidden');
-                        tokenGroup.classList.add('hidden');
-                    }} else {{
-                        topicGroup.classList.add('hidden');
-                        tokenGroup.classList.remove('hidden');
-                    }}
-                }}
-                
-                function updateNotificationForm() {{
-                    const type = document.getElementById('notification-type').value;
-                    const paramsDiv = document.getElementById('notification-params');
-                    
-                    let html = '';
-                    
-                    switch(type) {{
-                        case 'story_unlock':
-                            html = `
-                                <div class="form-group">
-                                    <label>Histoire à promouvoir:</label>
-                                    <select id="story-select">
-                                        ${{currentStories.map(s => `<option value="${{s.id}}">${{s.title}} (${{s.country}})</option>`).join('')}}
-                                    </select>
-                                </div>
-                            `;
-                            break;
-                        case 'quiz_reminder':
-                            html = `
-                                <div class="form-group">
-                                    <label>Histoire avec quiz:</label>
-                                    <select id="story-select">
-                                        ${{currentStories.filter(s => s.quizQuestions && s.quizQuestions.length > 0).map(s => `<option value="${{s.id}}">${{s.title}} (${{s.country}})</option>`).join('')}}
-                                    </select>
-                                </div>
-                            `;
-                            break;
-                        case 'level_up':
-                            html = `
-                                <div class="form-group">
-                                    <label>Nouveau niveau:</label>
-                                    <input type="text" id="level-name" placeholder="Ex: Explorateur des Savanes" value="Explorateur des Savanes">
-                                </div>
-                                <div class="form-group">
-                                    <label>Bonus Cauris:</label>
-                                    <input type="number" id="cauris-bonus" value="10" min="0">
-                                </div>
-                            `;
-                            break;
-                        case 'cultural_bonus':
-                            html = `
-                                <div class="form-group">
-                                    <label>Type de contenu:</label>
-                                    <select id="content-type">
-                                        <option value="proverbe">Proverbe</option>
-                                        <option value="tradition">Tradition</option>
-                                        <option value="légende">Légende</option>
-                                        <option value="musique">Musique</option>
-                                    </select>
-                                </div>
-                                <div class="form-group">
-                                    <label>Pays d'origine:</label>
-                                    <input type="text" id="origin-country" placeholder="Ex: Sénégal">
-                                </div>
-                            `;
-                            break;
-                        case 'daily_reminder':
-                            html = `
-                                <div class="info-message">
-                                    <p>📱 Rappel quotidien standard - Aucun paramètre requis</p>
-                                </div>
-                            `;
-                            break;
-                    }}
-                    
-                    paramsDiv.innerHTML = html;
-                }}
-                
-                async function sendNotification() {{
-                    const type = document.getElementById('notification-type').value;
-                    const targetType = document.getElementById('target-type').value;
-                    
-                    // Construire les données de notification
-                    const notificationData = {{
-                        type: type,
-                        params: getNotificationParams(type),
-                        data: getNotificationData(type)
-                    }};
-                    
-                    // Ajouter la cible
-                    if (targetType === 'topic') {{
-                        notificationData.topic = document.getElementById('notification-topic').value;
-                    }} else {{
-                        notificationData.token = document.getElementById('user-token').value;
-                        if (!notificationData.token) {{
-                            alert('❌ Token FCM requis pour l\\'envoi direct');
-                            return;
-                        }}
-                    }}
-                    
-                    try {{
-                        showLoading(true);
-                        const response = await fetch('/api/notifications/send', {{
-                            method: 'POST',
-                            headers: {{ 'Content-Type': 'application/json' }},
-                            body: JSON.stringify(notificationData)
-                        }});
-                        
-                        const result = await response.json();
-                        
-                        if (result.status === 'success') {{
-                            alert('✅ Notification envoyée avec succès !');
-                            loadMetrics(); // Recharger les métriques
-                        }} else {{
-                            alert(`❌ Erreur: ${{result.message}}`);
-                        }}
-                    }} catch (error) {{
-                        alert(`❌ Erreur réseau: ${{error.message}}`);
-                    }} finally {{
-                        showLoading(false);
-                    }}
-                }}
-                
-                function getNotificationParams(type) {{
-                    const params = {{}};
-                    
-                    switch(type) {{
-                        case 'story_unlock':
-                        case 'quiz_reminder':
-                            const storySelect = document.getElementById('story-select');
-                            if (storySelect && storySelect.selectedIndex >= 0) {{
-                                const story = currentStories.find(s => s.id === storySelect.value);
-                                if (story) {{
-                                    params.title = story.title;
-                                    params.country = story.country;
-                                }}
-                            }}
-                            break;
-                        case 'level_up':
-                            params.level = document.getElementById('level-name')?.value || 'Nouveau niveau';
-                            break;
-                        case 'cultural_bonus':
-                            params.content_type = document.getElementById('content-type')?.value || 'contenu';
-                            params.country = document.getElementById('origin-country')?.value || 'Afrique';
-                            break;
-                    }}
-                    
-                    return params;
-                }}
-                
-                function getNotificationData(type) {{
-                    const data = {{}};
-                    
-                    switch(type) {{
-                        case 'story_unlock':
-                        case 'quiz_reminder':
-                            const storySelect = document.getElementById('story-select');
-                            if (storySelect) {{
-                                data.story_id = storySelect.value;
-                            }}
-                            break;
-                        case 'level_up':
-                            data.cauris_bonus = document.getElementById('cauris-bonus')?.value || '0';
-                            break;
-                    }}
-                    
-                    return data;
-                }}
-                
-                function testNotification() {{
-                    const type = document.getElementById('notification-type').value;
-                    const params = getNotificationParams(type);
-                    
-                    // Simuler l'affichage
-                    const template = templates[type];
-                    if (template) {{
-                        const title = template.title.replace(/\\{{([^}}]+)\\}}/g, (match, key) => params[key] || `[${{key}}]`);
-                        const body = template.body.replace(/\\{{([^}}]+)\\}}/g, (match, key) => params[key] || `[${{key}}]`);
-                        
-                        alert(`📱 Aperçu notification:\\n\\n${{title}}\\n${{body}}`);
-                    }}
-                }}
-                
-                function displayTemplates() {{
-                    const container = document.getElementById('templates-list');
-                    container.innerHTML = '';
-                    
-                    Object.entries(templates).forEach(([key, template]) => {{
-                        const div = document.createElement('div');
-                        div.className = 'template-card';
-                        div.innerHTML = `
-                            <h4>${{getTemplateIcon(key)}} ${{key.replace('_', ' ').toUpperCase()}}</h4>
-                            <p><strong>Titre:</strong> ${{template.title}}</p>
-                            <p><strong>Message:</strong> ${{template.body}}</p>
-                            <p><strong>Action:</strong> ${{template.action}}</p>
-                        `;
-                        container.appendChild(div);
-                    }});
-                }}
-                
-                function getTemplateIcon(type) {{
-                    const icons = {{
-                        'story_unlock': '🌍',
-                        'quiz_reminder': '🧠',
-                        'level_up': '🏆',
-                        'cultural_bonus': '💎',
-                        'daily_reminder': '🌙'
-                    }};
-                    return icons[type] || '📱';
-                }}
-                
-                function displayTopics() {{
-                    const container = document.getElementById('topics-list');
-                    container.innerHTML = '';
-                    
-                    topics.forEach(topic => {{
-                        const div = document.createElement('div');
-                        div.className = 'topic-card';
-                        div.innerHTML = `
-                            <h4>${{formatTopicName(topic)}}</h4>
-                            <code>${{topic}}</code>
-                        `;
-                        container.appendChild(div);
-                    }});
-                }}
-                
-                function displayMetrics(data) {{
-                    if (data.error) {{
-                        document.getElementById('metrics-daily').innerHTML = `<p class="error">❌ ${{data.error}}</p>`;
-                        return;
-                    }}
-                    
-                    // Métriques principales
-                    const dailyHtml = `
-                        <div class="metric">
-                            <span class="metric-label">Total envoyées:</span>
-                            <span class="metric-value">${{data.total_sent || 0}}</span>
-                        </div>
-                        <div class="metric">
-                            <span class="metric-label">Échecs:</span>
-                            <span class="metric-value">${{data.total_failed || 0}}</span>
-                        </div>
-                        <div class="metric">
-                            <span class="metric-label">Taux de succès:</span>
-                            <span class="metric-value">${{(data.success_rate || 0).toFixed(1)}}%</span>
-                        </div>
-                    `;
-                    
-                    document.getElementById('metrics-daily').innerHTML = dailyHtml;
-                    document.getElementById('metrics-weekly').innerHTML = dailyHtml; // Même données pour l'instant
-                    
-                    // Notifications récentes
-                    if (data.recent_metrics) {{
-                        const recentHtml = data.recent_metrics.slice(0, 10).map(metric => {{
-                            const date = new Date(metric.sent_at?.seconds * 1000 || Date.now()).toLocaleString();
-                            const status = metric.status === 'sent' ? '✅' : '❌';
-                            return `
-                                <div class="recent-item">
-                                    <span class="status">${{status}}</span>
-                                    <span class="type">${{metric.type}}</span>
-                                    <span class="target">${{metric.target_type}}: ${{metric.target_value}}</span>
-                                    <span class="date">${{date}}</span>
-                                </div>
-                            `;
-                        }}).join('');
-                        
-                        document.getElementById('recent-notifications-list').innerHTML = recentHtml;
-                    }}
-                }}
-                
-                function showLoading(show) {{
-                    // Réutiliser la fonction existante
-                    const overlay = document.getElementById('loading-overlay') || createLoadingOverlay();
-                    overlay.style.display = show ? 'flex' : 'none';
-                }}
-                
-                function createLoadingOverlay() {{
-                    const overlay = document.createElement('div');
-                    overlay.id = 'loading-overlay';
-                    overlay.style.cssText = `
-                        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-                        background: rgba(0,0,0,0.5); display: none; justify-content: center;
-                        align-items: center; z-index: 9999; color: white; font-size: 18px;
-                    `;
-                    overlay.innerHTML = '<div>📤 Envoi notification...</div>';
-                    document.body.appendChild(overlay);
-                    return overlay;
-                }}
-                
-                // Auto-refresh des métriques toutes les 30 secondes
-                setInterval(loadMetrics, 30000);
-            </script>
-            
-            <style>
-                .quick-send-form {{
-                    background: #f8f9fa;
-                    padding: 20px;
-                    border-radius: 8px;
-                    margin-bottom: 20px;
-                }}
-                
-                .templates-grid, .topics-grid {{
-                    display: grid;
-                    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-                    gap: 15px;
-                    margin-top: 15px;
-                }}
-                
-                .template-card, .topic-card {{
-                    background: white;
-                    border: 1px solid #e0e0e0;
-                    border-radius: 8px;
-                    padding: 15px;
-                }}
-                
-                .template-card h4, .topic-card h4 {{
-                    margin: 0 0 10px 0;
-                    color: #333;
-                }}
-                
-                .metrics-container {{
-                    display: grid;
-                    grid-template-columns: 1fr 1fr;
-                    gap: 20px;
-                    margin-bottom: 20px;
-                }}
-                
-                .metric-card {{
-                    background: white;
-                    border: 1px solid #e0e0e0;
-                    border-radius: 8px;
-                    padding: 15px;
-                }}
-                
-                .metric {{
-                    display: flex;
-                    justify-content: space-between;
-                    margin-bottom: 10px;
-                }}
-                
-                .metric-value {{
-                    font-weight: bold;
-                    color: #007bff;
-                }}
-                
-                .recent-notifications {{
-                    background: white;
-                    border: 1px solid #e0e0e0;
-                    border-radius: 8px;
-                    padding: 15px;
-                }}
-                
-                .recent-item {{
-                    display: grid;
-                    grid-template-columns: 30px 1fr 2fr 2fr;
-                    gap: 10px;
-                    padding: 8px 0;
-                    border-bottom: 1px solid #f0f0f0;
-                    font-size: 14px;
-                }}
-                
-                .recent-item:last-child {{
-                    border-bottom: none;
-                }}
-                
-                .hidden {{
-                    display: none !important;
-                }}
-                
-                .info-message {{
-                    background: #e3f2fd;
-                    border: 1px solid #2196f3;
-                    border-radius: 4px;
-                    padding: 15px;
-                    color: #1976d2;
-                }}
-                
-                .error {{
-                    color: #d32f2f;
-                }}
-            </style>
-        """)
-        self.send_html_response(html)
-    
-    def send_journey_notifications_page(self):
-        """Page de gestion des parcours et notifications personnalisées"""
-        firebase_notice = "🎯 Gestionnaire de parcours connecté" if self.firebase_manager.initialized else "⚠️ Firebase déconnecté - fonctionnalités limitées"
-        notice_class = "alert-success" if self.firebase_manager.initialized else "alert-warning"
-        
-        # Version simplifiée pour éviter les erreurs de template strings
-        html = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>🎯 Parcours - Kuma Backoffice</title>
-            <meta charset="utf-8">
-            <style>
-                body {{ font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }}
-                .container {{ max-width: 1200px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; }}
-                .alert {{ padding: 15px; margin: 20px 0; border-radius: 5px; }}
-                .alert-success {{ background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }}
-                .alert-warning {{ background: #fff3cd; color: #856404; border: 1px solid #ffeaa7; }}
-                .section {{ margin: 30px 0; padding: 20px; border: 1px solid #ddd; border-radius: 8px; }}
-                .btn {{ padding: 10px 20px; margin: 10px; border: none; border-radius: 5px; cursor: pointer; }}
-                .btn-primary {{ background: #007bff; color: white; }}
-                .btn-success {{ background: #28a745; color: white; }}
-                .chart-placeholder {{ background: #f8f9fa; padding: 20px; text-align: left; border-radius: 5px; margin: 20px 0; border: 1px solid #e9ecef; }}
-                
-                /* Styles pour les graphiques en barres */
-                .country-bars, .timezone-bars {{ max-height: 400px; overflow-y: auto; }}
-                .chart-header {{ margin-bottom: 15px; }}
-                .chart-header h4 {{ margin: 0; color: #495057; font-size: 1.1em; }}
-                
-                .country-bar, .timezone-bar {{ 
-                    display: flex; 
-                    align-items: center; 
-                    margin: 8px 0; 
-                    padding: 8px; 
-                    background: white;
-                    border-radius: 4px;
-                    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-                }}
-                
-                .country-name, .timezone-name {{ 
-                    width: 140px; 
-                    font-size: 13px; 
-                    font-weight: 500; 
-                    color: #495057;
-                    margin-right: 10px;
-                }}
-                
-                .bar-container {{ 
-                    flex: 1; 
-                    height: 24px; 
-                    background: #e9ecef; 
-                    border-radius: 12px; 
-                    position: relative; 
-                    margin: 0 10px; 
-                    overflow: hidden;
-                }}
-                
-                .bar-fill {{ 
-                    height: 100%; 
-                    border-radius: 12px; 
-                    transition: width 0.8s ease-in-out; 
-                    box-shadow: inset 0 1px 2px rgba(255,255,255,0.3);
-                }}
-                
-                .bar-value {{ 
-                    font-size: 12px; 
-                    font-weight: 600; 
-                    min-width: 120px; 
-                    color: #495057;
-                    text-align: right;
-                }}
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <h1>🎯 Gestion des Parcours et Notifications</h1>
-                
-                <div class="{notice_class}">
-                    {firebase_notice}
-                </div>
-                
-                <div class="section">
-                    <h3>📊 Analytics des Parcours</h3>
-                    <div class="chart-placeholder">
-                        <h4>📈 Distribution par Pays</h4>
-                        <p>Graphique en cours de développement...</p>
-                        <div id="country-chart">Chargement des données...</div>
-                    </div>
-                    
-                    <div class="chart-placeholder">
-                        <h4>🌍 Distribution par Fuseau Horaire</h4>
-                        <p>Graphique en cours de développement...</p>
-                        <div id="timezone-chart">Chargement des données...</div>
-                    </div>
-                </div>
-                
-                <div class="section">
-                    <h3>🎯 Notifications Personnalisées par Parcours</h3>
-                    
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
-                        <div>
-                            <h4>⏰ Notifications par Fuseau Horaire</h4>
-                            <label>Type de notification:</label>
-                            <select id="timezone-notification-type" style="width: 100%; padding: 8px; margin: 5px 0;">
-                                <option value="morning">🌅 Matinale (8h locale)</option>
-                                <option value="evening">🌅 Vespérale (18h locale)</option>
-                                <option value="custom">⚙️ Personnalisée</option>
-                            </select>
-                            
-                            <label>Fuseau horaire cible:</label>
-                            <select id="target-timezone" style="width: 100%; padding: 8px; margin: 5px 0;">
-                                <option value="UTC+0">🇬🇲 GMT (Gambie, Ghana)</option>
-                                <option value="UTC+1">🇳🇬 WAT (Nigeria, Cameroun)</option>
-                                <option value="UTC+2">🇪🇬 EET (Égypte, Afrique du Sud)</option>
-                                <option value="UTC+3">🇰🇪 EAT (Kenya, Éthiopie)</option>
-                            </select>
-                            
-                            <button class="btn btn-primary" onclick="previewTimezoneUsers()">👀 Prévisualiser</button>
-                            <button class="btn btn-success" onclick="sendTimezoneNotifications()">📤 Envoyer</button>
-                            
-                            <div id="timezone-preview" style="margin-top: 15px;"></div>
-                        </div>
-                        
-                        <div>
-                            <h4>🎯 Ciblage Avancé</h4>
-                            <label>Niveau de parcours:</label>
-                            <select id="journey-level" style="width: 100%; padding: 8px; margin: 5px 0;">
-                                <option value="">Tous niveaux</option>
-                                <option value="beginner">🌱 Débutant</option>
-                                <option value="intermediate">🌿 Intermédiaire</option>
-                                <option value="advanced">🌳 Avancé</option>
-                            </select>
-                            
-                            <label>Pays actuel:</label>
-                            <select id="current-country" style="width: 100%; padding: 8px; margin: 5px 0;">
-                                <option value="">Tous pays</option>
-                                <option value="SN">🇸🇳 Sénégal</option>
-                                <option value="NG">🇳🇬 Nigeria</option>
-                                <option value="MA">🇲🇦 Maroc</option>
-                                <option value="EG">🇪🇬 Égypte</option>
-                            </select>
-                            
-                            <label>Inactivité (jours):</label>
-                            <input type="number" id="inactive-days" placeholder="Ex: 7" style="width: 100%; padding: 8px; margin: 5px 0;">
-                            
-                            <button class="btn btn-primary" onclick="findTargetUsers()">🔍 Rechercher</button>
-                            <button class="btn btn-success" onclick="sendPersonalizedNotifications()">🎯 Envoyer</button>
-                            
-                            <div id="target-users-preview" style="margin-top: 15px;"></div>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="section">
-                    <h3>📅 Planificateur Automatique</h3>
-                    <p>Status: <span id="scheduler-status">🔄 Vérification...</span></p>
-                    <button class="btn btn-primary" onclick="checkSchedulerStatus()">🔄 Actualiser</button>
-                    <button class="btn btn-success" onclick="toggleScheduler()">⏯️ Activer/Désactiver</button>
-                </div>
-            </div>
-            
-            <script>
-                // Fonctions simplifiées sans template strings complexes
-                function previewTimezoneUsers() {{
-                    const timezone = document.getElementById('target-timezone').value;
-                    const type = document.getElementById('timezone-notification-type').value;
-                    
-                    document.getElementById('timezone-preview').innerHTML = 
-                        '<div style="background: #f8f9fa; padding: 15px; border-radius: 5px;">' +
-                        '<h4>👀 Prévisualisation</h4>' +
-                        '<p><strong>Fuseau:</strong> ' + timezone + '</p>' +
-                        '<p><strong>Type:</strong> ' + type + '</p>' +
-                        '<p><strong>Estimation:</strong> Calcul en cours...</p>' +
-                        '</div>';
-                }}
-                
-                function findTargetUsers() {{
-                    const level = document.getElementById('journey-level').value;
-                    const country = document.getElementById('current-country').value;
-                    const inactive = document.getElementById('inactive-days').value;
-                    
-                    document.getElementById('target-users-preview').innerHTML = 
-                        '<div style="background: #f8f9fa; padding: 15px; border-radius: 5px;">' +
-                        '<h4>🎯 Utilisateurs Ciblés</h4>' +
-                        '<p><strong>Niveau:</strong> ' + (level || 'Tous') + '</p>' +
-                        '<p><strong>Pays:</strong> ' + (country || 'Tous') + '</p>' +
-                        '<p><strong>Inactivité:</strong> ' + (inactive || 'Actifs') + '</p>' +
-                        '<p><strong>Trouvés:</strong> Recherche en cours...</p>' +
-                        '</div>';
-                }}
-                
-                async function sendTimezoneNotifications() {{
-                    alert('🎯 Notifications par fuseau horaire envoyées !');
-                }}
-                
-                async function sendPersonalizedNotifications() {{
-                    alert('🎯 Notifications personnalisées envoyées !');
-                }}
-                
-                function checkSchedulerStatus() {{
-                    document.getElementById('scheduler-status').textContent = '✅ Actif';
-                }}
-                
-                function toggleScheduler() {{
-                    alert('📅 Planificateur basculé !');
-                }}
-                
-                // Charger les vraies données
-                async function loadRealData() {{
-                    try {{
-                        // Charger analytics des pays
-                        const analyticsResponse = await fetch('/api/journey/analytics');
-                        if (analyticsResponse.ok) {{
-                            const analyticsData = await analyticsResponse.json();
-                            displayCountryChart(analyticsData.country_distribution, analyticsData.total_users);
-                        }}
-                        
-                        // Charger données des fuseaux horaires
-                        const timezoneResponse = await fetch('/api/journey/timezones');
-                        if (timezoneResponse.ok) {{
-                            const timezoneData = await timezoneResponse.json();
-                            displayTimezoneChart(timezoneData);
-                        }}
-                        
-                    }} catch (error) {{
-                        console.error('Erreur de chargement:', error);
-                        document.getElementById('country-chart').innerHTML = '❌ Erreur de chargement des données pays';
-                        document.getElementById('timezone-chart').innerHTML = '❌ Erreur de chargement des données fuseaux';
-                    }}
-                }}
-                
-                function displayCountryChart(countryData, totalUsers) {{
-                    const chartDiv = document.getElementById('country-chart');
-                    
-                    // Trier les pays par nombre d'utilisateurs (top 10)
-                    const topCountries = Object.entries(countryData)
-                        .sort(([,a], [,b]) => b - a)
-                        .slice(0, 10);
-                    
-                    const maxUsers = Math.max(...Object.values(countryData));
-                    
-                    let html = '<div class="country-bars">';
-                    html += `<div class="chart-header"><h4>📊 Top 10 Pays (Total: ${{totalUsers.toLocaleString()}} utilisateurs)</h4></div>`;
-                    
-                    topCountries.forEach(([country, users]) => {{
-                        const percentage = (users / maxUsers) * 100;
-                        html += `
-                            <div class="country-bar">
-                                <span class="country-name">${{country}}</span>
-                                <div class="bar-container">
-                                    <div class="bar-fill" style="width: ${{percentage}}%; background: linear-gradient(45deg, #007bff, #0056b3);"></div>
-                                    <span class="bar-value">${{users.toLocaleString()}} utilisateurs</span>
-                                </div>
-                            </div>
-                        `;
-                    }});
-                    html += '</div>';
-                    chartDiv.innerHTML = html;
-                }}
-                
-                function displayTimezoneChart(timezoneData) {{
-                    const chartDiv = document.getElementById('timezone-chart');
-                    
-                    const maxCountries = Math.max(...Object.values(timezoneData));
-                    const totalCountries = Object.values(timezoneData).reduce((a, b) => a + b, 0);
-                    
-                    let html = '<div class="timezone-bars">';
-                    html += `<div class="chart-header"><h4>🌍 Distribution par Fuseau Horaire (${{totalCountries}} pays)</h4></div>`;
-                    
-                    Object.entries(timezoneData).forEach(([timezone, count]) => {{
-                        if (count > 0) {{
-                            const percentage = (count / maxCountries) * 100;
-                            html += `
-                                <div class="timezone-bar">
-                                    <span class="timezone-name">${{timezone}}</span>
-                                    <div class="bar-container">
-                                        <div class="bar-fill timezone-bar-fill" style="width: ${{percentage}}%; background: linear-gradient(45deg, #28a745, #1e7e34);"></div>
-                                        <span class="bar-value">${{count}} pays</span>
-                                    </div>
-                                </div>
-                            `;
-                        }}
-                    }});
-                    html += '</div>';
-                    chartDiv.innerHTML = html;
-                }}
-                
-                // Initialisation
-                setTimeout(() => {{
-                    loadRealData();
-                    checkSchedulerStatus();
-                }}, 500);
-            </script>
-        </body>
-        </html>
-        """
-        
-        self.send_html_response(html)
-        return
-        
-        html = self.get_base_html('journey-notifications', f"""
-            <h2>🎯 Gestionnaire de Parcours et Notifications Personnalisées</h2>
-            
-            <div class="{notice_class}">
-                {firebase_notice}
-            </div>
-            
-            <!-- Dashboard Analytics -->
-            <div class="section">
-                <h3>📊 Analytics des Parcours</h3>
-                <div class="analytics-dashboard">
-                    <div class="stats-cards">
-                        <div class="stat-card">
-                            <h4>👥 Utilisateurs Actifs</h4>
-                            <div id="active-users-count" class="stat-number">--</div>
-                        </div>
-                        <div class="stat-card">
-                            <h4>📈 Progression Moyenne</h4>
-                            <div id="avg-progress" class="stat-number">--%</div>
-                        </div>
-                        <div class="stat-card">
-                            <h4>🌍 Pays Explorés</h4>
-                            <div id="countries-explored" class="stat-number">--</div>
-                        </div>
-                        <div class="stat-card">
-                            <h4>🏁 Complétions</h4>
-                            <div id="completion-rate" class="stat-number">--%</div>
-                        </div>
-                    </div>
-                    
-                    <div class="charts-container">
-                        <div class="chart-card">
-                            <h4>🌍 Répartition par Pays</h4>
-                            <div id="country-chart" class="chart-content">
-                                <!-- Chargé dynamiquement -->
-                            </div>
-                        </div>
-                        <div class="chart-card">
-                            <h4>⏰ Répartition par Fuseau Horaire</h4>
-                            <div id="timezone-chart" class="chart-content">
-                                <!-- Chargé dynamiquement -->
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            
-            <!-- Envoi par Fuseau Horaire -->
-            <div class="section">
-                <h3>⏰ Envoi Intelligent par Fuseau Horaire</h3>
-                <div class="timezone-sender">
-                    <div class="timezone-controls">
-                        <div class="form-group">
-                            <label>Type de notification:</label>
-                            <select id="timezone-notification-type">
-                                <option value="evening">🌙 Notifications du soir (19h locale)</option>
-                                <option value="morning">🌅 Notifications du matin (8h locale)</option>
-                                <option value="weekend">🏖️ Notifications weekend (10h locale)</option>
-                            </select>
-                        </div>
-                        
-                        <div class="form-group">
-                            <label>Fuseau horaire cible:</label>
-                            <select id="target-timezone">
-                                <option value="all">🌍 Tous les fuseaux (automatique)</option>
-                                <option value="UTC-1">🇨🇻 UTC-1 (Cap-Vert)</option>
-                                <option value="UTC+0">🇸🇳 UTC+0 (Afrique de l'Ouest)</option>
-                                <option value="UTC+1">🇳🇬 UTC+1 (Afrique Centrale)</option>
-                                <option value="UTC+2">🇰🇪 UTC+2 (Afrique de l'Est)</option>
-                                <option value="UTC+3">🇪🇹 UTC+3 (Afrique de l'Est)</option>
-                                <option value="UTC+4">🇲🇺 UTC+4 (Îles de l'Océan Indien)</option>
-                            </select>
-                        </div>
-                        
-                        <div class="form-actions">
-                            <button onclick="sendTimezoneNotifications()" class="btn-primary">
-                                📡 Envoyer par Fuseau
-                            </button>
-                            <button onclick="previewTimezoneUsers()" class="btn-secondary">
-                                👀 Prévisualiser Utilisateurs
-                            </button>
-                        </div>
-                    </div>
-                    
-                    <div class="timezone-preview" id="timezone-preview">
-                        <!-- Prévisualisation des utilisateurs -->
-                    </div>
-                </div>
-            </div>
-            
-            <!-- Notifications Personnalisées -->
-            <div class="section">
-                <h3>🎯 Notifications Personnalisées par Parcours</h3>
-                <div class="personalized-sender">
-                    <div class="form-group">
-                        <label>Critères de sélection:</label>
-                        <div class="criteria-selector">
-                            <div class="criteria-group">
-                                <label>Niveau de parcours:</label>
-                                <select id="journey-level">
-                                    <option value="">Tous niveaux</option>
-                                    <option value="beginner">🆕 Débutant (jours 1-10)</option>
-                                    <option value="intermediate">📈 Intermédiaire (jours 11-30)</option>
-                                    <option value="advanced">🔥 Avancé (jours 31-50)</option>
-                                    <option value="expert">🏆 Expert (jours 51-54)</option>
-                                </select>
-                            </div>
-                            
-                            <div class="criteria-group">
-                                <label>Pays actuel:</label>
-                                <select id="current-country">
-                                    <option value="">Tous pays</option>
-                                    <!-- Chargé dynamiquement -->
-                                </select>
-                            </div>
-                            
-                            <div class="criteria-group">
-                                <label>Jours d'inactivité:</label>
-                                <select id="inactive-days">
-                                    <option value="">Utilisateurs actifs</option>
-                                    <option value="3">3+ jours d'inactivité</option>
-                                    <option value="7">7+ jours d'inactivité</option>
-                                    <option value="30">30+ jours d'inactivité</option>
-                                </select>
-                            </div>
-                        </div>
-                        
-                        <div class="form-actions">
-                            <button onclick="findTargetUsers()" class="btn-secondary">
-                                🔍 Trouver Utilisateurs
-                            </button>
-                            <button onclick="sendPersonalizedNotifications()" class="btn-primary">
-                                🎯 Envoyer Personnalisées
-                            </button>
-                        </div>
-                    </div>
-                    
-                    <div class="target-users-preview" id="target-users-preview">
-                        <!-- Prévisualisation des utilisateurs ciblés -->
-                    </div>
-                </div>
-            </div>
-            
-            <!-- Planification -->
-            <div class="section">
-                <h3>📅 Planification et Automatisation</h3>
-                <div class="scheduler-controls">
-                    <div class="schedule-card">
-                        <h4>⏰ Notifications Automatiques</h4>
-                        <div class="schedule-status">
-                            <span id="scheduler-status" class="status-indicator">●</span>
-                            <span id="scheduler-text">Vérification du statut...</span>
-                        </div>
-                        <div class="schedule-actions">
-                            <button onclick="startScheduler()" class="btn-success">▶️ Démarrer</button>
-                            <button onclick="stopScheduler()" class="btn-warning">⏸️ Arrêter</button>
-                            <button onclick="checkSchedulerStatus()" class="btn-secondary">🔄 Statut</button>
-                        </div>
-                    </div>
-                    
-                    <div class="schedule-card">
-                        <h4>📋 Prochains Envois</h4>
-                        <div id="next-schedules" class="schedule-list">
-                            <!-- Chargé dynamiquement -->
-                        </div>
-                    </div>
-                </div>
-            </div>
-            
-            <!-- Carte Interactive des Utilisateurs -->
-            <div class="section">
-                <h3>🗺️ Répartition Géographique en Temps Réel</h3>
-                <div class="map-container">
-                    <div id="africa-user-map" class="africa-map">
-                        <!-- Carte d'Afrique avec points utilisateurs -->
-                        <div class="map-legend">
-                            <span class="legend-item">🔴 UTC-1</span>
-                            <span class="legend-item">🟡 UTC+0</span>
-                            <span class="legend-item">🟢 UTC+1</span>
-                            <span class="legend-item">🔵 UTC+2</span>
-                            <span class="legend-item">🟣 UTC+3</span>
-                            <span class="legend-item">🟠 UTC+4</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            
-            <script>
-                // Variables globales
-                let journeyAnalytics = {{}};
-                let timezoneData = {{}};
-                let currentUsers = [];
-                
-                // Chargement initial
-                document.addEventListener('DOMContentLoaded', function() {{
-                    loadJourneyAnalytics();
-                    loadTimezoneData();
-                    checkSchedulerStatus();
-                    setupAutoRefresh();
-                }});
-                
-                async function loadJourneyAnalytics() {{
-                    try {{
-                        const response = await fetch('/api/journey/analytics');
-                        const data = await response.json();
-                        journeyAnalytics = data;
-                        displayJourneyAnalytics(data);
-                    }} catch (error) {{
-                        console.error('Erreur chargement analytics:', error);
-                    }}
-                }}
-                
-                async function loadTimezoneData() {{
-                    try {{
-                        const response = await fetch('/api/journey/timezones');
-                        const data = await response.json();
-                        timezoneData = data;
-                        displayTimezoneChart(data);
-                    }} catch (error) {{
-                        console.error('Erreur chargement timezones:', error);
-                    }}
-                }}
-                
-                function displayJourneyAnalytics(data) {{
-                    if (data.error) {{
-                        document.getElementById('active-users-count').textContent = '❌';
-                        return;
-                    }}
-                    
-                    document.getElementById('active-users-count').textContent = data.active_users || 0;
-                    document.getElementById('avg-progress').textContent = (data.average_progress || 0) + '%';
-                    document.getElementById('countries-explored').textContent = Object.keys(data.country_distribution || {{}}).length;
-                    document.getElementById('completion-rate').textContent = (data.completion_rate || 0).toFixed(1) + '%';
-                    
-                    // Graphique pays
-                    displayCountryChart(data.country_distribution || {{}});
-                }}
-                
-                function displayCountryChart(countryData) {{
-                    const chartDiv = document.getElementById('country-chart');
-                    const topCountries = Object.entries(countryData)
-                        .sort(([,a], [,b]) => b - a)
-                        .slice(0, 10);
-                    
-                    let html = '<div class="country-bars">';
-                    topCountries.forEach(([country, count]) => {{
-                        const percentage = (count / Math.max(...Object.values(countryData))) * 100;
-                        html += `
-                            <div class="country-bar">
-                                <span class="country-name">${{country}}</span>
-                                <div class="bar-container">
-                                    <div class="bar-fill" style="width: ${{percentage}}%"></div>
-                                    <span class="bar-value">${{count}}</span>
-                                </div>
-                            </div>
-                        `;
-                    }});
-                    html += '</div>';
-                    chartDiv.innerHTML = html;
-                }}
-                
-                function displayTimezoneChart(data) {{
-                    const chartDiv = document.getElementById('timezone-chart');
-                    if (data.error) {{
-                        chartDiv.innerHTML = '<p class="error">❌ Erreur de chargement</p>';
-                        return;
-                    }}
-                    
-                    let html = '<div class="timezone-bars">';
-                    Object.entries(data).forEach(([timezone, count]) => {{
-                        const percentage = (count / Math.max(...Object.values(data))) * 100;
-                        html += `
-                            <div class="timezone-bar">
-                                <span class="timezone-name">${{timezone}}</span>
-                                <div class="bar-container">
-                                    <div class="bar-fill timezone-bar-fill" style="width: ${{percentage}}%"></div>
-                                    <span class="bar-value">${{count}} pays</span>
-                                </div>
-                            </div>
-                        `;
-                    }});
-                    html += '</div>';
-                    chartDiv.innerHTML = html;
-                }}
-                
-                async function sendTimezoneNotifications() {{
-                    const type = document.getElementById('timezone-notification-type').value;
-                    const timezone = document.getElementById('target-timezone').value;
-                    
-                    try {{
-                        showLoading(true);
-                        const response = await fetch('/api/notifications/send-timezone-batch', {{
-                            method: 'POST',
-                            headers: {{ 'Content-Type': 'application/json' }},
-                            body: JSON.stringify({{ 
-                                time_type: type, 
-                                target_timezone: timezone 
-                            }})
-                        }});
-                        
-                        const result = await response.json();
-                        
-                        if (result.success) {{
-                            alert(`✅ ${{{{result.sent_count}}}} notifications envoyées !`);
-                            loadJourneyAnalytics(); // Rafraîchir les stats
-                        }} else {{
-                            alert(`❌ Erreur: ${{{{result.message}}}}`);
-                        }}
-                    }} catch (error) {{
-                        alert(`❌ Erreur réseau: ${{{{error.message}}}}`);
-                    }} finally {{
-                        showLoading(false);
-                    }}
-                }}
-                
-                async function previewTimezoneUsers() {{
-                    const timezone = document.getElementById('target-timezone').value;
-                    const type = document.getElementById('timezone-notification-type').value;
-                    
-                    // Simuler la prévisualisation
-                    document.getElementById('timezone-preview').innerHTML = `
-                        <div class="preview-card">
-                            <h4>👀 Prévisualisation</h4>
-                            <p><strong>Fuseau:</strong> ${{{{timezone}}}}</p>
-                            <p><strong>Type:</strong> ${{{{type}}}}</p>
-                            <p><strong>Estimation:</strong> Calcul en cours...</p>
-                        </div>
-                    `;
-                }}
-                
-                async function findTargetUsers() {{
-                    const level = document.getElementById('journey-level').value;
-                    const country = document.getElementById('current-country').value;
-                    const inactive = document.getElementById('inactive-days').value;
-                    
-                    // Simuler la recherche
-                    document.getElementById('target-users-preview').innerHTML = `
-                        <div class="preview-card">
-                            <h4>🎯 Utilisateurs Ciblés</h4>
-                            <p><strong>Niveau:</strong> ${{{{level || 'Tous'}}}}</p>
-                            <p><strong>Pays:</strong> ${{{{country || 'Tous'}}}}</p>
-                            <p><strong>Inactivité:</strong> ${{{{inactive || 'Actifs'}}}}</p>
-                            <p><strong>Trouvés:</strong> Recherche en cours...</p>
-                        </div>
-                    `;
-                }}
-                
-                async function sendPersonalizedNotifications() {{
-                    try {{
-                        showLoading(true);
-                        // Logique d'envoi personnalisé
-                        alert('🎯 Notifications personnalisées envoyées !');
-                    }} catch (error) {{
-                        alert(`❌ Erreur: ${{{{error.message}}}}`);
-                    }} finally {{
-                        showLoading(false);
-                    }}
-                }}
-                
-                async function checkSchedulerStatus() {{
-                    try {{
-                        // const response = await fetch('/api/scheduler/status');
-                        // const data = await response.json();
-                        
-                        // Simuler pour l'instant
-                        document.getElementById('scheduler-status').className = 'status-indicator status-active';
-                        document.getElementById('scheduler-text').textContent = 'Scheduler actif';
-                    }} catch (error) {{
-                        document.getElementById('scheduler-status').className = 'status-indicator status-error';
-                        document.getElementById('scheduler-text').textContent = 'Erreur de connexion';
-                    }}
-                }}
-                
-                function startScheduler() {{
-                    alert('🚀 Scheduler démarré !');
-                    checkSchedulerStatus();
-                }}
-                
-                function stopScheduler() {{
-                    alert('⏸️ Scheduler arrêté !');
-                    checkSchedulerStatus();
-                }}
-                
-                function setupAutoRefresh() {{
-                    // Rafraîchir les analytics toutes les 30 secondes
-                    setInterval(loadJourneyAnalytics, 30000);
-                    setInterval(checkSchedulerStatus, 60000);
-                }}
-                
-                function showLoading(show) {{
-                    const overlay = document.getElementById('loading-overlay') || createLoadingOverlay();
-                    overlay.style.display = show ? 'flex' : 'none';
-                }}
-                
-                function createLoadingOverlay() {{
-                    const overlay = document.createElement('div');
-                    overlay.id = 'loading-overlay';
-                    overlay.style.cssText = `
-                        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-                        background: rgba(0,0,0,0.5); display: none; justify-content: center;
-                        align-items: center; z-index: 9999; color: white; font-size: 18px;
-                    `;
-                    overlay.innerHTML = '<div>🚀 Traitement en cours...</div>';
-                    document.body.appendChild(overlay);
-                    return overlay;
-                }}
-            </script>
-            
-            <style>
-                .analytics-dashboard {{
-                    margin-bottom: 30px;
-                }}
-                
-                .stats-cards {{
-                    display: grid;
-                    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-                    gap: 20px;
-                    margin-bottom: 30px;
-                }}
-                
-                .stat-card {{
-                    background: white;
-                    padding: 20px;
-                    border-radius: 8px;
-                    border: 1px solid #e0e0e0;
-                    text-align: center;
-                }}
-                
-                .stat-card h4 {{
-                    margin: 0 0 10px 0;
-                    color: #666;
-                    font-size: 14px;
-                }}
-                
-                .stat-number {{
-                    font-size: 2.5em;
-                    font-weight: bold;
-                    color: #007bff;
-                }}
-                
-                .charts-container {{
-                    display: grid;
-                    grid-template-columns: 1fr 1fr;
-                    gap: 20px;
-                }}
-                
-                .chart-card {{
-                    background: white;
-                    padding: 20px;
-                    border-radius: 8px;
-                    border: 1px solid #e0e0e0;
-                }}
-                
-                .chart-card h4 {{
-                    margin: 0 0 15px 0;
-                }}
-                
-                .country-bars, .timezone-bars {{
-                    display: flex;
-                    flex-direction: column;
-                    gap: 8px;
-                }}
-                
-                .country-bar, .timezone-bar {{
-                    display: flex;
-                    align-items: center;
-                    gap: 10px;
-                }}
-                
-                .country-name, .timezone-name {{
-                    width: 80px;
-                    font-size: 12px;
-                    font-weight: bold;
-                }}
-                
-                .bar-container {{
-                    flex: 1;
-                    position: relative;
-                    height: 20px;
-                    background: #f0f0f0;
-                    border-radius: 10px;
-                    overflow: hidden;
-                }}
-                
-                .bar-fill {{
-                    height: 100%;
-                    background: linear-gradient(90deg, #007bff, #0056b3);
-                    transition: width 0.3s ease;
-                }}
-                
-                .timezone-bar-fill {{
-                    background: linear-gradient(90deg, #28a745, #1e7e34);
-                }}
-                
-                .bar-value {{
-                    position: absolute;
-                    right: 5px;
-                    top: 50%;
-                    transform: translateY(-50%);
-                    font-size: 11px;
-                    font-weight: bold;
-                    color: white;
-                }}
-                
-                .timezone-sender, .personalized-sender {{
-                    background: #f8f9fa;
-                    padding: 20px;
-                    border-radius: 8px;
-                    margin-bottom: 20px;
-                }}
-                
-                .timezone-controls {{
-                    display: grid;
-                    grid-template-columns: 1fr 1fr auto;
-                    gap: 15px;
-                    align-items: end;
-                }}
-                
-                .criteria-selector {{
-                    display: grid;
-                    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-                    gap: 15px;
-                    margin-bottom: 15px;
-                }}
-                
-                .criteria-group {{
-                    display: flex;
-                    flex-direction: column;
-                }}
-                
-                .criteria-group label {{
-                    margin-bottom: 5px;
-                    font-weight: bold;
-                    font-size: 14px;
-                }}
-                
-                .scheduler-controls {{
-                    display: grid;
-                    grid-template-columns: 1fr 1fr;
-                    gap: 20px;
-                }}
-                
-                .schedule-card {{
-                    background: white;
-                    padding: 20px;
-                    border-radius: 8px;
-                    border: 1px solid #e0e0e0;
-                }}
-                
-                .schedule-status {{
-                    display: flex;
-                    align-items: center;
-                    gap: 10px;
-                    margin-bottom: 15px;
-                }}
-                
-                .status-indicator {{
-                    width: 12px;
-                    height: 12px;
-                    border-radius: 50%;
-                    background: #ccc;
-                }}
-                
-                .status-indicator.status-active {{
-                    background: #28a745;
-                }}
-                
-                .status-indicator.status-error {{
-                    background: #dc3545;
-                }}
-                
-                .schedule-actions {{
-                    display: flex;
-                    gap: 10px;
-                }}
-                
-                .schedule-actions button {{
-                    padding: 8px 12px;
-                    border: none;
-                    border-radius: 4px;
-                    cursor: pointer;
-                }}
-                
-                .btn-success {{ background: #28a745; color: white; }}
-                .btn-warning {{ background: #ffc107; color: black; }}
-                
-                .map-container {{
-                    background: white;
-                    padding: 20px;
-                    border-radius: 8px;
-                    border: 1px solid #e0e0e0;
-                }}
-                
-                .africa-map {{
-                    height: 400px;
-                    background: #f0f8ff;
-                    border-radius: 8px;
-                    position: relative;
-                    background-image: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400"><text x="200" y="200" text-anchor="middle" fill="%23666">🌍 Carte interactive des utilisateurs</text></svg>');
-                    background-size: contain;
-                    background-position: center;
-                    background-repeat: no-repeat;
-                }}
-                
-                .map-legend {{
-                    position: absolute;
-                    bottom: 10px;
-                    right: 10px;
-                    background: rgba(255,255,255,0.9);
-                    padding: 10px;
-                    border-radius: 4px;
-                    display: flex;
-                    gap: 10px;
-                    flex-wrap: wrap;
-                }}
-                
-                .legend-item {{
-                    font-size: 12px;
-                    display: flex;
-                    align-items: center;
-                    gap: 5px;
-                }}
-                
-                .preview-card {{
-                    background: white;
-                    padding: 15px;
-                    border-radius: 8px;
-                    border: 1px solid #e0e0e0;
-                    margin-top: 15px;
-                }}
-                
-                .preview-card h4 {{
-                    margin: 0 0 10px 0;
-                }}
-                
-                .error {{
-                    color: #dc3545;
-                    font-style: italic;
-                }}
-            </style>
         """)
         self.send_html_response(html)
     
@@ -9662,15 +10969,16 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                     <a href="/" class="{'active' if page == 'home' else ''}">🏠 Accueil</a>
                     <a href="/stories" class="{'active' if page == 'stories' else ''}">📚 Histoires</a>
                     <a href="/countries" class="{'active' if page == 'countries' else ''}">🌍 Pays</a>
+                    <a href="/souvenirs" class="{'active' if page == 'souvenirs' else ''}">🎁 Souvenirs</a>
+                    <a href="/badges" class="{'active' if page == 'badges' else ''}">🏅 Badges</a>
                     <a href="/users" class="{'active' if page == 'users' else ''}">👥 Utilisateurs</a>
-                    <a href="/analytics" class="{'active' if page == 'analytics' else ''}">📊 Analytics</a>
-                    <a href="/notifications" class="{'active' if page == 'notifications' else ''}">🔔 Notifications</a>
-                    <a href="/journey-notifications" class="{'active' if page == 'journey-notifications' else ''}">🎯 Parcours</a>
-                    <a href="/logs-analytics" class="{'active' if page == 'logs-analytics' else ''}">📊 Logs Analytics</a>
+                    <a href="/notifications-v2" class="{'active' if page == 'notifications-v2' else ''}" style="background: linear-gradient(135deg, #FF6B35, #F7931E); color: white;">📢 Marketing</a>
+                    <a href="/mailing" class="{'active' if page == 'mailing' else ''}">📧 Emails</a>
+                    <a href="/logs-analytics" class="{'active' if page == 'logs-analytics' else ''}">📊 Logs</a>
+                    <a href="/kpis" class="{'active' if page == 'kpis' else ''}">📈 KPIs</a>
+                    <a href="/funnel" class="{'active' if page == 'funnel' else ''}">📊 Funnel</a>
                     <a href="/security" class="{'active' if page == 'security' else ''}">🛡️ Sécurité</a>
                     <a href="/trash" class="{'active' if page == 'trash' else ''}">🗑️ Corbeille</a>
-                    <a href="/mailing" class="{'active' if page == 'mailing' else ''}">📧 Mailing</a>
-                    <a href="/kpis" class="{'active' if page == 'kpis' else ''}">📈 KPIs</a>
                     <a href="/test" class="{'active' if page == 'test' else ''}">🔧 Test</a>
                 </nav>
                 
@@ -10003,10 +11311,10 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(html.encode('utf-8'))
     
-    def send_json_response(self, data):
+    def send_json_response(self, data, status=200):
         """Envoie une réponse JSON"""
         import datetime
-        
+
         # Convertisseur personnalisé pour les objets Firestore
         def json_serial(obj):
             """JSON serializer pour les objets non sérialisables par défaut"""
@@ -10017,8 +11325,8 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
             elif isinstance(obj, datetime.date):
                 return obj.isoformat()
             raise TypeError(f"Type {type(obj)} not serializable")
-        
-        self.send_response(200)
+
+        self.send_response(status)
         self.send_header('Content-type', 'application/json')
         self.end_headers()
         self.wfile.write(json.dumps(data, ensure_ascii=False, indent=2, default=json_serial).encode('utf-8'))
@@ -10130,16 +11438,6 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                             <button onclick="viewListUsers()" style="margin-left: 10px;" class="btn-small">Voir</button>
                         </div>
 
-                        <!-- Selection du canal -->
-                        <div class="form-group" style="background: #f5f5f5; padding: 15px; border-radius: 5px; margin-bottom: 15px;">
-                            <label style="margin-bottom: 10px; display: block;"><strong>Canal d'envoi:</strong></label>
-                            <div style="display: flex; gap: 15px;">
-                                <label style="cursor: pointer;"><input type="radio" name="send-channel" value="email" checked onchange="updateChannelUI()"> Email uniquement</label>
-                                <label style="cursor: pointer;"><input type="radio" name="send-channel" value="push" onchange="updateChannelUI()"> Push uniquement</label>
-                                <label style="cursor: pointer;"><input type="radio" name="send-channel" value="both" onchange="updateChannelUI()"> Email + Push</label>
-                            </div>
-                        </div>
-
                         <div class="form-group">
                             <label>Template (optionnel):</label>
                             <select id="email-template" onchange="loadTemplate()">
@@ -10203,20 +11501,6 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                             <code>{{% if childName %}}Bonjour {{{{childName}}}}!{{% endif %}}</code>
                         </div>
 
-                        <!-- Section Push Notification -->
-                        <div id="push-section" style="display: none; background: #e8f5e9; padding: 15px; border-radius: 5px; margin-bottom: 15px;">
-                            <h4 style="margin-top: 0;">Notification Push</h4>
-                            <div class="form-group">
-                                <label>Titre de la notification:</label>
-                                <input type="text" id="push-title" placeholder="Nouvelle histoire disponible!">
-                            </div>
-                            <div class="form-group">
-                                <label>Message court:</label>
-                                <input type="text" id="push-body" placeholder="Decouvrez une nouvelle aventure africaine" maxlength="150">
-                                <small style="color: #666;">Max 150 caracteres</small>
-                            </div>
-                        </div>
-
                         <div class="form-actions" style="display: flex; gap: 10px;">
                             <button onclick="previewEmail()" class="btn-secondary" id="preview-btn">Apercu</button>
                             <button onclick="sendTestEmail()" class="btn-secondary" id="test-btn">Envoyer Test</button>
@@ -10230,6 +11514,23 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                         <div id="email-preview" style="border: 1px solid #ddd; padding: 20px; background: white; border-radius: 5px;">
                         </div>
                     </div>
+                </div>
+            </div>
+
+            <!-- Section Desinscrits -->
+            <div class="section" style="margin-top: 30px;">
+                <h3>Desinscriptions Email</h3>
+                <div style="display: flex; gap: 10px; margin-bottom: 15px; align-items: center;">
+                    <button onclick="loadUnsubscribes()" class="btn-secondary">Charger la liste</button>
+                    <button onclick="checkStopReplies()" class="btn-secondary" id="check-stop-btn">Verifier IMAP (STOP)</button>
+                    <span id="unsub-status" style="color: #666; font-size: 13px;"></span>
+                </div>
+                <div style="display: flex; gap: 10px; margin-bottom: 15px; align-items: center;">
+                    <input type="email" id="unsub-email-input" placeholder="email@exemple.com" style="padding: 8px 12px; border: 1px solid #ddd; border-radius: 5px; width: 300px;">
+                    <button onclick="manualUnsubscribe()" style="padding: 8px 16px; background: #ef5350; color: white; border: none; border-radius: 5px; cursor: pointer;">Desinscrire</button>
+                </div>
+                <div id="unsubscribes-list" style="max-height: 400px; overflow-y: auto;">
+                    <p style="color: #999;">Cliquez sur "Charger la liste" pour voir les desinscrits.</p>
                 </div>
             </div>
 
@@ -10349,33 +11650,6 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                     container.innerHTML = html;
                 }}
 
-                function updateChannelUI() {{
-                    const channel = document.querySelector('input[name="send-channel"]:checked').value;
-                    const emailSection = document.getElementById('email-template').closest('.form-group').parentElement;
-                    const pushSection = document.getElementById('push-section');
-                    const subjectField = document.getElementById('email-subject').closest('.form-group');
-                    const bodyField = document.getElementById('email-body').closest('.form-group');
-                    const variablesHelp = document.querySelector('.variables-help');
-
-                    // Show/hide sections based on channel
-                    if (channel === 'email') {{
-                        subjectField.style.display = 'block';
-                        bodyField.style.display = 'block';
-                        variablesHelp.style.display = 'block';
-                        pushSection.style.display = 'none';
-                    }} else if (channel === 'push') {{
-                        subjectField.style.display = 'none';
-                        bodyField.style.display = 'none';
-                        variablesHelp.style.display = 'none';
-                        pushSection.style.display = 'block';
-                    }} else {{ // both
-                        subjectField.style.display = 'block';
-                        bodyField.style.display = 'block';
-                        variablesHelp.style.display = 'block';
-                        pushSection.style.display = 'block';
-                    }}
-                }}
-
                 async function selectList(listId) {{
                     // Deselectionner precedent
                     document.querySelectorAll('.list-item').forEach(el => el.classList.remove('selected'));
@@ -10461,10 +11735,12 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                     // Stats
                     const activeCount = selectedListUsers.length - excludedUsers.length;
                     const invalidCount = selectedListUsers.filter(u => !isValidEmail(u.email)).length;
+                    const fcmCount = selectedListUsers.filter(u => u.hasFcmToken).length;
                     document.getElementById('users-stats').innerHTML = `
                         <span style="color: #2e7d32;"><strong>${{activeCount}}</strong> actifs</span> |
                         <span style="color: #d32f2f;"><strong>${{excludedUsers.length}}</strong> exclus</span> |
-                        <span style="color: #f57c00;"><strong>${{invalidCount}}</strong> emails invalides</span>
+                        <span style="color: #f57c00;"><strong>${{invalidCount}}</strong> emails invalides</span> |
+                        <span style="color: #1976d2;"><strong>${{fcmCount}}</strong> 📱 push</span>
                     `;
 
                     // Tableau
@@ -10483,6 +11759,7 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                                 <th style="padding: 10px; text-align: center; cursor: pointer; border-bottom: 2px solid #ddd;" onclick="sortBy('progress')">
                                     Progression ${{sortColumn === 'progress' ? (sortDirection === 'asc' ? '▲' : '▼') : ''}}
                                 </th>
+                                <th style="padding: 10px; text-align: center; border-bottom: 2px solid #ddd;" title="Peut recevoir des notifications push">Push</th>
                                 <th style="padding: 10px; text-align: center; border-bottom: 2px solid #ddd;">Action</th>
                             </tr>
                         </thead>
@@ -10492,11 +11769,14 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                         const emailValid = isValidEmail(user.email);
                         const emailStyle = emailValid ? '' : 'color: #d32f2f; font-weight: bold;';
                         const emailIcon = emailValid ? '' : ' ⚠️';
+                        const pushIcon = user.hasFcmToken ? '📱' : '❌';
+                        const pushStyle = user.hasFcmToken ? 'color: #2e7d32;' : 'color: #bdbdbd;';
                         html += `<tr style="border-bottom: 1px solid #eee;">
                             <td style="padding: 8px;">${{user.displayName || '-'}}</td>
                             <td style="padding: 8px; ${{emailStyle}}">${{user.email || 'Pas d\\'email'}}${{emailIcon}}</td>
                             <td style="padding: 8px;">${{user.startCountry || '-'}}</td>
                             <td style="padding: 8px; text-align: center;">${{user.progress || 0}}%</td>
+                            <td style="padding: 8px; text-align: center; ${{pushStyle}}" title="${{user.hasFcmToken ? 'Peut recevoir des push' : 'Pas de FCM token'}}">${{pushIcon}}</td>
                             <td style="padding: 8px; text-align: center;">
                                 <button onclick="excludeUser('${{user.userId}}')"
                                     style="padding: 4px 8px; background: #ffebee; border: 1px solid #ef5350; border-radius: 3px; cursor: pointer; font-size: 11px; color: #c62828;">
@@ -10831,6 +12111,119 @@ Un avis nous aide enormement a faire decouvrir Kuma a d'autres familles !<br><br
                     }}
                 }}
 
+                // ========== UNSUBSCRIBE MANAGEMENT ==========
+
+                async function loadUnsubscribes() {{
+                    document.getElementById('unsub-status').textContent = 'Chargement...';
+                    try {{
+                        const response = await fetch('/api/mailing/unsubscribes');
+                        const data = await response.json();
+                        if (data.success) {{
+                            const list = data.unsubscribes || [];
+                            document.getElementById('unsub-status').textContent = `${{list.length}} desinscrit(s)`;
+                            if (list.length === 0) {{
+                                document.getElementById('unsubscribes-list').innerHTML = '<p style="color: #999;">Aucun email desinscrit.</p>';
+                                return;
+                            }}
+                            let html = `<table style="width:100%; border-collapse: collapse; font-size: 13px;">
+                                <thead><tr style="background: #f5f5f5;">
+                                    <th style="padding: 8px; text-align: left;">Email</th>
+                                    <th style="padding: 8px; text-align: left;">Source</th>
+                                    <th style="padding: 8px; text-align: left;">Date</th>
+                                    <th style="padding: 8px; text-align: center;">Action</th>
+                                </tr></thead><tbody>`;
+                            list.forEach(u => {{
+                                const sourceLabel = {{'stop_reply': 'Reponse STOP', 'manual': 'Manuel', 'admin': 'Admin'}}[u.source] || u.source;
+                                html += `<tr style="border-bottom: 1px solid #eee;">
+                                    <td style="padding: 8px;">${{u.email}}</td>
+                                    <td style="padding: 8px;">${{sourceLabel}}</td>
+                                    <td style="padding: 8px;">${{u.unsubscribed_at || '-'}}</td>
+                                    <td style="padding: 8px; text-align: center;">
+                                        <button onclick="resubscribe('${{u.email}}')"
+                                            style="padding: 4px 10px; background: #e8f5e9; border: 1px solid #4caf50; border-radius: 3px; cursor: pointer; font-size: 11px; color: #2e7d32;">
+                                            Re-inscrire
+                                        </button>
+                                    </td>
+                                </tr>`;
+                            }});
+                            html += '</tbody></table>';
+                            document.getElementById('unsubscribes-list').innerHTML = html;
+                        }} else {{
+                            document.getElementById('unsub-status').textContent = 'Erreur: ' + (data.error || 'inconnue');
+                        }}
+                    }} catch (error) {{
+                        document.getElementById('unsub-status').textContent = 'Erreur: ' + error.message;
+                    }}
+                }}
+
+                async function manualUnsubscribe() {{
+                    const email = document.getElementById('unsub-email-input').value.trim();
+                    if (!email) {{ alert('Veuillez entrer un email'); return; }}
+                    if (!confirm(`Desinscrire ${{email}} ?`)) return;
+
+                    try {{
+                        const response = await fetch('/api/mailing/unsubscribe', {{
+                            method: 'POST',
+                            headers: {{'Content-Type': 'application/json'}},
+                            body: JSON.stringify({{ email }})
+                        }});
+                        const data = await response.json();
+                        alert(data.success ? data.message : 'Erreur: ' + data.error);
+                        if (data.success) {{
+                            document.getElementById('unsub-email-input').value = '';
+                            loadUnsubscribes();
+                        }}
+                    }} catch (error) {{
+                        alert('Erreur: ' + error.message);
+                    }}
+                }}
+
+                async function resubscribe(email) {{
+                    if (!confirm(`Re-inscrire ${{email}} ?`)) return;
+
+                    try {{
+                        const response = await fetch('/api/mailing/resubscribe', {{
+                            method: 'POST',
+                            headers: {{'Content-Type': 'application/json'}},
+                            body: JSON.stringify({{ email }})
+                        }});
+                        const data = await response.json();
+                        alert(data.success ? data.message : 'Erreur: ' + data.error);
+                        if (data.success) loadUnsubscribes();
+                    }} catch (error) {{
+                        alert('Erreur: ' + error.message);
+                    }}
+                }}
+
+                async function checkStopReplies() {{
+                    const btn = document.getElementById('check-stop-btn');
+                    btn.disabled = true;
+                    btn.textContent = 'Verification...';
+                    document.getElementById('unsub-status').textContent = 'Verification IMAP en cours...';
+
+                    try {{
+                        const response = await fetch('/api/mailing/check-unsubscribes', {{
+                            method: 'POST'
+                        }});
+                        const data = await response.json();
+                        if (data.success) {{
+                            const r = data.results;
+                            document.getElementById('unsub-status').textContent =
+                                `Verifie: ${{r.processed}} emails, ${{r.unsubscribed}} nouveaux desinscrits`;
+                            if (r.unsubscribed > 0) loadUnsubscribes();
+                        }} else {{
+                            document.getElementById('unsub-status').textContent = 'Erreur: ' + (data.error || 'inconnue');
+                        }}
+                    }} catch (error) {{
+                        document.getElementById('unsub-status').textContent = 'Erreur: ' + error.message;
+                    }} finally {{
+                        btn.disabled = false;
+                        btn.textContent = 'Verifier IMAP (STOP)';
+                    }}
+                }}
+
+                // ========== CAMPAIGN SENDING ==========
+
                 async function sendCampaign() {{
                     if (!selectedList || !selectedListUsers.length) {{
                         alert('Selectionnez une liste');
@@ -10845,41 +12238,16 @@ Un avis nous aide enormement a faire decouvrir Kuma a d'autres familles !<br><br
                         return;
                     }}
 
-                    const channel = document.querySelector('input[name="send-channel"]:checked').value;
                     const subject = document.getElementById('email-subject').value;
                     const body = document.getElementById('email-body').value;
-                    const pushTitle = document.getElementById('push-title').value;
-                    const pushBody = document.getElementById('push-body').value;
 
-                    // Validation selon le canal
-                    if (channel === 'email' || channel === 'both') {{
-                        if (!subject || !body) {{
-                            alert('Veuillez remplir le sujet et le corps de l\\'email');
-                            return;
-                        }}
-                    }}
-                    if (channel === 'push' || channel === 'both') {{
-                        if (!pushTitle || !pushBody) {{
-                            alert('Veuillez remplir le titre et le message de la notification push');
-                            return;
-                        }}
+                    if (!subject || !body) {{
+                        alert('Veuillez remplir le sujet et le corps de l\\'email');
+                        return;
                     }}
 
-                    // Compter les destinataires selon le canal (apres exclusions)
-                    const fcmCount = activeRecipients.filter(u => u.hasFcmToken).length;
                     const excludedInfo = excludedUsers.length > 0 ? ` (${{excludedUsers.length}} exclus)` : '';
-                    let confirmMsg = '';
-                    if (channel === 'email') {{
-                        confirmMsg = `Envoyer EMAIL a ${{activeRecipients.length}} destinataires${{excludedInfo}}?`;
-                    }} else if (channel === 'push') {{
-                        confirmMsg = `Envoyer PUSH a ${{fcmCount}} destinataires${{excludedInfo}}?`;
-                        if (fcmCount === 0) {{
-                            alert('Aucun utilisateur avec token FCM dans cette liste');
-                            return;
-                        }}
-                    }} else {{
-                        confirmMsg = `Envoyer EMAIL (${{activeRecipients.length}}) + PUSH (${{fcmCount}})${{excludedInfo}}?`;
-                    }}
+                    const confirmMsg = `Envoyer EMAIL a ${{activeRecipients.length}} destinataires${{excludedInfo}}?`;
 
                     if (!confirm(confirmMsg)) return;
 
@@ -10887,44 +12255,20 @@ Un avis nous aide enormement a faire decouvrir Kuma a d'autres familles !<br><br
                     document.getElementById('send-btn').textContent = 'Envoi en cours...';
 
                     try {{
-                        // Choisir l'endpoint selon le canal
-                        let endpoint = '/api/mailing/send';
-                        let payload = {{
-                            list_id: selectedList.id,
-                            recipients: activeRecipients
-                        }};
-
-                        if (channel === 'email') {{
-                            endpoint = '/api/mailing/send';
-                            payload.subject = subject;
-                            payload.body = body;
-                        }} else if (channel === 'push') {{
-                            endpoint = '/api/mailing/send-push';
-                            payload.title = pushTitle;
-                            payload.body = pushBody;
-                        }} else {{ // both
-                            endpoint = '/api/mailing/send-both';
-                            payload.subject = subject;
-                            payload.email_body = body;
-                            payload.push_title = pushTitle;
-                            payload.push_body = pushBody;
-                        }}
-
-                        const response = await fetch(endpoint, {{
+                        const response = await fetch('/api/mailing/send', {{
                             method: 'POST',
                             headers: {{'Content-Type': 'application/json'}},
-                            body: JSON.stringify(payload)
+                            body: JSON.stringify({{
+                                list_id: selectedList.id,
+                                recipients: activeRecipients,
+                                subject: subject,
+                                body: body
+                            }})
                         }});
                         const data = await response.json();
 
                         if (data.success) {{
                             let resultMsg = 'Campagne envoyee!\\n';
-                            if (data.email_results) {{
-                                resultMsg += `Email: ${{data.email_results.sent}} envoyes, ${{data.email_results.failed}} echecs\\n`;
-                            }}
-                            if (data.push_results) {{
-                                resultMsg += `Push: ${{data.push_results.sent}} envoyes, ${{data.push_results.failed}} echecs`;
-                            }}
                             if (data.results) {{
                                 resultMsg += `Envoyes: ${{data.results.sent}}, Echecs: ${{data.results.failed}}`;
                             }}
@@ -11391,6 +12735,416 @@ Un avis nous aide enormement a faire decouvrir Kuma a d'autres familles !<br><br
                 'traceback': traceback.format_exc()
             }, status=500)
 
+    def send_funnel_page(self):
+        """Page d'analyse du funnel de conversion"""
+        html = self.get_base_html('funnel', """
+            <h2>Funnel Analytics</h2>
+            <p style="color: #666; margin-bottom: 20px;">Analyse du parcours utilisateur: Demo -> Inscription -> 7 histoires -> Abonnement</p>
+
+            <div id="funnel-loading" style="text-align: center; padding: 40px;">
+                <p>Chargement des donnees du funnel...</p>
+            </div>
+
+            <div id="funnel-content" style="display: none;">
+                <!-- Section 1: Vue d'ensemble du funnel -->
+                <div class="section" style="margin-bottom: 30px;">
+                    <h3>Vue d'ensemble</h3>
+                    <div class="funnel-overview" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 20px 0;">
+                        <!-- Etape 1: Demo -->
+                        <div class="funnel-step" style="text-align: center; padding: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 10px; position: relative;">
+                            <div style="font-size: 2.5em; margin-bottom: 10px;">🎮</div>
+                            <div id="funnel-step-1" style="font-size: 2em; font-weight: bold;">-</div>
+                            <div style="opacity: 0.9;">Demo gratuite</div>
+                            <div style="font-size: 0.8em; margin-top: 5px; opacity: 0.7;">Histoire Erythree</div>
+                        </div>
+
+                        <!-- Fleche -->
+                        <div class="funnel-arrow" style="display: flex; align-items: center; justify-content: center; position: relative;">
+                            <div style="font-size: 2em; color: #667eea;">→</div>
+                            <div id="conv-1-2" style="position: absolute; bottom: 0; font-size: 0.9em; font-weight: bold; color: #28a745;">-</div>
+                        </div>
+
+                        <!-- Etape 2: Inscription -->
+                        <div class="funnel-step" style="text-align: center; padding: 20px; background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: white; border-radius: 10px;">
+                            <div style="font-size: 2.5em; margin-bottom: 10px;">✍️</div>
+                            <div id="funnel-step-2" style="font-size: 2em; font-weight: bold;">-</div>
+                            <div style="opacity: 0.9;">Inscription</div>
+                            <div style="font-size: 0.8em; margin-top: 5px; opacity: 0.7;">Compte cree</div>
+                        </div>
+
+                        <!-- Fleche -->
+                        <div class="funnel-arrow" style="display: flex; align-items: center; justify-content: center; position: relative;">
+                            <div style="font-size: 2em; color: #11998e;">→</div>
+                            <div id="conv-2-3" style="position: absolute; bottom: 0; font-size: 0.9em; font-weight: bold; color: #28a745;">-</div>
+                        </div>
+                    </div>
+
+                    <div class="funnel-overview" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 20px 0;">
+                        <!-- Etape 3: 7 histoires -->
+                        <div class="funnel-step" style="text-align: center; padding: 20px; background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white; border-radius: 10px;">
+                            <div style="font-size: 2.5em; margin-bottom: 10px;">📚</div>
+                            <div id="funnel-step-3" style="font-size: 2em; font-weight: bold;">-</div>
+                            <div style="opacity: 0.9;">7 histoires</div>
+                            <div style="font-size: 0.8em; margin-top: 5px; opacity: 0.7;">Histoires gratuites</div>
+                        </div>
+
+                        <!-- Fleche -->
+                        <div class="funnel-arrow" style="display: flex; align-items: center; justify-content: center; position: relative;">
+                            <div style="font-size: 2em; color: #f5576c;">→</div>
+                            <div id="conv-3-4" style="position: absolute; bottom: 0; font-size: 0.9em; font-weight: bold; color: #28a745;">-</div>
+                        </div>
+
+                        <!-- Etape 4: Abonnement -->
+                        <div class="funnel-step" style="text-align: center; padding: 20px; background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%); color: #333; border-radius: 10px;">
+                            <div style="font-size: 2.5em; margin-bottom: 10px;">👑</div>
+                            <div id="funnel-step-4" style="font-size: 2em; font-weight: bold;">-</div>
+                            <div style="opacity: 0.9;">Abonnement</div>
+                            <div style="font-size: 0.8em; margin-top: 5px; opacity: 0.7;">Premium</div>
+                        </div>
+
+                        <!-- Taux global -->
+                        <div class="funnel-step" style="text-align: center; padding: 20px; background: #f8f9fa; border: 2px solid #28a745; border-radius: 10px;">
+                            <div style="font-size: 2.5em; margin-bottom: 10px;">📈</div>
+                            <div id="funnel-global" style="font-size: 2em; font-weight: bold; color: #28a745;">-</div>
+                            <div style="color: #333;">Conversion globale</div>
+                            <div style="font-size: 0.8em; margin-top: 5px; color: #666;">Demo → Abonnement</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Section 2: Graphique du funnel -->
+                <div class="section" style="margin-bottom: 30px;">
+                    <h3>Visualisation du funnel</h3>
+                    <div class="funnel-chart" style="max-width: 600px; margin: 20px auto;">
+                        <div class="funnel-bar" style="margin: 10px 0;">
+                            <div style="display: flex; align-items: center; gap: 10px;">
+                                <span style="width: 120px;">Demo</span>
+                                <div style="flex: 1; background: #e9ecef; border-radius: 5px; height: 30px; overflow: hidden;">
+                                    <div id="bar-step-1" style="background: linear-gradient(90deg, #667eea, #764ba2); height: 100%; width: 100%; transition: width 0.5s;"></div>
+                                </div>
+                                <span id="bar-value-1" style="width: 60px; text-align: right; font-weight: bold;">-</span>
+                            </div>
+                        </div>
+                        <div class="funnel-bar" style="margin: 10px 0;">
+                            <div style="display: flex; align-items: center; gap: 10px;">
+                                <span style="width: 120px;">Inscription</span>
+                                <div style="flex: 1; background: #e9ecef; border-radius: 5px; height: 30px; overflow: hidden;">
+                                    <div id="bar-step-2" style="background: linear-gradient(90deg, #11998e, #38ef7d); height: 100%; width: 0%; transition: width 0.5s;"></div>
+                                </div>
+                                <span id="bar-value-2" style="width: 60px; text-align: right; font-weight: bold;">-</span>
+                            </div>
+                        </div>
+                        <div class="funnel-bar" style="margin: 10px 0;">
+                            <div style="display: flex; align-items: center; gap: 10px;">
+                                <span style="width: 120px;">7 histoires</span>
+                                <div style="flex: 1; background: #e9ecef; border-radius: 5px; height: 30px; overflow: hidden;">
+                                    <div id="bar-step-3" style="background: linear-gradient(90deg, #f093fb, #f5576c); height: 100%; width: 0%; transition: width 0.5s;"></div>
+                                </div>
+                                <span id="bar-value-3" style="width: 60px; text-align: right; font-weight: bold;">-</span>
+                            </div>
+                        </div>
+                        <div class="funnel-bar" style="margin: 10px 0;">
+                            <div style="display: flex; align-items: center; gap: 10px;">
+                                <span style="width: 120px;">Abonnement</span>
+                                <div style="flex: 1; background: #e9ecef; border-radius: 5px; height: 30px; overflow: hidden;">
+                                    <div id="bar-step-4" style="background: linear-gradient(90deg, #FFD700, #FFA500); height: 100%; width: 0%; transition: width 0.5s;"></div>
+                                </div>
+                                <span id="bar-value-4" style="width: 60px; text-align: right; font-weight: bold;">-</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Section 3: Analyse des abandons -->
+                <div class="section" style="margin-bottom: 30px;">
+                    <h3>Analyse des abandons</h3>
+                    <div class="dropoff-grid" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin: 20px 0;">
+                        <div class="dropoff-card" style="background: #fff3cd; padding: 20px; border-radius: 10px; text-align: center; border-left: 4px solid #ffc107;">
+                            <div style="font-size: 1.5em; margin-bottom: 10px;">🚪</div>
+                            <div id="drop-1" style="font-size: 1.8em; font-weight: bold; color: #856404;">-</div>
+                            <div style="color: #856404;">Abandon apres Demo</div>
+                            <div id="drop-1-rate" style="font-size: 0.9em; color: #666;">-</div>
+                        </div>
+                        <div class="dropoff-card" style="background: #f8d7da; padding: 20px; border-radius: 10px; text-align: center; border-left: 4px solid #dc3545;">
+                            <div style="font-size: 1.5em; margin-bottom: 10px;">🚪</div>
+                            <div id="drop-2" style="font-size: 1.8em; font-weight: bold; color: #721c24;">-</div>
+                            <div style="color: #721c24;">Abandon apres Inscription</div>
+                            <div id="drop-2-rate" style="font-size: 0.9em; color: #666;">-</div>
+                        </div>
+                        <div class="dropoff-card" style="background: #cce5ff; padding: 20px; border-radius: 10px; text-align: center; border-left: 4px solid #007bff;">
+                            <div style="font-size: 1.5em; margin-bottom: 10px;">🚪</div>
+                            <div id="drop-3" style="font-size: 1.8em; font-weight: bold; color: #004085;">-</div>
+                            <div style="color: #004085;">Abandon apres 7 histoires</div>
+                            <div id="drop-3-rate" style="font-size: 0.9em; color: #666;">-</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Section 4: Temps de conversion -->
+                <div class="section" style="margin-bottom: 30px;">
+                    <h3>Temps de conversion moyen</h3>
+                    <div class="time-grid" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin: 20px 0;">
+                        <div class="time-card" style="background: #f8f9fa; padding: 20px; border-radius: 10px; text-align: center;">
+                            <div style="font-size: 1.5em; margin-bottom: 10px;">⏱️</div>
+                            <div id="time-demo-reg" style="font-size: 1.5em; font-weight: bold; color: #667eea;">-</div>
+                            <div style="color: #666;">Demo → Inscription</div>
+                        </div>
+                        <div class="time-card" style="background: #f8f9fa; padding: 20px; border-radius: 10px; text-align: center;">
+                            <div style="font-size: 1.5em; margin-bottom: 10px;">⏱️</div>
+                            <div id="time-reg-story" style="font-size: 1.5em; font-weight: bold; color: #11998e;">-</div>
+                            <div style="color: #666;">Inscription → 1ere histoire</div>
+                        </div>
+                        <div class="time-card" style="background: #f8f9fa; padding: 20px; border-radius: 10px; text-align: center;">
+                            <div style="font-size: 1.5em; margin-bottom: 10px;">⏱️</div>
+                            <div id="time-story-sub" style="font-size: 1.5em; font-weight: bold; color: #FFD700;">-</div>
+                            <div style="color: #666;">7 histoires → Abonnement</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Section 5: Periode de selection -->
+                <div class="section" style="margin-bottom: 30px; background: #f8f9fa; padding: 20px; border-radius: 10px;">
+                    <h3>Filtres</h3>
+                    <div style="display: flex; gap: 20px; align-items: center;">
+                        <label>
+                            Periode:
+                            <select id="funnel-period" style="padding: 8px; border-radius: 5px; border: 1px solid #ddd;">
+                                <option value="7">7 derniers jours</option>
+                                <option value="30" selected>30 derniers jours</option>
+                                <option value="90">90 derniers jours</option>
+                            </select>
+                        </label>
+                        <button onclick="loadFunnelData()" style="background: #FF6B35; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer;">
+                            Actualiser
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="funnel-error" style="display: none; padding: 20px; background: #f8d7da; color: #721c24; border-radius: 10px; text-align: center;">
+                <p>Erreur lors du chargement des donnees du funnel.</p>
+                <p id="funnel-error-msg"></p>
+            </div>
+
+            <script>
+                async function loadFunnelData() {
+                    var loading = document.getElementById('funnel-loading');
+                    var content = document.getElementById('funnel-content');
+                    var error = document.getElementById('funnel-error');
+                    var periodEl = document.getElementById('funnel-period');
+                    var days = periodEl ? periodEl.value : '30';
+                    if (!days) days = '30';
+
+                    loading.style.display = 'block';
+                    content.style.display = 'none';
+                    error.style.display = 'none';
+
+                    try {
+                        var url = '/api/funnel/overview?days=' + days;
+                        var response = await fetch(url);
+                        if (!response.ok) {
+                            throw new Error('HTTP ' + response.status);
+                        }
+                        var data = await response.json();
+
+                        if (data.success) {
+                            updateFunnelUI(data);
+                            loading.style.display = 'none';
+                            content.style.display = 'block';
+                        } else {
+                            throw new Error(data.error || 'Erreur inconnue');
+                        }
+                    } catch (e) {
+                        loading.style.display = 'none';
+                        error.style.display = 'block';
+                        document.getElementById('funnel-error-msg').textContent = e.message || String(e);
+                    }
+                }
+
+                function updateFunnelUI(data) {
+                    var overview = data.overview || {};
+                    var dropOff = data.drop_off || {};
+                    var timeToConvert = data.time_to_convert || {};
+
+                    var stepCounts = overview.total_users_per_step || {};
+                    var convRates = overview.conversion_rates || {};
+
+                    // Mettre a jour les compteurs d'etapes (int keys from Python become string keys in JSON)
+                    document.getElementById('funnel-step-1').textContent = stepCounts[1] || stepCounts['1'] || 0;
+                    document.getElementById('funnel-step-2').textContent = stepCounts[2] || stepCounts['2'] || 0;
+                    document.getElementById('funnel-step-3').textContent = stepCounts[3] || stepCounts['3'] || 0;
+                    document.getElementById('funnel-step-4').textContent = stepCounts[4] || stepCounts['4'] || 0;
+
+                    // Taux de conversion entre etapes
+                    document.getElementById('conv-1-2').textContent = (convRates.step_1_to_2 || 0) + '%';
+                    document.getElementById('conv-2-3').textContent = (convRates.step_2_to_3 || 0) + '%';
+                    document.getElementById('conv-3-4').textContent = (convRates.step_3_to_4 || 0) + '%';
+
+                    // Taux global
+                    document.getElementById('funnel-global').textContent = (overview.global_conversion_rate || 0) + '%';
+
+                    // Barres du graphique
+                    var step1Val = stepCounts[1] || stepCounts['1'] || 0;
+                    var step2Val = stepCounts[2] || stepCounts['2'] || 0;
+                    var step3Val = stepCounts[3] || stepCounts['3'] || 0;
+                    var step4Val = stepCounts[4] || stepCounts['4'] || 0;
+                    var maxStep = Math.max(step1Val, 1);
+
+                    document.getElementById('bar-step-1').style.width = '100%';
+                    document.getElementById('bar-value-1').textContent = step1Val;
+
+                    var pct2 = (step2Val / maxStep * 100);
+                    document.getElementById('bar-step-2').style.width = pct2 + '%';
+                    document.getElementById('bar-value-2').textContent = step2Val;
+
+                    var pct3 = (step3Val / maxStep * 100);
+                    document.getElementById('bar-step-3').style.width = pct3 + '%';
+                    document.getElementById('bar-value-3').textContent = step3Val;
+
+                    var pct4 = (step4Val / maxStep * 100);
+                    document.getElementById('bar-step-4').style.width = pct4 + '%';
+                    document.getElementById('bar-value-4').textContent = step4Val;
+
+                    // Abandons
+                    var dropOffs = dropOff.drop_offs || {};
+                    var d1 = dropOffs.dropped_at_step_1 || {};
+                    var d2 = dropOffs.dropped_at_step_2 || {};
+                    var d3 = dropOffs.dropped_at_step_3 || {};
+
+                    document.getElementById('drop-1').textContent = d1.count || 0;
+                    document.getElementById('drop-1-rate').textContent = (d1.rate || 0) + '% des utilisateurs';
+
+                    document.getElementById('drop-2').textContent = d2.count || 0;
+                    document.getElementById('drop-2-rate').textContent = (d2.rate || 0) + '% des utilisateurs';
+
+                    document.getElementById('drop-3').textContent = d3.count || 0;
+                    document.getElementById('drop-3-rate').textContent = (d3.rate || 0) + '% des utilisateurs';
+
+                    // Temps de conversion
+                    var t1 = timeToConvert.demo_to_registration || {};
+                    var t2 = timeToConvert.registration_to_story_1 || {};
+                    var t3 = timeToConvert.story_7_to_subscription || {};
+
+                    document.getElementById('time-demo-reg').textContent = formatTime(t1.avg_hours);
+                    document.getElementById('time-reg-story').textContent = formatTime(t2.avg_hours);
+                    document.getElementById('time-story-sub').textContent = formatTime(t3.avg_hours);
+                }
+
+                function formatTime(hours) {
+                    if (!hours || hours === 0) return '-';
+                    if (hours < 1) return Math.round(hours * 60) + ' min';
+                    if (hours < 24) return Math.round(hours) + ' h';
+                    return Math.round(hours / 24) + ' jours';
+                }
+
+                // Charger les donnees au demarrage
+                if (document.readyState === 'loading') {
+                    document.addEventListener('DOMContentLoaded', loadFunnelData);
+                } else {
+                    loadFunnelData();
+                }
+            </script>
+        """)
+        self.send_html_response(html)
+
+    def handle_funnel_overview(self):
+        """API: Retourne les donnees du funnel"""
+        try:
+            query_params = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            days = int(query_params.get('days', [30])[0])
+
+            if FUNNEL_AVAILABLE and self.firebase_manager.initialized:
+                funnel_manager = FunnelAnalyticsManager(self.firebase_manager.db)
+                overview = funnel_manager.get_funnel_overview(days)
+                drop_off = funnel_manager.get_drop_off_analysis(days)
+                time_to_convert = funnel_manager.get_time_to_convert(days)
+
+                self.send_json_response({
+                    'success': True,
+                    'overview': overview,
+                    'drop_off': drop_off,
+                    'time_to_convert': time_to_convert,
+                    'period_days': days
+                })
+            else:
+                # Mode demo si pas de Firebase
+                self.send_json_response({
+                    'success': True,
+                    'overview': {
+                        'total_users_per_step': {'1': 150, '2': 95, '3': 45, '4': 12},
+                        'conversion_rates': {
+                            'step_1_to_2': 63.33,
+                            'step_2_to_3': 47.37,
+                            'step_3_to_4': 26.67
+                        },
+                        'global_conversion_rate': 8.0,
+                        'period_days': days
+                    },
+                    'drop_off': {
+                        'total_users': 150,
+                        'completed_funnel': 12,
+                        'drop_offs': {
+                            'dropped_at_step_1': {'count': 55, 'rate': 36.67, 'step_name': 'Demo gratuite'},
+                            'dropped_at_step_2': {'count': 50, 'rate': 33.33, 'step_name': 'Inscription'},
+                            'dropped_at_step_3': {'count': 33, 'rate': 22.0, 'step_name': '7 histoires'}
+                        }
+                    },
+                    'time_to_convert': {
+                        'demo_to_registration': {'avg_hours': 2.5, 'min_hours': 0.1, 'max_hours': 48, 'sample_size': 95},
+                        'registration_to_story_1': {'avg_hours': 0.5, 'min_hours': 0.1, 'max_hours': 24, 'sample_size': 85},
+                        'story_7_to_subscription': {'avg_hours': 72, 'min_hours': 1, 'max_hours': 168, 'sample_size': 12}
+                    },
+                    'period_days': days,
+                    'demo_mode': True
+                })
+        except Exception as e:
+            import traceback
+            self.send_json_response({
+                'success': False,
+                'error': str(e),
+                'traceback': traceback.format_exc()
+            })
+
+    def handle_funnel_api(self):
+        """API: Gere les autres endpoints funnel"""
+        try:
+            path_parts = self.path.split('/')
+            if len(path_parts) >= 4:
+                endpoint = path_parts[3].split('?')[0]
+                query_params = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                days = int(query_params.get('days', [30])[0])
+
+                if FUNNEL_AVAILABLE and self.firebase_manager.initialized:
+                    funnel_manager = FunnelAnalyticsManager(self.firebase_manager.db)
+
+                    if endpoint == 'cohorts':
+                        cohort_type = query_params.get('type', ['weekly'])[0]
+                        data = funnel_manager.get_cohort_analysis(cohort_type)
+                        self.send_json_response({'success': True, 'data': data})
+                    elif endpoint == 'milestones':
+                        data = funnel_manager.get_story_milestone_breakdown(days)
+                        self.send_json_response({'success': True, 'data': data})
+                    elif endpoint == 'chart':
+                        data = funnel_manager.get_funnel_chart_data(days)
+                        self.send_json_response({'success': True, 'data': data})
+                    else:
+                        self.send_json_response({'success': False, 'error': 'Endpoint inconnu'})
+                else:
+                    self.send_json_response({
+                        'success': True,
+                        'data': {'message': 'Mode demo - donnees simulees'},
+                        'demo_mode': True
+                    })
+            else:
+                self.send_json_response({'success': False, 'error': 'Endpoint invalide'})
+        except Exception as e:
+            import traceback
+            self.send_json_response({
+                'success': False,
+                'error': str(e),
+                'traceback': traceback.format_exc()
+            })
+
     def handle_get_mailing_lists(self):
         """API: Recupere les listes de diffusion disponibles"""
         try:
@@ -11448,6 +13202,81 @@ Un avis nous aide enormement a faire decouvrir Kuma a d'autres familles !<br><br
                 status = {'configured': False, 'error': 'Module non disponible'}
 
             self.send_json_response({'success': True, 'status': status})
+        except Exception as e:
+            self.send_json_response({'success': False, 'error': str(e)})
+
+    def handle_get_unsubscribes(self):
+        """API: Liste les emails desinscrits"""
+        try:
+            if UNSUBSCRIBE_AVAILABLE:
+                unsubscribes = get_all_unsubscribed()
+            else:
+                unsubscribes = []
+
+            self.send_json_response({
+                'success': True,
+                'unsubscribes': unsubscribes,
+                'count': len(unsubscribes)
+            })
+        except Exception as e:
+            self.send_json_response({'success': False, 'error': str(e)})
+
+    def handle_unsubscribe(self, post_data):
+        """API: Desinscription manuelle (admin)"""
+        try:
+            data = json.loads(post_data)
+            email_addr = data.get('email', '').strip().lower()
+
+            if not email_addr:
+                self.send_json_response({'success': False, 'error': 'Email requis'})
+                return
+
+            if not UNSUBSCRIBE_AVAILABLE:
+                self.send_json_response({'success': False, 'error': 'Module unsubscribe non disponible'})
+                return
+
+            success = unsub_add(email_addr, source='admin')
+            self.send_json_response({
+                'success': success,
+                'message': f'{email_addr} desinscrit' if success else 'Erreur desinscription'
+            })
+        except Exception as e:
+            self.send_json_response({'success': False, 'error': str(e)})
+
+    def handle_resubscribe(self, post_data):
+        """API: Re-inscription (admin)"""
+        try:
+            data = json.loads(post_data)
+            email_addr = data.get('email', '').strip().lower()
+
+            if not email_addr:
+                self.send_json_response({'success': False, 'error': 'Email requis'})
+                return
+
+            if not UNSUBSCRIBE_AVAILABLE:
+                self.send_json_response({'success': False, 'error': 'Module unsubscribe non disponible'})
+                return
+
+            success = unsub_remove(email_addr)
+            self.send_json_response({
+                'success': success,
+                'message': f'{email_addr} re-inscrit' if success else 'Erreur re-inscription'
+            })
+        except Exception as e:
+            self.send_json_response({'success': False, 'error': str(e)})
+
+    def handle_check_unsubscribes(self):
+        """API: Lance manuellement la verification IMAP des STOP replies"""
+        try:
+            if not UNSUBSCRIBE_AVAILABLE:
+                self.send_json_response({'success': False, 'error': 'Module unsubscribe non disponible'})
+                return
+
+            results = check_imap_for_stop_replies()
+            self.send_json_response({
+                'success': True,
+                'results': results
+            })
         except Exception as e:
             self.send_json_response({'success': False, 'error': str(e)})
 
@@ -11648,7 +13477,19 @@ Un avis nous aide enormement a faire decouvrir Kuma a d'autres familles !<br><br
                             print(f"DEBUG childName: {first_child_name}, childAge: {first_child_age}, childrenCount: {children_count}")
 
                             # Derniere activite formatee
+                            # Chercher d'abord dans lastActivity, puis fallback vers childrenProfiles
                             last_activity = user_data.get('lastActivity')
+                            children_profiles = user_data.get('childrenProfiles', {})
+                            if isinstance(children_profiles, dict):
+                                for child_id, child_data in children_profiles.items():
+                                    if isinstance(child_data, dict):
+                                        child_activity = child_data.get('lastActivityDate')
+                                        if child_activity:
+                                            if last_activity is None or (hasattr(child_activity, 'timestamp') and hasattr(last_activity, 'timestamp') and child_activity.timestamp() > last_activity.timestamp()):
+                                                last_activity = child_activity
+                                            elif last_activity is None:
+                                                last_activity = child_activity
+
                             last_activity_formatted = 'Jamais'
                             days_since_activity = 999
                             if last_activity:
@@ -11832,6 +13673,130 @@ Un avis nous aide enormement a faire decouvrir Kuma a d'autres familles !<br><br
         except Exception as e:
             self.send_json_response({'success': False, 'error': str(e)})
 
+    def handle_landing_subscribe(self, post_data):
+        """API: Capture email depuis la landing page - stocke dans Firestore"""
+        try:
+            # Ajouter CORS headers pour permettre les requetes cross-origin
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.send_header('Access-Control-Allow-Methods', 'POST, OPTIONS')
+            self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+            self.end_headers()
+
+            data = json.loads(post_data)
+            email = data.get('email', '').strip().lower()
+            source = data.get('source', 'landing_page')
+
+            # Validation email
+            import re
+            email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+            if not email or not re.match(email_pattern, email):
+                response = json.dumps({'success': False, 'error': 'Email invalide'})
+                self.wfile.write(response.encode())
+                return
+
+            # Verifier Firebase
+            if not self.firebase_manager or not self.firebase_manager.initialized:
+                response = json.dumps({'success': False, 'error': 'Firebase non disponible'})
+                self.wfile.write(response.encode())
+                return
+
+            from datetime import datetime
+
+            # Verifier si l'email existe deja
+            existing = self.firebase_manager.db.collection('landing_subscribers').where('email', '==', email).limit(1).get()
+
+            if len(list(existing)) > 0:
+                response = json.dumps({
+                    'success': True,
+                    'message': 'Vous etes deja inscrit!',
+                    'already_subscribed': True
+                })
+                self.wfile.write(response.encode())
+                return
+
+            # Creer le document subscriber
+            subscriber_data = {
+                'email': email,
+                'source': source,
+                'subscribed_at': datetime.now().isoformat(),
+                'status': 'active',
+                'pdf_sent': False,
+                'welcome_email_sent': False,
+                'tags': ['landing_page', '3_contes_gratuits']
+            }
+
+            # Ajouter dans Firestore
+            doc_ref = self.firebase_manager.db.collection('landing_subscribers').add(subscriber_data)
+            subscriber_id = doc_ref[1].id
+
+            print(f"[LANDING] Nouvel abonne: {email} - ID: {subscriber_id}")
+
+            # Envoyer l'email de bienvenue avec les 3 contes
+            email_sent = False
+            if EMAIL_AVAILABLE:
+                try:
+                    email_mgr = get_email_manager()
+                    if email_mgr.is_configured():
+                        success, msg = email_mgr.send_landing_welcome_email(email)
+                        if success:
+                            email_sent = True
+                            # Mettre a jour le document pour marquer l'email comme envoye
+                            self.firebase_manager.db.collection('landing_subscribers').document(subscriber_id).update({
+                                'welcome_email_sent': True,
+                                'welcome_email_sent_at': datetime.now().isoformat()
+                            })
+                            print(f"[LANDING] Email de bienvenue envoye a {email}")
+                        else:
+                            print(f"[LANDING] Echec envoi email: {msg}")
+                except Exception as email_error:
+                    print(f"[LANDING] Erreur envoi email: {email_error}")
+
+            response = json.dumps({
+                'success': True,
+                'message': 'Inscription reussie! Verifiez votre boite mail.' if email_sent else 'Inscription reussie!',
+                'subscriber_id': subscriber_id,
+                'email_sent': email_sent
+            })
+            self.wfile.write(response.encode())
+
+        except Exception as e:
+            import traceback
+            print(f"[LANDING ERROR] {e}")
+            traceback.print_exc()
+            try:
+                response = json.dumps({'success': False, 'error': str(e)})
+                self.wfile.write(response.encode())
+            except:
+                pass
+
+    def handle_get_landing_subscribers(self):
+        """API: Recupere la liste des abonnes de la landing page"""
+        try:
+            if not self.firebase_manager or not self.firebase_manager.initialized:
+                self.send_json_response({'success': False, 'error': 'Firebase non disponible'})
+                return
+
+            # Recuperer tous les abonnes
+            subscribers_ref = self.firebase_manager.db.collection('landing_subscribers')
+            subscribers_docs = subscribers_ref.order_by('subscribed_at', direction='DESCENDING').limit(500).get()
+
+            subscribers = []
+            for doc in subscribers_docs:
+                data = doc.to_dict()
+                data['id'] = doc.id
+                subscribers.append(data)
+
+            self.send_json_response({
+                'success': True,
+                'subscribers': subscribers,
+                'count': len(subscribers)
+            })
+
+        except Exception as e:
+            self.send_json_response({'success': False, 'error': str(e)})
+
     def handle_save_email_template(self, post_data):
         """API: Sauvegarde un template email"""
         try:
@@ -11841,88 +13806,114 @@ Un avis nous aide enormement a faire decouvrir Kuma a d'autres familles !<br><br
         except Exception as e:
             self.send_json_response({'success': False, 'error': str(e)})
 
-    def handle_send_push_notification(self, post_data):
-        """API: Envoie des notifications push"""
+    def send_notifications_v2_page(self):
+        """Page de notifications v2 avec layout 3 panneaux"""
+        if not NOTIFICATIONS_V2_AVAILABLE:
+            self.send_error_page("Module notifications_v2 non disponible")
+            return
+
+        html_content = generate_notifications_v2_page(self.firebase_manager.initialized)
+        html = self.get_base_html('notifications-v2', html_content)
+        self.send_html_response(html)
+
+    def _get_notifications_v2_handler(self):
+        """Retourne le handler API pour notifications v2"""
+        if not hasattr(self, '_notifications_v2_api'):
+            email_mgr = get_email_manager() if EMAIL_AVAILABLE else None
+            push_mgr = get_push_notification_manager(self.firebase_manager) if PUSH_AVAILABLE else None
+            self._notifications_v2_api = NotificationsV2APIHandlers(
+                firebase_manager=self.firebase_manager,
+                email_manager=email_mgr,
+                push_manager=push_mgr
+            )
+        return self._notifications_v2_api
+
+    def handle_get_templates_v2(self):
+        """GET /api/notifications-v2/templates"""
+        handler = self._get_notifications_v2_handler()
+        result = handler.handle_get_templates_v2()
+        self.send_json_response(result)
+
+    def handle_get_lists_v2(self):
+        """GET /api/notifications-v2/lists"""
+        handler = self._get_notifications_v2_handler()
+        result = handler.handle_get_lists_v2()
+        self.send_json_response(result)
+
+    def handle_get_list_users_v2(self, list_id):
+        """GET /api/notifications-v2/lists/{list_id}/users"""
+        params = {}
+        if '?' in self.path:
+            query = self.path.split('?')[1]
+            params = dict(p.split('=') for p in query.split('&') if '=' in p)
+
+        handler = self._get_notifications_v2_handler()
+        result = handler.handle_get_list_users(list_id, params)
+        self.send_json_response(result)
+
+    def handle_get_automation_rules_v2(self):
+        """GET /api/notifications-v2/automation/rules"""
+        handler = self._get_notifications_v2_handler()
+        result = handler.handle_get_automation_rules()
+        self.send_json_response(result)
+
+    def handle_get_automation_logs_v2(self):
+        """GET /api/notifications-v2/automation/logs"""
+        params = {}
+        if '?' in self.path:
+            query = self.path.split('?')[1]
+            params = dict(p.split('=') for p in query.split('&') if '=' in p)
+
+        handler = self._get_notifications_v2_handler()
+        result = handler.handle_get_automation_logs(params)
+        self.send_json_response(result)
+
+    def handle_preview_template_v2(self, post_data):
+        """POST /api/notifications-v2/preview"""
         try:
             data = json.loads(post_data)
-            title = data.get('title', '')
-            body = data.get('body', '')
-            recipients = data.get('recipients', [])
+            handler = self._get_notifications_v2_handler()
+            result = handler.handle_preview_template(data)
+            self.send_json_response(result)
+        except json.JSONDecodeError as e:
+            self.send_json_response({'success': False, 'error': f'Invalid JSON: {e}'})
 
-            if not PUSH_AVAILABLE:
-                self.send_json_response({'success': False, 'error': 'Module push non disponible'})
-                return
-
-            push_mgr = get_push_notification_manager()
-
-            if not push_mgr.is_available():
-                self.send_json_response({'success': False, 'error': 'FCM non disponible'})
-                return
-
-            if not recipients:
-                self.send_json_response({'success': False, 'error': 'Aucun destinataire'})
-                return
-
-            if not title or not body:
-                self.send_json_response({'success': False, 'error': 'Titre et message requis'})
-                return
-
-            # Envoyer les notifications
-            results = push_mgr.send_bulk_notifications(recipients, title, body)
-
-            self.send_json_response({
-                'success': True,
-                'results': results
-            })
-
-        except Exception as e:
-            self.send_json_response({'success': False, 'error': str(e)})
-
-    def handle_send_both(self, post_data):
-        """API: Envoie email ET push notification"""
+    def handle_send_notification_v2(self, post_data):
+        """POST /api/notifications-v2/send"""
         try:
             data = json.loads(post_data)
-            list_id = data.get('list_id', '')
-            subject = data.get('subject', '')
-            email_body = data.get('email_body', data.get('body', ''))  # Support both keys
-            push_title = data.get('push_title', subject)
-            push_body = data.get('push_body', '')
-            recipients = data.get('recipients', [])
+            handler = self._get_notifications_v2_handler()
+            result = handler.handle_send_notification_v2(data)
+            self.send_json_response(result)
+        except json.JSONDecodeError as e:
+            self.send_json_response({'success': False, 'error': f'Invalid JSON: {e}'})
 
-            email_results = {'sent': 0, 'failed': 0, 'errors': []}
-            push_results = {'sent': 0, 'failed': 0, 'skipped': 0, 'errors': []}
+    def handle_save_automation_rule_v2(self, post_data):
+        """POST /api/notifications-v2/automation/rules"""
+        try:
+            data = json.loads(post_data)
+            handler = self._get_notifications_v2_handler()
+            result = handler.handle_save_automation_rule(data)
+            self.send_json_response(result)
+        except json.JSONDecodeError as e:
+            self.send_json_response({'success': False, 'error': f'Invalid JSON: {e}'})
 
-            # Envoyer emails si disponible
-            if EMAIL_AVAILABLE and subject and email_body:
-                email_mgr = get_email_manager()
-                if email_mgr.is_configured():
-                    result = email_mgr.send_bulk_emails(recipients, subject, email_body)
-                    email_results = {
-                        'sent': result.get('sent', 0),
-                        'failed': result.get('failed', 0),
-                        'errors': result.get('errors', [])
-                    }
+    def handle_toggle_automation_rule_v2(self, rule_id, post_data):
+        """POST /api/notifications-v2/automation/rules/{id}/toggle"""
+        try:
+            data = json.loads(post_data) if post_data else {}
+            handler = self._get_notifications_v2_handler()
+            result = handler.handle_toggle_automation_rule(rule_id, data)
+            self.send_json_response(result)
+        except json.JSONDecodeError as e:
+            self.send_json_response({'success': False, 'error': f'Invalid JSON: {e}'})
 
-            # Envoyer push si disponible
-            if PUSH_AVAILABLE and push_title and push_body:
-                push_mgr = get_push_notification_manager()
-                if push_mgr.is_available():
-                    result = push_mgr.send_bulk_notifications(recipients, push_title, push_body)
-                    push_results = {
-                        'sent': result.get('sent', 0),
-                        'failed': result.get('failed', 0),
-                        'skipped': result.get('skipped', 0),
-                        'errors': result.get('errors', [])
-                    }
+    def handle_execute_automation_rule_v2(self, rule_id):
+        """POST /api/notifications-v2/automation/rules/{id}/execute"""
+        handler = self._get_notifications_v2_handler()
+        result = handler.handle_execute_automation_rule(rule_id)
+        self.send_json_response(result)
 
-            self.send_json_response({
-                'success': True,
-                'email_results': email_results,
-                'push_results': push_results
-            })
-
-        except Exception as e:
-            self.send_json_response({'success': False, 'error': str(e)})
 
 def create_handler(firebase_manager):
     """Factory pour créer un handler avec Firebase"""
