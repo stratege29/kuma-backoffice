@@ -1483,15 +1483,18 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
         stories = self.firebase_manager.get_stories()
         countries = self.firebase_manager.get_countries()
         
-        # Extraire les pays avec compteur d'histoires
+        # Extraire les pays avec compteur d'histoires (groupé par countryCode pour éviter les doublons)
         countries_filter = {}
         for story in stories:
-            country = story.get('country', 'Inconnu')
-            country_code = story.get('countryCode', '??')
-            countries_filter[country] = {
-                'code': country_code,
-                'count': countries_filter.get(country, {}).get('count', 0) + 1
-            }
+            country_name = story.get('country', 'Inconnu')
+            country_code = story.get('countryCode', '??').strip().upper()
+            if country_code in countries_filter:
+                countries_filter[country_code]['count'] += 1
+            else:
+                countries_filter[country_code] = {
+                    'name': country_name,
+                    'count': 1
+                }
         
         # Extraire les valeurs avec compteur
         values_filter = {}
@@ -3757,7 +3760,7 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
             moral_truncated = (moral_lesson[:100] + '...') if len(moral_lesson) > 100 else moral_lesson
 
             stories_html += f"""
-                <div class="story-item" data-id="{story['id']}" data-title="{title.lower()}" data-country="{country}" data-values="{','.join([v.lower() for v in values])}" data-moral="{moral_lesson.lower()}" style="border-left: 4px solid {border_color};">
+                <div class="story-item" data-id="{story['id']}" data-title="{title.lower()}" data-country="{country_code.upper()}" data-values="{','.join([v.lower() for v in values])}" data-moral="{moral_lesson.lower()}" style="border-left: 4px solid {border_color};">
                     <div class="story-header">
                         <h4>{title}</h4>
                         <span class="story-status {status_class}">{status_badge}</span>
@@ -3860,12 +3863,12 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                     const countrySelect = document.getElementById('filter-country');
                     const valueSelect = document.getElementById('filter-value');
                     
-                    // Remplir les pays
+                    // Remplir les pays (groupés par countryCode, sans doublons)
                     countrySelect.innerHTML = '<option value="">Tous les pays</option>';
-                    Object.entries(filtersData.countries || {{}}).forEach(([country, data]) => {{
+                    Object.entries(filtersData.countries || {{}}).forEach(([code, data]) => {{
                         const option = document.createElement('option');
-                        option.value = country;
-                        option.textContent = `🌍 ${{country}} (${{data.count}} histoire${{data.count > 1 ? 's' : ''}})`;
+                        option.value = code;
+                        option.textContent = `🌍 ${{data.name}} (${{data.count}} histoire${{data.count > 1 ? 's' : ''}})`;
                         countrySelect.appendChild(option);
                     }});
 
