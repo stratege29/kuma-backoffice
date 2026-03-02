@@ -3865,9 +3865,14 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                     Object.entries(filtersData.countries || {{}}).forEach(([country, data]) => {{
                         const option = document.createElement('option');
                         option.value = country;
-                        option.textContent = `🌍 ${country} (${{data.count}} histoire${{data.count > 1 ? 's' : ''}})`;
+                        option.textContent = `🌍 ${{country}} (${{data.count}} histoire${{data.count > 1 ? 's' : ''}})`;
                         countrySelect.appendChild(option);
                     }});
+
+                    // Trier les options par nom de pays (alphabétique)
+                    const options = Array.from(countrySelect.options).slice(1); // skip "Tous les pays"
+                    options.sort((a, b) => a.textContent.localeCompare(b.textContent, 'fr'));
+                    options.forEach(opt => countrySelect.appendChild(opt));
                     
                     // Remplir les valeurs
                     valueSelect.innerHTML = '<option value="">Toutes les valeurs</option>';
