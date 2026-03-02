@@ -552,7 +552,19 @@ class FirebaseManager:
             if not souvenir_data.get('souvenirId'):
                 country_code = souvenir_data.get('countryCode', 'XX').upper()
                 existing = self.get_souvenirs_by_country(country_code)
-                next_num = len(existing) + 1
+                # Calculer le prochain numéro depuis le max existant (pas len)
+                # pour éviter les collisions après suppression
+                max_num = 0
+                for s in existing:
+                    sid = s.get('souvenirId', '')
+                    if '_' in sid:
+                        try:
+                            num = int(sid.rsplit('_', 1)[1])
+                            if num > max_num:
+                                max_num = num
+                        except (ValueError, IndexError):
+                            pass
+                next_num = max_num + 1
                 souvenir_data['souvenirId'] = f"{country_code}_{next_num:03d}"
                 souvenir_data['id'] = souvenir_data['souvenirId']
                 souvenir_data['createdAt'] = datetime.now().isoformat()
@@ -1096,19 +1108,39 @@ class FirebaseManager:
             return None
     
     def save_story(self, story_data):
-        """Sauvegarde une nouvelle histoire"""
+        """Sauvegarde une nouvelle histoire avec ID structuré story_{cc}_{nnn}"""
         if not self.initialized:
             print("🔧 Mode démo - sauvegarde simulée")
             return True, f"demo_{len(self.get_demo_stories()) + 1}"
-        
+
         try:
-            # Générer un ID unique
-            doc_ref = self.db.collection('stories').document()
-            story_data['id'] = doc_ref.id
-            
+            # Générer un ID structuré : story_{countryCode}_{numéro séquentiel}
+            country_code = story_data.get('countryCode', 'XX').strip().upper()
+            if not country_code or len(country_code) != 2 or not country_code.isalpha():
+                country_code = 'XX'
+
+            # Chercher le max existant pour ce pays
+            all_stories = self.get_stories()
+            prefix = f"story_{country_code.lower()}_"
+            max_num = 0
+            for s in all_stories:
+                sid = s.get('id', '')
+                if sid.startswith(prefix):
+                    try:
+                        num = int(sid[len(prefix):])
+                        if num > max_num:
+                            max_num = num
+                    except (ValueError, IndexError):
+                        pass
+            next_num = max_num + 1
+            story_id = f"story_{country_code.lower()}_{next_num:03d}"
+
+            doc_ref = self.db.collection('stories').document(story_id)
+            story_data['id'] = story_id
+
             doc_ref.set(story_data)
-            print(f"✅ Histoire créée: {doc_ref.id}")
-            return True, doc_ref.id
+            print(f"✅ Histoire créée: {story_id}")
+            return True, story_id
         except Exception as e:
             print(f"❌ Erreur sauvegarde histoire: {e}")
             return False, None
@@ -1568,21 +1600,74 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
         else:
             self.send_error_response(404, 'Endpoint non trouvé')
     
+    def _check_story_duplicate(self, title, country_code, exclude_id=None):
+        """Vérifie si une histoire avec le même titre existe déjà pour ce pays.
+        Retourne True si un doublon est trouvé."""
+        if not title or not country_code:
+            return False
+        existing_stories = self.firebase_manager.get_stories()
+        for s in existing_stories:
+            if exclude_id and s.get('id') == exclude_id:
+                continue
+            if (s.get('title', '').strip().lower() == title.lower()
+                    and s.get('countryCode', '').strip().upper() == country_code):
+                return True
+        return False
+
     def handle_create_story(self, post_data):
         """Gère la création d'une histoire"""
         try:
             # Parse form data
             form_data = urllib.parse.parse_qs(post_data)
-            
+
+            # Validation des champs requis côté serveur
+            title = form_data.get('title', [''])[0].strip()
+            if not title:
+                self.send_error_response(400, 'Le titre est obligatoire')
+                return
+
+            country_code = form_data.get('countryCode', [''])[0].strip().upper()
+            if not country_code or len(country_code) != 2 or not country_code.isalpha():
+                self.send_error_response(400, 'Le code pays doit faire exactement 2 lettres (ex: KE)')
+                return
+
+            content_fr = form_data.get('content_fr', [''])[0].strip()
+            if not content_fr:
+                self.send_error_response(400, 'Le contenu en français est obligatoire')
+                return
+
+            # Vérification de doublon : même titre + même countryCode
+            if self._check_story_duplicate(title, country_code):
+                self.send_error_response(409, f'Une histoire avec le titre "{title}" existe déjà pour le pays {country_code}')
+                return
+
+            # Parser les champs numériques avec fallback sécurisé
+            try:
+                reading_time = int(form_data.get('estimatedReadingTime', ['10'])[0])
+            except (ValueError, TypeError):
+                reading_time = 10
+            try:
+                audio_duration = int(form_data.get('estimatedAudioDuration', ['600'])[0])
+            except (ValueError, TypeError):
+                audio_duration = 600
+            try:
+                order = int(form_data.get('order', ['0'])[0])
+            except (ValueError, TypeError):
+                order = 0
+            try:
+                quiz_questions = json.loads(form_data.get('quizQuestionsJson', ['[]'])[0])
+            except (json.JSONDecodeError, TypeError):
+                quiz_questions = []
+
             # Construire les données de l'histoire
             story_data = {
-                'title': form_data.get('title', [''])[0],
+                'title': title,
                 'country': form_data.get('country', [''])[0],
-                'countryCode': form_data.get('countryCode', [''])[0],
-                'estimatedReadingTime': int(form_data.get('estimatedReadingTime', ['10'])[0]),
-                'estimatedAudioDuration': int(form_data.get('estimatedAudioDuration', ['600'])[0]),
+                'countryCode': country_code,
+                'estimatedReadingTime': reading_time,
+                'estimatedAudioDuration': audio_duration,
                 'content': {
-                    'fr': form_data.get('content_fr', [''])[0],
+                    'fr': content_fr,
                     'en': form_data.get('content_en', [''])[0]
                 },
                 'imageUrl': form_data.get('imageUrl', [''])[0],
@@ -1590,8 +1675,8 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                 'values': [v.strip() for v in form_data.get('values', [''])[0].split(',') if v.strip()],
                 'tags': [t.strip() for t in form_data.get('tags', [''])[0].split(',') if t.strip()],
                 'isPublished': form_data.get('isPublished', ['false'])[0] == 'true',
-                'order': int(form_data.get('order', ['0'])[0]),
-                'quizQuestions': json.loads(form_data.get('quizQuestionsJson', ['[]'])[0]),
+                'order': order,
+                'quizQuestions': quiz_questions,
                 'metadata': {
                     'author': form_data.get('author', [''])[0],
                     'origin': form_data.get('origin', [''])[0],
@@ -1604,20 +1689,20 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                     'updatedAt': datetime.now().isoformat()
                 }
             }
-            
+
             # Sauvegarder l'histoire
             success, story_id = self.firebase_manager.save_story(story_data)
-            
+
             if success:
                 self.send_json_response({
-                    'success': True, 
+                    'success': True,
                     'message': 'Histoire créée avec succès!',
                     'story_id': story_id,
                     'redirect': '/stories'
                 })
             else:
                 self.send_error_response(500, 'Erreur lors de la création')
-                
+
         except Exception as e:
             print(f"❌ Erreur création histoire: {e}")
             self.send_error_response(500, f'Erreur: {str(e)}')
@@ -1626,21 +1711,42 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
         """Gère la mise à jour d'une histoire"""
         try:
             form_data = urllib.parse.parse_qs(post_data)
-            
+
             # Récupérer l'histoire existante
             existing_story = self.firebase_manager.get_story_by_id(story_id)
             if not existing_story:
                 self.send_error_response(404, 'Histoire non trouvée')
                 return
-            
+
+            # Vérification de doublon si le titre ou le pays change
+            new_title = form_data.get('title', [existing_story.get('title', '')])[0].strip()
+            new_cc = form_data.get('countryCode', [existing_story.get('countryCode', '')])[0].strip().upper()
+            if self._check_story_duplicate(new_title, new_cc, exclude_id=story_id):
+                self.send_error_response(409, f'Une histoire avec le titre "{new_title}" existe déjà pour le pays {new_cc}')
+                return
+
+            # Parser les champs numériques avec fallback sécurisé
+            try:
+                reading_time = int(form_data.get('estimatedReadingTime', [str(existing_story.get('estimatedReadingTime', 10))])[0])
+            except (ValueError, TypeError):
+                reading_time = existing_story.get('estimatedReadingTime', 10)
+            try:
+                audio_duration = int(form_data.get('estimatedAudioDuration', [str(existing_story.get('estimatedAudioDuration', 600))])[0])
+            except (ValueError, TypeError):
+                audio_duration = existing_story.get('estimatedAudioDuration', 600)
+            try:
+                order = int(form_data.get('order', [str(existing_story.get('order', 0))])[0])
+            except (ValueError, TypeError):
+                order = existing_story.get('order', 0)
+
             # Mettre à jour les données
             story_data = existing_story.copy()
             story_data.update({
-                'title': form_data.get('title', [story_data.get('title', '')])[0],
+                'title': new_title,
                 'country': form_data.get('country', [story_data.get('country', '')])[0],
-                'countryCode': form_data.get('countryCode', [story_data.get('countryCode', '')])[0],
-                'estimatedReadingTime': int(form_data.get('estimatedReadingTime', [str(story_data.get('estimatedReadingTime', 10))])[0]),
-                'estimatedAudioDuration': int(form_data.get('estimatedAudioDuration', [str(story_data.get('estimatedAudioDuration', 600))])[0]),
+                'countryCode': new_cc,
+                'estimatedReadingTime': reading_time,
+                'estimatedAudioDuration': audio_duration,
                 'content': {
                     'fr': form_data.get('content_fr', [story_data.get('content', {}).get('fr', '')])[0],
                     'en': form_data.get('content_en', [story_data.get('content', {}).get('en', '')])[0]
@@ -1650,13 +1756,16 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                 'values': [v.strip() for v in form_data.get('values', [''])[0].split(',') if v.strip()],
                 'tags': [t.strip() for t in form_data.get('tags', [''])[0].split(',') if t.strip()],
                 'isPublished': form_data.get('isPublished', ['false'])[0] == 'true',
-                'order': int(form_data.get('order', [str(story_data.get('order', 0))])[0])
+                'order': order
             })
 
             # Mettre à jour les questions de quiz
             quiz_json = form_data.get('quizQuestionsJson', [''])[0]
             if quiz_json:
-                story_data['quizQuestions'] = json.loads(quiz_json)
+                try:
+                    story_data['quizQuestions'] = json.loads(quiz_json)
+                except (json.JSONDecodeError, TypeError):
+                    pass  # garder les quiz existants
 
             # Mettre à jour les métadonnées
             metadata = story_data.get('metadata', {})
@@ -1724,9 +1833,11 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
             self.send_error_response(500, f'Erreur: {str(e)}')
     
     def handle_file_upload(self, raw_data):
-        """Gère l'upload de fichiers vers Firebase Storage (bytes bruts)"""
+        """Gère l'upload de fichiers vers Firebase Storage avec optimisation images"""
         try:
             import uuid
+            import io
+            from PIL import Image, ImageOps
 
             content_type = self.headers.get('content-type', '')
             if 'multipart/form-data' not in content_type:
@@ -1736,7 +1847,25 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
             boundary = content_type.split('boundary=')[-1].encode()
             parts = raw_data.split(b'--' + boundary)
             uploaded_files = []
+            country_code = 'XX'
 
+            # First pass: extract text fields (countryCode)
+            for part in parts:
+                if b'Content-Disposition' not in part:
+                    continue
+                if b'name="countryCode"' in part:
+                    header_end = part.find(b'\r\n\r\n')
+                    if header_end > 0:
+                        value = part[header_end + 4:].strip().decode('utf-8', errors='replace')
+                        if value.endswith('\r\n'):
+                            value = value[:-2]
+                        if value.endswith('--'):
+                            value = value[:-2]
+                        value = value.strip().upper()
+                        if len(value) == 2 and value.isalpha():
+                            country_code = value
+
+            # Second pass: process file parts
             for part in parts:
                 if b'Content-Disposition' not in part or b'filename="' not in part:
                     continue
@@ -1767,17 +1896,47 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                 if not file_data:
                     continue
 
-                # Generate unique filename
-                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-                unique_filename = f"{timestamp}_{uuid.uuid4().hex[:8]}_{filename}"
-
-                # Determine folder based on file extension
+                # Determine file type based on extension
                 ext = filename.lower().rsplit('.', 1)[-1] if '.' in filename else ''
-                if ext in ['jpg', 'jpeg', 'png', 'gif', 'webp']:
-                    folder = 'images'
-                elif ext in ['mp3', 'wav', 'ogg', 'm4a']:
-                    folder = 'audio'
+                is_image = ext in ['jpg', 'jpeg', 'png', 'gif', 'webp']
+                is_audio = ext in ['mp3', 'wav', 'ogg', 'm4a']
+
+                # Generate unique filename with structured path
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                uid = uuid.uuid4().hex[:8]
+
+                if is_image:
+                    # Optimize image: RGB conversion, EXIF fix, resize, WebP
+                    original_kb = len(file_data) / 1024
+                    try:
+                        img = Image.open(io.BytesIO(file_data))
+                        if img.mode != 'RGB':
+                            if img.mode in ('RGBA', 'P', 'LA'):
+                                background = Image.new('RGB', img.size, (255, 255, 255))
+                                if img.mode == 'P':
+                                    img = img.convert('RGBA')
+                                if img.mode in ('RGBA', 'LA'):
+                                    background.paste(img, mask=img.split()[-1])
+                                img = background
+                            else:
+                                img = img.convert('RGB')
+                        img = ImageOps.exif_transpose(img)
+                        img.thumbnail((800, 450), Image.LANCZOS)
+                        output = io.BytesIO()
+                        img.save(output, format='WEBP', quality=80, optimize=True)
+                        file_data = output.getvalue()
+                        optimized_kb = len(file_data) / 1024
+                        print(f"✅ Image optimisée: {original_kb:.1f}KB → {optimized_kb:.1f}KB")
+                    except Exception as img_err:
+                        print(f"⚠️ Optimisation image échouée, upload brut: {img_err}")
+
+                    unique_filename = f"{timestamp}_{uid}_cover.webp"
+                    folder = f"stories/{country_code}"
+                elif is_audio:
+                    unique_filename = f"{timestamp}_{uid}_{filename}"
+                    folder = f"stories/{country_code}"
                 else:
+                    unique_filename = f"{timestamp}_{uid}_{filename}"
                     folder = 'media'
 
                 # Upload to Firebase Storage
@@ -1788,7 +1947,7 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                         'field': 'upload',
                         'filename': filename,
                         'url': url,
-                        'type': f'file/{ext}'
+                        'type': f'file/{"webp" if is_image else ext}'
                     })
 
             if uploaded_files:
@@ -1799,7 +1958,7 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                 })
             else:
                 self.send_error_response(400, 'Aucun fichier valide trouvé')
-                
+
         except Exception as e:
             print(f"❌ Erreur upload: {e}")
             self.send_error_response(500, f'Erreur upload: {str(e)}')
@@ -2235,9 +2394,11 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                 function uploadFile(file, type) {{
                     const statusElement = document.getElementById(`${type}-upload-status`);
                     statusElement.innerHTML = '🔄 Upload en cours...';
-                    
+
                     const formData = new FormData();
                     formData.append(`${type}File`, file);
+                    const countryCode = document.getElementById('countryCode')?.value || 'XX';
+                    formData.append('countryCode', countryCode);
                     
                     fetch('/api/upload', {{
                         method: 'POST',
