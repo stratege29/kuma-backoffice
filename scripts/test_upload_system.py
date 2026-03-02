@@ -1419,6 +1419,213 @@ class TestStoryUpdateDuplicate(unittest.TestCase):
         self.assertEqual(saved['order'], 5)
 
 
+class TestQuizValidation(unittest.TestCase):
+    """Tests de validation et assainissement des quiz questions."""
+
+    def test_valid_quiz_stored_correctly(self):
+        """Quiz valide → stocké tel quel."""
+        quiz = json.dumps([{
+            'id': 'q_abc123',
+            'question': 'Quel animal?',
+            'options': ['Lion', 'Zèbre', 'Girafe', 'Éléphant'],
+            'correctAnswer': 2,
+            'explanation': 'La girafe est le héros'
+        }])
+        handler = MockStoryHandler()
+        run_create_story(handler, make_story_form_data(quizQuestionsJson=quiz))
+
+        self.assertEqual(handler.response_code, 200)
+        saved = handler.firebase_manager.save_story.call_args[0][0]
+        self.assertEqual(len(saved['quizQuestions']), 1)
+        q = saved['quizQuestions'][0]
+        self.assertEqual(q['question'], 'Quel animal?')
+        self.assertEqual(q['correctAnswer'], 2)
+        self.assertEqual(q['options'], ['Lion', 'Zèbre', 'Girafe', 'Éléphant'])
+
+    def test_correct_answer_out_of_range_clamped(self):
+        """correctAnswer > 3 → ramené à 0."""
+        quiz = json.dumps([{
+            'id': 'q_1', 'question': 'Test?',
+            'options': ['A', 'B', 'C', 'D'],
+            'correctAnswer': 7,  # invalide
+            'explanation': ''
+        }])
+        handler = MockStoryHandler()
+        run_create_story(handler, make_story_form_data(quizQuestionsJson=quiz))
+
+        saved = handler.firebase_manager.save_story.call_args[0][0]
+        self.assertEqual(saved['quizQuestions'][0]['correctAnswer'], 0)
+
+    def test_negative_correct_answer_clamped(self):
+        """correctAnswer < 0 → ramené à 0."""
+        quiz = json.dumps([{
+            'id': 'q_1', 'question': 'Test?',
+            'options': ['A', 'B', 'C', 'D'],
+            'correctAnswer': -1,
+            'explanation': ''
+        }])
+        handler = MockStoryHandler()
+        run_create_story(handler, make_story_form_data(quizQuestionsJson=quiz))
+
+        saved = handler.firebase_manager.save_story.call_args[0][0]
+        self.assertEqual(saved['quizQuestions'][0]['correctAnswer'], 0)
+
+    def test_correct_answer_string_clamped(self):
+        """correctAnswer string au lieu de int → ramené à 0."""
+        quiz = json.dumps([{
+            'id': 'q_1', 'question': 'Test?',
+            'options': ['A', 'B', 'C', 'D'],
+            'correctAnswer': 'two',
+            'explanation': ''
+        }])
+        handler = MockStoryHandler()
+        run_create_story(handler, make_story_form_data(quizQuestionsJson=quiz))
+
+        saved = handler.firebase_manager.save_story.call_args[0][0]
+        self.assertEqual(saved['quizQuestions'][0]['correctAnswer'], 0)
+
+    def test_empty_question_text_filtered(self):
+        """Question avec texte vide → filtrée."""
+        quiz = json.dumps([
+            {'id': 'q_1', 'question': '', 'options': ['A', 'B', 'C', 'D'], 'correctAnswer': 0, 'explanation': ''},
+            {'id': 'q_2', 'question': 'Valide?', 'options': ['A', 'B', 'C', 'D'], 'correctAnswer': 1, 'explanation': ''},
+        ])
+        handler = MockStoryHandler()
+        run_create_story(handler, make_story_form_data(quizQuestionsJson=quiz))
+
+        saved = handler.firebase_manager.save_story.call_args[0][0]
+        self.assertEqual(len(saved['quizQuestions']), 1)
+        self.assertEqual(saved['quizQuestions'][0]['question'], 'Valide?')
+
+    def test_wrong_number_of_options_filtered(self):
+        """Question avec != 4 options → filtrée."""
+        quiz = json.dumps([
+            {'id': 'q_1', 'question': 'Trop peu?', 'options': ['A', 'B'], 'correctAnswer': 0, 'explanation': ''},
+            {'id': 'q_2', 'question': 'OK?', 'options': ['A', 'B', 'C', 'D'], 'correctAnswer': 0, 'explanation': ''},
+        ])
+        handler = MockStoryHandler()
+        run_create_story(handler, make_story_form_data(quizQuestionsJson=quiz))
+
+        saved = handler.firebase_manager.save_story.call_args[0][0]
+        self.assertEqual(len(saved['quizQuestions']), 1)
+        self.assertEqual(saved['quizQuestions'][0]['question'], 'OK?')
+
+    def test_non_dict_quiz_entry_filtered(self):
+        """Entrée non-dict dans le tableau → filtrée."""
+        quiz = json.dumps([
+            "not a dict",
+            42,
+            {'id': 'q_1', 'question': 'Valide?', 'options': ['A', 'B', 'C', 'D'], 'correctAnswer': 0, 'explanation': ''},
+        ])
+        handler = MockStoryHandler()
+        run_create_story(handler, make_story_form_data(quizQuestionsJson=quiz))
+
+        saved = handler.firebase_manager.save_story.call_args[0][0]
+        self.assertEqual(len(saved['quizQuestions']), 1)
+
+    def test_missing_id_gets_generated(self):
+        """Question sans id → id auto-généré."""
+        quiz = json.dumps([{
+            'question': 'Sans ID?',
+            'options': ['A', 'B', 'C', 'D'],
+            'correctAnswer': 1,
+            'explanation': 'test'
+        }])
+        handler = MockStoryHandler()
+        run_create_story(handler, make_story_form_data(quizQuestionsJson=quiz))
+
+        saved = handler.firebase_manager.save_story.call_args[0][0]
+        self.assertTrue(saved['quizQuestions'][0]['id'].startswith('q_'))
+
+    def test_options_converted_to_strings(self):
+        """Options non-string → converties en string."""
+        quiz = json.dumps([{
+            'id': 'q_1', 'question': 'Chiffres?',
+            'options': [1, 2, 3, 4],
+            'correctAnswer': 0,
+            'explanation': ''
+        }])
+        handler = MockStoryHandler()
+        run_create_story(handler, make_story_form_data(quizQuestionsJson=quiz))
+
+        saved = handler.firebase_manager.save_story.call_args[0][0]
+        self.assertEqual(saved['quizQuestions'][0]['options'], ['1', '2', '3', '4'])
+
+    def test_multiple_valid_questions_preserved(self):
+        """3 questions valides → toutes les 3 stockées."""
+        quiz = json.dumps([
+            {'id': 'q_1', 'question': 'Q1?', 'options': ['A', 'B', 'C', 'D'], 'correctAnswer': 0, 'explanation': 'E1'},
+            {'id': 'q_2', 'question': 'Q2?', 'options': ['A', 'B', 'C', 'D'], 'correctAnswer': 1, 'explanation': 'E2'},
+            {'id': 'q_3', 'question': 'Q3?', 'options': ['A', 'B', 'C', 'D'], 'correctAnswer': 3, 'explanation': 'E3'},
+        ])
+        handler = MockStoryHandler()
+        run_create_story(handler, make_story_form_data(quizQuestionsJson=quiz))
+
+        saved = handler.firebase_manager.save_story.call_args[0][0]
+        self.assertEqual(len(saved['quizQuestions']), 3)
+        self.assertEqual(saved['quizQuestions'][2]['correctAnswer'], 3)
+
+    def test_quiz_with_special_characters(self):
+        """Questions avec accents, apostrophes, guillemets → OK."""
+        quiz = json.dumps([{
+            'id': 'q_1',
+            'question': "Qu'est-ce que l'éléphant a dit?",
+            'options': ["C'est vrai", 'L"autre', 'Réponse à "trouver"', 'Ça marche!'],
+            'correctAnswer': 0,
+            'explanation': "L'éléphant a dit la vérité"
+        }])
+        handler = MockStoryHandler()
+        run_create_story(handler, make_story_form_data(quizQuestionsJson=quiz))
+
+        saved = handler.firebase_manager.save_story.call_args[0][0]
+        self.assertEqual(len(saved['quizQuestions']), 1)
+        self.assertIn("l'éléphant", saved['quizQuestions'][0]['question'])
+
+    def test_update_quiz_validation_applies(self):
+        """La validation quiz s'applique aussi en mode update."""
+        existing_story = {
+            'id': 'story_ke_001', 'title': 'Le lion', 'countryCode': 'KE',
+            'content': {'fr': 'texte', 'en': ''}, 'estimatedReadingTime': 10,
+            'estimatedAudioDuration': 600, 'order': 1, 'metadata': {},
+            'quizQuestions': [{'id': 'q_old', 'question': 'Old?', 'options': ['A', 'B', 'C', 'D'], 'correctAnswer': 0, 'explanation': ''}],
+        }
+        quiz = json.dumps([
+            {'id': 'q_1', 'question': 'Valide?', 'options': ['A', 'B', 'C', 'D'], 'correctAnswer': 5, 'explanation': ''},
+            {'id': 'q_2', 'question': '', 'options': ['A', 'B', 'C', 'D'], 'correctAnswer': 0, 'explanation': ''},
+        ])
+        handler = MockStoryHandler(existing_stories=[existing_story])
+        handler.firebase_manager.get_story_by_id = MagicMock(return_value=existing_story)
+        run_update_story(handler, 'story_ke_001', make_story_form_data(
+            quizQuestionsJson=quiz
+        ))
+
+        self.assertEqual(handler.response_code, 200)
+        saved = handler.firebase_manager.update_story.call_args[0][1]
+        # Seule la question valide reste, correctAnswer ramené à 0
+        self.assertEqual(len(saved['quizQuestions']), 1)
+        self.assertEqual(saved['quizQuestions'][0]['correctAnswer'], 0)
+
+    def test_empty_quiz_json_keeps_existing_on_update(self):
+        """Quiz JSON vide lors d'un update → garder les quiz existants."""
+        existing_story = {
+            'id': 'story_ke_001', 'title': 'Le lion', 'countryCode': 'KE',
+            'content': {'fr': 'texte', 'en': ''}, 'estimatedReadingTime': 10,
+            'estimatedAudioDuration': 600, 'order': 1, 'metadata': {},
+            'quizQuestions': [{'id': 'q_old', 'question': 'Existante?', 'options': ['A', 'B', 'C', 'D'], 'correctAnswer': 2, 'explanation': ''}],
+        }
+        handler = MockStoryHandler(existing_stories=[existing_story])
+        handler.firebase_manager.get_story_by_id = MagicMock(return_value=existing_story)
+        run_update_story(handler, 'story_ke_001', make_story_form_data(
+            quizQuestionsJson=''
+        ))
+
+        self.assertEqual(handler.response_code, 200)
+        saved = handler.firebase_manager.update_story.call_args[0][1]
+        # Quiz existant préservé
+        self.assertEqual(len(saved['quizQuestions']), 1)
+        self.assertEqual(saved['quizQuestions'][0]['question'], 'Existante?')
+
+
 class TestSouvenirNomenclature(unittest.TestCase):
     """Tests de la numérotation séquentielle des souvenirs."""
 
@@ -1799,6 +2006,7 @@ if __name__ == '__main__':
         TestSouvenirNomenclature,
         TestStoryNomenclature,
         TestStoragePathUniqueness,
+        TestQuizValidation,
     ]
 
     for cls in test_classes:

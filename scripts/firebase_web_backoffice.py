@@ -8,6 +8,7 @@ import http.server
 import socketserver
 import json
 import os
+import uuid
 import urllib.parse
 from datetime import datetime
 import sys
@@ -1659,6 +1660,29 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
             except (json.JSONDecodeError, TypeError):
                 quiz_questions = []
 
+            # Valider et assainir les quiz questions
+            validated_quiz = []
+            for q in quiz_questions:
+                if not isinstance(q, dict):
+                    continue
+                question_text = q.get('question', '').strip()
+                if not question_text:
+                    continue
+                options = q.get('options', [])
+                if not isinstance(options, list) or len(options) != 4:
+                    continue
+                correct = q.get('correctAnswer', 0)
+                if not isinstance(correct, int) or correct < 0 or correct > 3:
+                    correct = 0
+                validated_quiz.append({
+                    'id': q.get('id', f'q_{uuid.uuid4().hex[:9]}'),
+                    'question': question_text,
+                    'options': [str(o) for o in options],
+                    'correctAnswer': correct,
+                    'explanation': q.get('explanation', ''),
+                })
+            quiz_questions = validated_quiz
+
             # Construire les données de l'histoire
             story_data = {
                 'title': title,
@@ -1763,7 +1787,28 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
             quiz_json = form_data.get('quizQuestionsJson', [''])[0]
             if quiz_json:
                 try:
-                    story_data['quizQuestions'] = json.loads(quiz_json)
+                    raw_quiz = json.loads(quiz_json)
+                    validated_quiz = []
+                    for q in raw_quiz:
+                        if not isinstance(q, dict):
+                            continue
+                        question_text = q.get('question', '').strip()
+                        if not question_text:
+                            continue
+                        options = q.get('options', [])
+                        if not isinstance(options, list) or len(options) != 4:
+                            continue
+                        correct = q.get('correctAnswer', 0)
+                        if not isinstance(correct, int) or correct < 0 or correct > 3:
+                            correct = 0
+                        validated_quiz.append({
+                            'id': q.get('id', f'q_{uuid.uuid4().hex[:9]}'),
+                            'question': question_text,
+                            'options': [str(o) for o in options],
+                            'correctAnswer': correct,
+                            'explanation': q.get('explanation', ''),
+                        })
+                    story_data['quizQuestions'] = validated_quiz
                 except (json.JSONDecodeError, TypeError):
                     pass  # garder les quiz existants
 
@@ -2063,7 +2108,9 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
 
         # Questions de quiz existantes
         quiz_questions_data = story_data.get('quizQuestions', [])
-        quiz_questions_json = json.dumps(quiz_questions_data, ensure_ascii=False).replace("\\", "\\\\").replace("'", "\\'")
+        # Échapper pour injection dans JS: JSON → échapper les backslashes et quotes
+        # On utilise ensure_ascii=True pour éviter tout caractère unicode problématique dans le template
+        quiz_questions_json = json.dumps(quiz_questions_data, ensure_ascii=True).replace("'", "\\'")
 
         form_title = f"✏️ Modifier l'histoire" if is_edit else "➕ Nouvelle Histoire"
         submit_action = f"/api/stories/{story_id}/update" if is_edit else "/api/stories"
@@ -2310,6 +2357,12 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                         block.querySelectorAll('.quiz-option').forEach((opt, j) => {{
                             if (!opt.value.trim()) errors.push({{ el: opt, msg: `Question ${{i+1}}, option ${{String.fromCharCode(65+j)}} manquante` }});
                         }});
+                        // Vérifier qu'une bonne réponse est sélectionnée
+                        const checkedRadio = block.querySelector('input[type="radio"]:checked');
+                        if (!checkedRadio) {{
+                            const firstRadio = block.querySelector('input[type="radio"]');
+                            if (firstRadio) errors.push({{ el: firstRadio, msg: `Question ${{i+1}} : sélectionnez la bonne réponse` }});
+                        }}
                     }});
 
                     if (errors.length > 0) {{
@@ -2561,19 +2614,19 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                         </div>
                         <div class="quiz-options-grid">
                             <div class="quiz-option-row">
-                                <input type="radio" name="correct_${{index}}" value="0" ${{correctAnswer === 0 ? 'checked' : ''}}>
+                                <input type="radio" name="correct_${{qId}}" value="0" ${{correctAnswer === 0 ? 'checked' : ''}}>
                                 <input type="text" class="quiz-option" data-opt="0" value="${{(options[0] || '').replace(/"/g, '&quot;')}}" placeholder="Option A *" required>
                             </div>
                             <div class="quiz-option-row">
-                                <input type="radio" name="correct_${{index}}" value="1" ${{correctAnswer === 1 ? 'checked' : ''}}>
+                                <input type="radio" name="correct_${{qId}}" value="1" ${{correctAnswer === 1 ? 'checked' : ''}}>
                                 <input type="text" class="quiz-option" data-opt="1" value="${{(options[1] || '').replace(/"/g, '&quot;')}}" placeholder="Option B *" required>
                             </div>
                             <div class="quiz-option-row">
-                                <input type="radio" name="correct_${{index}}" value="2" ${{correctAnswer === 2 ? 'checked' : ''}}>
+                                <input type="radio" name="correct_${{qId}}" value="2" ${{correctAnswer === 2 ? 'checked' : ''}}>
                                 <input type="text" class="quiz-option" data-opt="2" value="${{(options[2] || '').replace(/"/g, '&quot;')}}" placeholder="Option C *" required>
                             </div>
                             <div class="quiz-option-row">
-                                <input type="radio" name="correct_${{index}}" value="3" ${{correctAnswer === 3 ? 'checked' : ''}}>
+                                <input type="radio" name="correct_${{qId}}" value="3" ${{correctAnswer === 3 ? 'checked' : ''}}>
                                 <input type="text" class="quiz-option" data-opt="3" value="${{(options[3] || '').replace(/"/g, '&quot;')}}" placeholder="Option D *" required>
                             </div>
                         </div>
