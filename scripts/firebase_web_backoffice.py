@@ -268,19 +268,28 @@ class FirebaseManager:
         """Upload un fichier vers Firebase Storage"""
         if not self.initialized:
             return None
-        
+
         try:
             blob = self.bucket.blob(f"{folder}/{filename}")
-            
+
+            # Deviner le content_type depuis l'extension
+            ext = filename.lower().rsplit('.', 1)[-1] if '.' in filename else ''
+            mime_map = {
+                'jpg': 'image/jpeg', 'jpeg': 'image/jpeg', 'png': 'image/png',
+                'gif': 'image/gif', 'webp': 'image/webp', 'svg': 'image/svg+xml',
+                'mp3': 'audio/mpeg', 'wav': 'audio/wav', 'ogg': 'audio/ogg', 'm4a': 'audio/mp4'
+            }
+            content_type = mime_map.get(ext, 'application/octet-stream')
+
             # Upload binary data
             if isinstance(file_data, str):
-                blob.upload_from_string(file_data.encode())
+                blob.upload_from_string(file_data.encode(), content_type=content_type)
             else:
-                blob.upload_from_string(file_data)
-            
+                blob.upload_from_string(file_data, content_type=content_type)
+
             blob.make_public()
-            
-            print(f"✅ Fichier uploadé: {filename}")
+
+            print(f"✅ Fichier uploadé: {filename} ({content_type})")
             return blob.public_url
         except Exception as e:
             print(f"❌ Erreur upload: {e}")
@@ -1467,8 +1476,19 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
     def do_POST(self):
         """Gère les requêtes POST"""
         content_length = int(self.headers.get('Content-Length', 0))
-        post_data = self.rfile.read(content_length).decode('utf-8')
-        
+        raw_data = self.rfile.read(content_length)
+
+        # Routes binaires : passer les bytes bruts directement
+        if self.path == '/api/upload':
+            self.handle_file_upload(raw_data)
+            return
+        elif self.path == '/api/souvenirs/upload-image':
+            self.handle_souvenir_image_upload(raw_data)
+            return
+
+        # Routes texte : décoder en UTF-8
+        post_data = raw_data.decode('utf-8')
+
         if self.path == '/api/stories':
             self.handle_create_story(post_data)
         elif self.path.startswith('/api/stories/') and '/update' in self.path:
@@ -1477,8 +1497,6 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
         elif self.path.startswith('/api/stories/') and '/delete' in self.path:
             story_id = self.path.split('/')[-2]
             self.handle_delete_story(story_id)
-        elif self.path == '/api/upload':
-            self.handle_file_upload(post_data)
         elif self.path == '/api/security/login':
             self.handle_admin_login(post_data)
         elif self.path == '/api/security/logout':
@@ -1535,8 +1553,6 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
         elif self.path.startswith('/api/souvenirs/') and '/delete' in self.path:
             souvenir_id = self.path.split('/')[-2]
             self.handle_delete_souvenir(souvenir_id)
-        elif self.path == '/api/souvenirs/upload-image':
-            self.handle_souvenir_image_upload()
         # ===== API BADGES =====
         elif self.path == '/api/badges':
             self.handle_create_badge(post_data)
@@ -1707,65 +1723,74 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
             print(f"❌ Erreur suppression histoire: {e}")
             self.send_error_response(500, f'Erreur: {str(e)}')
     
-    def handle_file_upload(self, post_data):
-        """Gère l'upload de fichiers vers Firebase Storage"""
+    def handle_file_upload(self, raw_data):
+        """Gère l'upload de fichiers vers Firebase Storage (bytes bruts)"""
         try:
-            import io
             import uuid
-            
-            # Parser les données multipart manually (simple approach)
+
             content_type = self.headers.get('content-type', '')
             if 'multipart/form-data' not in content_type:
                 self.send_error_response(400, 'Content-Type doit être multipart/form-data')
                 return
-            
-            # Extract boundary
-            boundary = content_type.split('boundary=')[1].encode()
-            
-            # Parse multipart data
-            data_stream = io.BytesIO(post_data if isinstance(post_data, bytes) else post_data.encode())
+
+            boundary = content_type.split('boundary=')[-1].encode()
+            parts = raw_data.split(b'--' + boundary)
             uploaded_files = []
-            
-            # Simple multipart parsing
-            parts = post_data.split(boundary.decode())
-            
+
             for part in parts:
-                if 'Content-Disposition' in part and 'filename=' in part:
-                    # Extract filename
-                    lines = part.split('\r\n')
-                    filename_line = next((line for line in lines if 'filename=' in line), None)
-                    if filename_line:
-                        filename = filename_line.split('filename="')[1].split('"')[0]
-                        if filename:
-                            # Find file content (after double newline)
-                            content_start = part.find('\r\n\r\n') + 4
-                            if content_start > 3:
-                                file_data = part[content_start:].encode('latin-1')  # Preserve binary data
-                                
-                                # Generate unique filename
-                                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-                                unique_filename = f"{timestamp}_{uuid.uuid4().hex[:8]}_{filename}"
-                                
-                                # Determine folder based on file extension
-                                ext = filename.lower().split('.')[-1] if '.' in filename else ''
-                                if ext in ['jpg', 'jpeg', 'png', 'gif', 'webp']:
-                                    folder = 'images'
-                                elif ext in ['mp3', 'wav', 'ogg', 'm4a']:
-                                    folder = 'audio'
-                                else:
-                                    folder = 'media'
-                                
-                                # Upload to Firebase Storage
-                                url = self.firebase_manager.upload_file_to_storage(file_data, unique_filename, folder)
-                                
-                                if url:
-                                    uploaded_files.append({
-                                        'field': 'upload',
-                                        'filename': filename,
-                                        'url': url,
-                                        'type': f'file/{ext}'
-                                    })
-            
+                if b'Content-Disposition' not in part or b'filename="' not in part:
+                    continue
+
+                # Extract filename from headers (decode only the header portion)
+                header_end = part.find(b'\r\n\r\n')
+                if header_end < 0:
+                    continue
+
+                header_text = part[:header_end].decode('utf-8', errors='replace')
+                if 'filename="' not in header_text:
+                    continue
+
+                filename = header_text.split('filename="')[1].split('"')[0]
+                if not filename:
+                    continue
+
+                # Extract binary file content
+                file_data = part[header_end + 4:]
+                # Remove trailing boundary markers
+                if file_data.endswith(b'\r\n'):
+                    file_data = file_data[:-2]
+                if file_data.endswith(b'--'):
+                    file_data = file_data[:-2]
+                if file_data.endswith(b'\r\n'):
+                    file_data = file_data[:-2]
+
+                if not file_data:
+                    continue
+
+                # Generate unique filename
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                unique_filename = f"{timestamp}_{uuid.uuid4().hex[:8]}_{filename}"
+
+                # Determine folder based on file extension
+                ext = filename.lower().rsplit('.', 1)[-1] if '.' in filename else ''
+                if ext in ['jpg', 'jpeg', 'png', 'gif', 'webp']:
+                    folder = 'images'
+                elif ext in ['mp3', 'wav', 'ogg', 'm4a']:
+                    folder = 'audio'
+                else:
+                    folder = 'media'
+
+                # Upload to Firebase Storage
+                url = self.firebase_manager.upload_file_to_storage(file_data, unique_filename, folder)
+
+                if url:
+                    uploaded_files.append({
+                        'field': 'upload',
+                        'filename': filename,
+                        'url': url,
+                        'type': f'file/{ext}'
+                    })
+
             if uploaded_files:
                 self.send_json_response({
                     'success': True,
@@ -2952,7 +2977,7 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
             print(f"❌ Erreur suppression souvenir: {e}")
             self.send_error_response(500, f"Erreur serveur: {e}")
 
-    def handle_souvenir_image_upload(self):
+    def handle_souvenir_image_upload(self, raw_data):
         """Gère l'upload et l'optimisation d'une image de souvenir"""
         try:
             import io
@@ -2965,15 +2990,11 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_json_response({'success': False, 'error': 'Content-Type doit etre multipart/form-data'})
                 return
 
-            # Parse the multipart data
-            content_length = int(self.headers.get('Content-Length', 0))
-            body = self.rfile.read(content_length)
-
             # Extract boundary from content type
             boundary = content_type.split('boundary=')[-1].encode()
 
             # Parse parts
-            parts = body.split(b'--' + boundary)
+            parts = raw_data.split(b'--' + boundary)
             image_data = None
             souvenir_id = None
 
