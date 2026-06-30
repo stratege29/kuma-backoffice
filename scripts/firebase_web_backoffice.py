@@ -1176,6 +1176,69 @@ class FirebaseManager:
             print(f"❌ Erreur suppression histoire {story_id}: {e}")
             return False
 
+    # ===================== FILE D'ATTENTE SOCIAL (Instagram) =====================
+    # Collection `social_queue` alimentée par le Cloud Run Job `kuma-daily-post`
+    # (cf. kumacodex/functions/social). Chaque doc = un post du jour : champs du
+    # post (date, format, country, pillar, hook, caption, narration, etape...) +
+    # `media` (videoUrl/coverUrl/overlayUrl pour un reel, imageUrls/imageUrl sinon)
+    # + `status` (pending_review | needs_video | published) + createdAt/publishedAt.
+
+    def get_social_queue(self):
+        """Récupère tous les posts de la file social, triés par date croissante."""
+        if not self.initialized:
+            return []
+        try:
+            docs = self.db.collection('social_queue').stream()
+            posts = []
+            for doc in docs:
+                data = doc.to_dict() or {}
+                data['id'] = doc.id
+                posts.append(data)
+            posts.sort(key=lambda p: (str(p.get('date') or '9999-99-99'), str(p.get('id'))))
+            return posts
+        except Exception as e:
+            print(f"❌ Erreur get_social_queue: {e}")
+            return []
+
+    def get_social_post(self, post_id):
+        """Récupère un post de la file par son id."""
+        if not self.initialized:
+            return None
+        try:
+            snap = self.db.collection('social_queue').document(post_id).get()
+            if not snap.exists:
+                return None
+            data = snap.to_dict() or {}
+            data['id'] = snap.id
+            return data
+        except Exception as e:
+            print(f"❌ Erreur get_social_post {post_id}: {e}")
+            return None
+
+    def update_social_post(self, post_id, fields):
+        """Met à jour des champs d'un post de la file (ex: caption, hook, status)."""
+        if not self.initialized:
+            return False
+        try:
+            self.db.collection('social_queue').document(post_id).update(fields)
+            print(f"✅ Post social mis à jour: {post_id}")
+            return True
+        except Exception as e:
+            print(f"❌ Erreur update_social_post {post_id}: {e}")
+            return False
+
+    def delete_social_post(self, post_id):
+        """Supprime un post de la file."""
+        if not self.initialized:
+            return False
+        try:
+            self.db.collection('social_queue').document(post_id).delete()
+            print(f"✅ Post social supprimé: {post_id}")
+            return True
+        except Exception as e:
+            print(f"❌ Erreur delete_social_post {post_id}: {e}")
+            return False
+
 class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
     """Handler HTTP avec intégration Firebase et sécurité"""
     
@@ -1229,6 +1292,8 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
             self.send_kpis_page()
         elif self.path == '/funnel':
             self.send_funnel_page()
+        elif self.path == '/social-queue':
+            self.send_social_queue_page()
         elif self.path.startswith('/api/funnel/overview'):
             self.handle_funnel_overview()
         elif self.path.startswith('/api/funnel/'):
@@ -1246,6 +1311,10 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
             self.handle_get_automation_rules_v2()
         elif self.path.startswith('/api/notifications-v2/automation/logs'):
             self.handle_get_automation_logs_v2()
+        elif self.path.startswith('/api/notifications-v2/scheduled'):
+            self.handle_get_scheduled_campaigns_v2()
+        elif self.path.startswith('/api/notifications-v2/history'):
+            self.handle_get_notification_history_v2()
         elif self.path == '/api/kpis':
             self.handle_get_kpis()
         elif self.path == '/api/mailing/lists':
@@ -1566,6 +1635,17 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
             self.handle_preview_template_v2(post_data)
         elif self.path == '/api/notifications-v2/send':
             self.handle_send_notification_v2(post_data)
+        elif self.path == '/api/notifications-v2/schedule':
+            self.handle_schedule_campaign_v2(post_data)
+        elif self.path.startswith('/api/notifications-v2/scheduled/') and self.path.endswith('/cancel'):
+            campaign_id = self.path.split('/')[4]
+            self.handle_cancel_scheduled_campaign_v2(campaign_id)
+        elif self.path.startswith('/api/notifications-v2/scheduled/') and self.path.endswith('/send-now'):
+            campaign_id = self.path.split('/')[4]
+            self.handle_send_scheduled_now_v2(campaign_id)
+        elif self.path.startswith('/api/notifications-v2/scheduled/') and self.path.endswith('/update'):
+            campaign_id = self.path.split('/')[4]
+            self.handle_update_scheduled_campaign_v2(campaign_id, post_data)
         elif self.path == '/api/notifications-v2/automation/rules':
             self.handle_save_automation_rule_v2(post_data)
         elif self.path.startswith('/api/notifications-v2/automation/rules/') and '/toggle' in self.path:
@@ -1601,6 +1681,16 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
         # ===== API LANDING PAGE =====
         elif self.path == '/api/landing/subscribe':
             self.handle_landing_subscribe(post_data)
+        # ===== API SOCIAL QUEUE =====
+        elif self.path.startswith('/api/social-queue/') and '/update' in self.path:
+            post_id = self.path.split('/')[-2]
+            self.handle_update_social_post(post_id, post_data)
+        elif self.path.startswith('/api/social-queue/') and '/delete' in self.path:
+            post_id = self.path.split('/')[-2]
+            self.handle_delete_social_post(post_id)
+        elif self.path.startswith('/api/social-queue/') and '/publish' in self.path:
+            post_id = self.path.split('/')[-2]
+            self.handle_publish_social_post(post_id)
         else:
             self.send_error_response(404, 'Endpoint non trouvé')
     
@@ -11476,6 +11566,7 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                     <a href="/badges" class="{'active' if page == 'badges' else ''}">🏅 Badges</a>
                     <a href="/users" class="{'active' if page == 'users' else ''}">👥 Utilisateurs</a>
                     <a href="/notifications-v2" class="{'active' if page == 'notifications-v2' else ''}" style="background: linear-gradient(135deg, #FF6B35, #F7931E); color: white;">📢 Marketing</a>
+                    <a href="/social-queue" class="{'active' if page == 'social-queue' else ''}" style="background: linear-gradient(135deg, #833AB4, #FD1D1D, #FCB045); color: white;">📱 Social</a>
                     <a href="/mailing" class="{'active' if page == 'mailing' else ''}">📧 Emails</a>
                     <a href="/logs-analytics" class="{'active' if page == 'logs-analytics' else ''}">📊 Logs</a>
                     <a href="/kpis" class="{'active' if page == 'kpis' else ''}">📈 KPIs</a>
@@ -11807,6 +11898,528 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
             }
         """
     
+    # ===================== PAGE & HANDLERS : FILE SOCIAL =====================
+
+    def _social_flag(self, cc):
+        """Émoji drapeau à partir d'un code pays ISO 2 lettres."""
+        if not cc or len(str(cc)) != 2:
+            return '🏳️'
+        cc = str(cc).upper()
+        try:
+            return chr(0x1F1E6 + ord(cc[0]) - 65) + chr(0x1F1E6 + ord(cc[1]) - 65)
+        except Exception:
+            return '🏳️'
+
+    def _render_social_card(self, p, escape):
+        """Construit la carte HTML d'un post de la file social."""
+        pid = p.get('id', '')
+        status = p.get('status', 'autre')
+        status_styles = {
+            'pending_review': ('⏳ À valider', '#fff3cd', '#856404'),
+            'approved': ('🗓️ Programmé (auto)', '#dbeafe', '#1e40af'),
+            'needs_video': ('🎬 Vidéo manquante', '#f8d7da', '#721c24'),
+            'published': ('✅ Publié', '#d4edda', '#155724'),
+        }
+        label, bg, fg = status_styles.get(status, (str(status), '#e9ecef', '#333'))
+        fmt = str(p.get('format', ''))
+        fmt_icon = {'reel': '🎬', 'carousel': '🖼️', 'image': '🏞️'}.get(fmt, '📄')
+        flag = self._social_flag(p.get('countryCode', ''))
+        country = escape(str(p.get('country', '')))
+        date = escape(str(p.get('date', '—')))
+        weekday = escape(str(p.get('weekday', '')))
+        _sf = str(p.get('scheduledFor', ''))
+        sched_time = escape(str(p.get('scheduledTime') or (_sf[11:16] if len(_sf) >= 16 else '18:00')))
+        etape = escape(str(p.get('etape', '?')))
+        pillar = escape(str(p.get('pillar', '')))
+        cta = escape(str(p.get('cta', '')))
+        hook = escape(str(p.get('hook', '')))
+        caption_esc = escape(str(p.get('caption', '')))
+        narration = escape(str(p.get('narration', '')))
+
+        media = p.get('media') or {}
+        video = media.get('videoUrl'); cover = media.get('coverUrl')
+        imgs = media.get('imageUrls'); img = media.get('imageUrl')
+        if fmt == 'reel' and video:
+            poster = f' poster="{escape(str(cover))}"' if cover else ''
+            media_html = (f'<video controls preload="metadata"{poster} '
+                          f'style="max-width:240px;max-height:430px;border-radius:8px;background:#000">'
+                          f'<source src="{escape(str(video))}"></video>')
+        elif imgs and isinstance(imgs, list):
+            media_html = ''.join(
+                f'<img src="{escape(str(u))}" style="max-width:140px;max-height:175px;'
+                f'border-radius:6px;margin:4px;object-fit:cover">' for u in imgs)
+        elif img:
+            media_html = (f'<img src="{escape(str(img))}" style="max-width:200px;max-height:250px;'
+                          f'border-radius:6px;object-fit:cover">')
+        else:
+            media_html = '<em style="color:#999">Aucun média (vidéo non encore générée).</em>'
+
+        has_media = bool(video or imgs or img)
+        can_publish = status != 'published' and has_media
+        publish_btn = (f'<button id="pub-{pid}" class="btn-action" '
+                       f'style="background:#833AB4;color:white" '
+                       f'onclick="sqPublish(\'{pid}\')">🚀 Publier maintenant</button>') if can_publish else ''
+        # Approuver -> publication AUTO à scheduledFor (via socialPublishDue).
+        if status == 'approved':
+            approve_btn = (f'<button class="btn-action" style="background:#6b7280;color:#fff" '
+                           f'onclick="sqApprove(\'{pid}\',\'pending_review\')">↩️ Retirer l\'approbation</button>')
+        elif status != 'published' and has_media:
+            approve_btn = (f'<button class="btn-action" style="background:#2563eb;color:#fff" '
+                           f'onclick="sqApprove(\'{pid}\',\'approved\')">✅ Approuver (auto à l\'heure)</button>')
+        else:
+            approve_btn = ''
+
+        options = ''.join(
+            f'<option value="{v}"{" selected" if status == v else ""}>{t}</option>'
+            for v, t in [('pending_review', '⏳ À valider'),
+                         ('approved', '🗓️ Programmé (auto)'),
+                         ('needs_video', '🎬 Sans vidéo'),
+                         ('published', '✅ Publié')])
+        weekday_txt = f'({weekday})' if weekday else ''
+
+        return f"""
+        <div class="story-item" data-status="{status}" id="sq-{pid}">
+            <div class="story-header">
+                <h4>{flag} {country} · {fmt_icon} {fmt}</h4>
+                <span class="story-status" style="background:{bg};color:{fg}">{label}</span>
+            </div>
+            <div class="story-meta">
+                <span>📅 {date} {weekday_txt} · {sched_time} (Europe/Paris)</span>
+                <span>🧭 Étape {etape}/54</span>
+                <span>🏛️ {pillar}</span>
+                <span>🎯 {cta}</span>
+            </div>
+            <p><strong>Accroche :</strong> {hook}</p>
+            <div class="media-preview">{media_html}</div>
+            <details style="margin-top:10px"><summary>📝 Légende</summary>
+                <pre style="white-space:pre-wrap;font-family:inherit;background:#f8f9fa;padding:10px;border-radius:6px">{caption_esc}</pre>
+            </details>
+            <details style="margin-top:6px"><summary>🎙️ Narration (voix-off)</summary><p>{narration}</p></details>
+            <div class="story-actions">
+                <button class="btn-action btn-edit" onclick="sqToggleEdit('{pid}')">✏️ Éditer</button>
+                {approve_btn}
+                {publish_btn}
+                <button class="btn-action btn-delete" onclick="sqDelete('{pid}')">🗑️ Supprimer</button>
+            </div>
+            <div class="sq-edit" id="sq-edit-{pid}" style="display:none;margin-top:15px;padding:15px;background:#f8f9fa;border-radius:8px">
+                <label style="font-weight:bold">Accroche (hook)</label>
+                <input id="hook-{pid}" value="{hook}" style="width:100%;padding:8px;margin:6px 0;border:1px solid #ddd;border-radius:5px">
+                <label style="font-weight:bold">Légende (caption)</label>
+                <textarea id="cap-{pid}" rows="8" style="width:100%;padding:8px;margin:6px 0;border:1px solid #ddd;border-radius:5px;font-family:inherit">{caption_esc}</textarea>
+                <label style="font-weight:bold">Statut</label>
+                <select id="stat-{pid}" style="width:100%;padding:8px;margin:6px 0;border:1px solid #ddd;border-radius:5px">{options}</select>
+                <button class="btn-primary" onclick="sqSave('{pid}')">💾 Enregistrer</button>
+                <button class="btn-secondary" onclick="sqToggleEdit('{pid}')">Annuler</button>
+            </div>
+        </div>
+        """
+
+    def _render_social_grid(self, posts, escape):
+        """Grille type feed Instagram (aperçu visuel) de la file.
+
+        Réutilise les mêmes données que les cartes ; un clic sur une vignette
+        bascule en vue Liste et déroule la carte correspondante (édition/vidéo).
+        """
+        style = """<style>
+        .sq-profile{display:flex;align-items:center;gap:18px;max-width:780px;margin:0 auto 16px;padding:6px 4px}
+        .sq-ava{width:64px;height:64px;border-radius:50%;padding:3px;flex:none;display:flex;background:linear-gradient(45deg,#FF6B35,#FFC107)}
+        .sq-ava>div{flex:1;border-radius:50%;background:#1a1a2e;color:#fff;display:flex;align-items:center;justify-content:center;font-size:26px;border:2px solid #fff}
+        .sq-handle{font-size:17px;font-weight:700}
+        .sq-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;max-width:780px;margin:0 auto}
+        .sq-tile{position:relative;aspect-ratio:4/5;border-radius:4px;overflow:hidden;cursor:pointer;background:#23232c}
+        .sq-tile img{width:100%;height:100%;object-fit:cover;display:block;transition:transform .25s}
+        .sq-tile:hover img{transform:scale(1.05)}
+        .sq-ph{width:100%;height:100%;display:flex;align-items:center;justify-content:center;text-align:center;padding:10px;color:#fff;font-size:12px;background:linear-gradient(135deg,#1a1a2e,#3B2A5A)}
+        .sq-badge{position:absolute;top:7px;right:9px;color:#fff;font-size:17px;filter:drop-shadow(0 1px 2px rgba(0,0,0,.7))}
+        .sq-foot{position:absolute;left:0;right:0;bottom:0;display:flex;justify-content:space-between;align-items:center;padding:18px 8px 6px;background:linear-gradient(to top,rgba(0,0,0,.72),transparent);color:#fff;font-size:12px;font-weight:700}
+        .sq-hover{position:absolute;inset:0;background:rgba(20,16,30,.62);color:#fff;opacity:0;transition:.15s;display:flex;align-items:center;justify-content:center;padding:12px;text-align:center}
+        .sq-tile:hover .sq-hover{opacity:1}
+        .sq-hook{font-size:12px;font-weight:600;line-height:1.35;display:-webkit-box;-webkit-line-clamp:6;-webkit-box-orient:vertical;overflow:hidden}
+        .sq-status{position:absolute;top:7px;left:7px;font-size:10px;font-weight:800;padding:3px 8px;border-radius:999px;letter-spacing:.3px;text-transform:uppercase;color:#fff;filter:drop-shadow(0 1px 2px rgba(0,0,0,.5))}
+        .sq-st-rev{background:#f59e0b}.sq-st-prog{background:#2563eb}.sq-st-pub{background:#16a34a}.sq-st-novid{background:#dc2626}.sq-st-other{background:#6b7280}
+        .sq-legend{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;max-width:780px;margin:0 auto 14px;font-size:12px;color:#555}
+        .sq-legend span{display:inline-flex;align-items:center;gap:5px}
+        .sq-dot{width:11px;height:11px;border-radius:50%;display:inline-block}
+        .sqm-overlay{position:fixed;inset:0;background:rgba(10,8,16,.82);z-index:9999;display:none;align-items:center;justify-content:center;padding:18px}
+        .sqm-overlay.open{display:flex}
+        .sqm{background:#fff;border-radius:16px;overflow:hidden;width:100%;max-width:960px;max-height:92vh;display:grid;grid-template-columns:minmax(0,1fr) 360px;position:relative}
+        @media(max-width:780px){.sqm{grid-template-columns:1fr;max-height:94vh;overflow:auto}}
+        .sqm-media{background:#000;display:flex;align-items:center;justify-content:center;position:relative;min-height:340px}
+        .sqm-media video,.sqm-media img{max-width:100%;max-height:92vh;display:block}
+        @media(max-width:780px){.sqm-media video,.sqm-media img{max-height:60vh}}
+        .sqm-car{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;width:100%}
+        .sqm-car img{scroll-snap-align:center;width:100%;flex:none;object-fit:contain}
+        .sqm-nav{position:absolute;top:50%;transform:translateY(-50%);background:rgba(255,255,255,.85);border:0;width:40px;height:40px;border-radius:50%;font-size:20px;cursor:pointer;z-index:2}
+        .sqm-nav.prev{left:10px}.sqm-nav.next{right:10px}
+        .sqm-info{padding:20px;overflow:auto;display:flex;flex-direction:column}
+        .sqm-info h3{font-size:17px;margin:6px 0;line-height:1.3}
+        .sqm-meta{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}
+        .sqm-chip{background:#f4f4f7;border-radius:8px;padding:5px 10px;font-size:12px;font-weight:700;color:#444}
+        .sqm-cap{white-space:pre-line;font-size:13px;line-height:1.55;color:#333;margin-top:8px;border-top:1px solid #eee;padding-top:12px;flex:1}
+        .sqm-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+        .sqm-close{position:absolute;top:12px;right:14px;z-index:3;background:rgba(0,0,0,.5);color:#fff;border:0;width:36px;height:36px;border-radius:50%;font-size:20px;cursor:pointer}
+        .sqm-btn{border:0;border-radius:8px;padding:9px 14px;font-weight:700;font-size:13px;cursor:pointer;color:#fff}
+        </style>"""
+
+        # Cache-buster : les médias sont écrasés à la même URL → on force le
+        # navigateur à recharger la version courante (sinon il sert l'ancienne).
+        import time as _time
+        _cb = str(int(_time.time()))
+
+        def _bust(u):
+            if not u:
+                return u
+            return u + ('&' if '?' in u else '?') + 'v=' + _cb
+
+        st_map = {'pending_review': ('sq-st-rev', 'À valider', '#f59e0b'),
+                  'approved': ('sq-st-prog', 'Programmé', '#2563eb'),
+                  'published': ('sq-st-pub', 'Publié', '#16a34a'),
+                  'needs_video': ('sq-st-novid', 'Sans vidéo', '#dc2626')}
+        tiles = []
+        for p in reversed(posts):  # plus récent en premier (look feed Instagram)
+            pid = escape(str(p.get('id', '')))
+            fmt = str(p.get('format', ''))
+            badge = {'reel': '▶', 'carousel': '❏', 'image': ''}.get(fmt, '')
+            flag = self._social_flag(p.get('countryCode', ''))
+            date = str(p.get('date', ''))
+            date_short = escape(date[5:].replace('-', '/')) if len(date) >= 10 else escape(date)
+            sf = str(p.get('scheduledFor', ''))
+            time = escape(str(p.get('scheduledTime') or (sf[11:16] if len(sf) >= 16 else '')))
+            st_cls, st_lab, _ = st_map.get(str(p.get('status', '')), ('sq-st-other', str(p.get('status', '')) or '—', '#6b7280'))
+            hook = escape(str(p.get('hook', '')))
+            media = p.get('media') or {}
+            thumb = media.get('coverUrl') or media.get('imageUrl')
+            imgs = media.get('imageUrls')
+            if not thumb and isinstance(imgs, list) and imgs:
+                thumb = imgs[0]
+            if thumb:
+                inner = f'<img loading="lazy" src="{escape(_bust(str(thumb)))}" alt="">'
+            else:
+                inner = f'<div class="sq-ph">{hook[:60]}</div>'
+            foot_date = date_short + (f' · {time}' if time else '')
+            story_mark = ' 📲' if media.get('storyUrl') else ''
+            tiles.append(
+                f'<div class="sq-tile" onclick="sqOpen(\'{pid}\')">{inner}'
+                f'<span class="sq-status {st_cls}">{st_lab}</span>'
+                f'<span class="sq-badge">{badge}{story_mark}</span>'
+                f'<div class="sq-hover"><span class="sq-hook">{hook}</span></div>'
+                f'<div class="sq-foot"><span>{foot_date}</span><span>{flag}</span></div></div>')
+
+        n_rev = sum(1 for p in posts if p.get('status') == 'pending_review')
+        n_appr = sum(1 for p in posts if p.get('status') == 'approved')
+        n_pub = sum(1 for p in posts if p.get('status') == 'published')
+        n_nov = sum(1 for p in posts if p.get('status') == 'needs_video')
+        profile = (
+            '<div class="sq-profile"><div class="sq-ava"><div>🦁</div></div>'
+            '<div><div class="sq-handle">@kumacontes</div>'
+            f'<div style="color:#888;font-size:13px">{len(posts)} posts · aperçu du feed programmé</div>'
+            '</div></div>')
+        legend = (
+            '<div class="sq-legend">'
+            f'<span><i class="sq-dot" style="background:#f59e0b"></i>À valider ({n_rev})</span>'
+            f'<span><i class="sq-dot" style="background:#2563eb"></i>Programmé/approuvé ({n_appr})</span>'
+            f'<span><i class="sq-dot" style="background:#16a34a"></i>Publié ({n_pub})</span>'
+            f'<span><i class="sq-dot" style="background:#dc2626"></i>Sans vidéo ({n_nov})</span>'
+            '</div>')
+        # Données complètes par post pour la modale d'aperçu (clic sur une vignette).
+        st_label = {'pending_review': 'À valider', 'approved': 'Programmé', 'published': 'Publié', 'needs_video': 'Sans vidéo'}
+        data = {}
+        for p in posts:
+            media = p.get('media') or {}
+            imgs = media.get('imageUrls') if isinstance(media.get('imageUrls'), list) else []
+            thumb = media.get('coverUrl') or media.get('imageUrl') or (imgs[0] if imgs else '')
+            sf = str(p.get('scheduledFor', ''))
+            data[str(p.get('id'))] = {
+                'format': str(p.get('format', '')),
+                'hook': str(p.get('hook', '')),
+                'caption': str(p.get('caption', '')),
+                'country': str(p.get('country', '')),
+                'etape': p.get('etape'),
+                'pillar': str(p.get('pillar', '')),
+                'weekday': str(p.get('weekday', '')),
+                'date': str(p.get('date', '')),
+                'scheduledTime': str(p.get('scheduledTime') or (sf[11:16] if len(sf) >= 16 else '')),
+                'status': str(p.get('status', '')),
+                'statusLabel': st_label.get(str(p.get('status', '')), str(p.get('status', ''))),
+                'videoUrl': _bust(media.get('videoUrl') or ''),
+                'imageUrls': [_bust(u) for u in imgs],
+                'thumb': _bust(thumb),
+                'storyUrl': _bust(media.get('storyUrl') or ''),
+                'storyPosted': bool(p.get('storyResult')),
+            }
+        import json as _json
+        data_json = _json.dumps(data, ensure_ascii=False).replace('<', '\\u003c')
+        modal = ('<div class="sqm-overlay" id="sqm-overlay" onclick="if(event.target===this)sqClose()">'
+                 '<div class="sqm" id="sqm"></div></div>'
+                 f'<script>window.SQ_POSTS = {data_json};</script>')
+        return style + profile + legend + '<div class="sq-grid">' + ''.join(tiles) + '</div>' + modal
+
+    def _social_queue_script(self):
+        """JS (statique) pour éditer / supprimer / publier / filtrer."""
+        return """
+        <script>
+        function sqPost(url, body){
+            return fetch(url, {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body: body || ''});
+        }
+        function sqJson(r){ return r.json().catch(function(){ return {}; }); }
+        function sqToggleEdit(id){
+            var f = document.getElementById('sq-edit-'+id);
+            if(f){ f.style.display = (f.style.display==='none'||!f.style.display) ? 'block' : 'none'; }
+        }
+        function sqSave(id){
+            var params = new URLSearchParams();
+            params.append('caption', document.getElementById('cap-'+id).value);
+            params.append('hook', document.getElementById('hook-'+id).value);
+            params.append('status', document.getElementById('stat-'+id).value);
+            sqPost('/api/social-queue/'+id+'/update', params.toString()).then(sqJson).then(function(d){
+                if(d.success){ location.reload(); } else { alert('Erreur: '+(d.error||'inconnue')); }
+            }).catch(function(e){ alert('Erreur réseau: '+e); });
+        }
+        function sqDelete(id){
+            if(!confirm('Supprimer définitivement ce post de la file ?')) return;
+            sqPost('/api/social-queue/'+id+'/delete').then(sqJson).then(function(d){
+                if(d.success){ location.reload(); } else { alert('Erreur: '+(d.error||'inconnue')); }
+            }).catch(function(e){ alert('Erreur réseau: '+e); });
+        }
+        function sqPublish(id){
+            if(!confirm('Publier MAINTENANT sur Instagram @kumacontes ? Action irréversible.')) return;
+            var btn = document.getElementById('pub-'+id);
+            if(btn){ btn.disabled = true; btn.textContent = '⏳ Publication...'; }
+            sqPost('/api/social-queue/'+id+'/publish').then(sqJson).then(function(d){
+                if(d.success){ alert('✅ Publié sur Instagram !'); location.reload(); }
+                else { alert('Échec: '+(d.error||JSON.stringify(d))); if(btn){ btn.disabled=false; btn.textContent='🚀 Publier'; } }
+            }).catch(function(e){ alert('Erreur réseau: '+e); if(btn){ btn.disabled=false; btn.textContent='🚀 Publier'; } });
+        }
+        function sqFilter(status, el){
+            document.querySelectorAll('#social-list .story-item').forEach(function(c){
+                c.style.display = (status==='all' || c.getAttribute('data-status')===status) ? 'block' : 'none';
+            });
+            document.querySelectorAll('.sq-filter').forEach(function(b){ b.classList.remove('btn-primary'); b.classList.add('btn-secondary'); });
+            if(el){ el.classList.remove('btn-secondary'); el.classList.add('btn-primary'); }
+        }
+        function sqView(mode, el){
+            var g = document.getElementById('social-grid'), l = document.getElementById('social-list');
+            if(g) g.style.display = (mode==='grid') ? 'block' : 'none';
+            if(l) l.style.display = (mode==='list') ? 'block' : 'none';
+            document.querySelectorAll('.sq-view').forEach(function(b){ b.classList.remove('btn-primary'); b.classList.add('btn-secondary'); });
+            if(el){ el.classList.remove('btn-secondary'); el.classList.add('btn-primary'); }
+        }
+        function sqEsc(s){ return (s||'').replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+        function sqOpen(id){
+            var p = (window.SQ_POSTS || {})[id];
+            if(!p){ return; }
+            var media;
+            if(p.format === 'reel' && p.videoUrl){
+                media = '<video src="'+p.videoUrl+'" controls autoplay playsinline></video>';
+            } else if(p.format === 'carousel' && p.imageUrls && p.imageUrls.length){
+                media = '<button class="sqm-nav prev" onclick="sqmScroll(-1)">‹</button>'
+                      + '<div class="sqm-car" id="sqm-car">'+p.imageUrls.map(function(u){return '<img src="'+u+'">';}).join('')+'</div>'
+                      + '<button class="sqm-nav next" onclick="sqmScroll(1)">›</button>';
+            } else if(p.thumb){ media = '<img src="'+p.thumb+'">'; }
+            else { media = '<div style="color:#fff;padding:40px;text-align:center">Pas de média</div>'; }
+            var meta = [];
+            if(p.pillar) meta.push('<span class="sqm-chip">'+sqEsc(p.pillar)+'</span>');
+            if(p.country) meta.push('<span class="sqm-chip">'+sqEsc(p.country)+'</span>');
+            if(p.etape) meta.push('<span class="sqm-chip">Étape '+p.etape+'/54</span>');
+            meta.push('<span class="sqm-chip">📅 '+sqEsc(((p.weekday||'')+' '+(p.date||'')+' '+(p.scheduledTime||'')).trim())+'</span>');
+            meta.push('<span class="sqm-chip">'+sqEsc(p.statusLabel||p.status||'')+'</span>');
+            var actions = '<button class="sqm-btn" style="background:#6b7280" onclick="sqEdit(\\''+id+'\\')">✏️ Éditer</button>';
+            if(p.status !== 'published'){
+                if(p.status === 'approved'){
+                    actions += '<button class="sqm-btn" style="background:#6b7280" onclick="sqApprove(\\''+id+'\\',\\'pending_review\\')">↩️ Retirer</button>';
+                } else {
+                    actions += '<button class="sqm-btn" style="background:#2563eb" onclick="sqApprove(\\''+id+'\\',\\'approved\\')">✅ Approuver</button>';
+                }
+                actions += '<button class="sqm-btn" style="background:#833AB4" onclick="sqPublish(\\''+id+'\\')">🚀 Publier</button>';
+            }
+            actions += '<button class="sqm-btn" style="background:#dc2626" onclick="sqDelete(\\''+id+'\\')">🗑️</button>';
+            var storyBlock = '';
+            if(p.storyUrl){
+                var stState = p.storyPosted ? '<span style="color:#16a34a">· postée ✓</span>' : '<span style="color:#888">· auto à la publication du post</span>';
+                storyBlock = '<div style="margin:6px 0;border-top:1px solid #eee;padding-top:10px">'
+                  + '<div style="font-size:12px;font-weight:700;color:#555;margin-bottom:6px">📲 Story d\\'amplification '+stState+'</div>'
+                  + '<a href="'+p.storyUrl+'" target="_blank"><img src="'+p.storyUrl+'" style="width:120px;border-radius:8px;border:1px solid #eee;display:block"></a>'
+                  + '</div>';
+            }
+            document.getElementById('sqm').innerHTML =
+                '<button class="sqm-close" onclick="sqClose()">×</button>'
+              + '<div class="sqm-media">'+media+'</div>'
+              + '<div class="sqm-info"><h3>'+sqEsc(p.hook||'')+'</h3>'
+              + '<div class="sqm-meta">'+meta.join('')+'</div>'
+              + storyBlock
+              + '<div class="sqm-cap">'+sqEsc(p.caption||'')+'</div>'
+              + '<div class="sqm-actions">'+actions+'</div></div>';
+            document.getElementById('sqm-overlay').classList.add('open');
+        }
+        function sqClose(){ var o=document.getElementById('sqm-overlay'); if(o){ o.classList.remove('open'); document.getElementById('sqm').innerHTML=''; } }
+        function sqmScroll(d){ var c=document.getElementById('sqm-car'); if(c){ c.scrollBy({left:d*c.clientWidth, behavior:'smooth'}); } }
+        function sqEdit(id){ sqClose(); sqView('list', document.querySelector('.sq-view[data-v="list"]')); var c=document.getElementById('sq-'+id); if(c){ c.scrollIntoView({behavior:'smooth', block:'center'}); sqToggleEdit(id); } }
+        document.addEventListener('keydown', function(e){ if(e.key==='Escape') sqClose(); });
+        function sqApprove(id, status){
+            var params = new URLSearchParams(); params.append('status', status);
+            sqPost('/api/social-queue/'+id+'/update', params.toString()).then(sqJson).then(function(d){
+                if(d.success){ location.reload(); } else { alert('Erreur: '+(d.error||'inconnue')); }
+            }).catch(function(e){ alert('Erreur réseau: '+e); });
+        }
+        function sqApproveAll(){
+            var items = document.querySelectorAll('.story-item[data-status="pending_review"]');
+            if(!items.length){ alert('Aucun post à valider.'); return; }
+            if(!confirm('Approuver '+items.length+' post(s) ? Ils seront publiés AUTOMATIQUEMENT à leur heure programmée.')) return;
+            var ids = Array.prototype.map.call(items, function(el){ return el.id.replace('sq-',''); });
+            var ok = 0, fail = 0, firstErr = '';
+            var i = 0;
+            (function next(){
+                if(i >= ids.length){
+                    var msg = '✅ '+ok+' post(s) approuvé(s).';
+                    if(fail){ msg += '\\n❌ '+fail+' échec(s).'; if(firstErr){ msg += '\\n\\n'+firstErr; } }
+                    alert(msg);
+                    if(ok > 0){ location.reload(); }
+                    return;
+                }
+                var params = new URLSearchParams(); params.append('status', 'approved');
+                sqPost('/api/social-queue/'+ids[i]+'/update', params.toString()).then(sqJson).then(function(d){
+                    if(d && d.success){ ok++; } else { fail++; if(!firstErr){ firstErr = (d && d.error) || 'Erreur inconnue'; } }
+                    i++; next();
+                }).catch(function(e){ fail++; if(!firstErr){ firstErr = 'Réseau: '+e; } i++; next(); });
+            })();
+        }
+        </script>
+        """
+
+    def send_social_queue_page(self):
+        """Page de gestion de la file des posts Instagram (collection social_queue)."""
+        from html import escape
+        posts = self.firebase_manager.get_social_queue()
+        counts = {'pending_review': 0, 'needs_video': 0, 'published': 0}
+        for p in posts:
+            s = p.get('status', 'autre')
+            counts[s] = counts.get(s, 0) + 1
+        total = len(posts)
+
+        if posts:
+            cards_html = ''.join(self._render_social_card(p, escape) for p in posts)
+            grid_html = self._render_social_grid(posts, escape)
+            grid_block = f'<div id="social-grid">{grid_html}</div>'
+            list_block = f'<div class="stories-container" id="social-list" style="display:none">{cards_html}</div>'
+        else:
+            grid_block = ''
+            list_block = (
+                '<div class="stories-container" id="social-list">'
+                '<div class="status-card"><h3>Aucun post en file</h3>'
+                '<p>La file se remplit automatiquement chaque jour à 18 h (Europe/Paris) via '
+                'la fonction <code>socialDailyPost</code> (mode <strong>review</strong>). '
+                'Reviens après la prochaine exécution, ou déclenche-la manuellement '
+                '(<code>socialGenerate?key=…&amp;date=YYYY-MM-DD</code>).</p></div></div>')
+
+        view_toggle = (
+            '<button class="btn-secondary sq-view btn-primary" data-v="grid" onclick="sqView(\'grid\', this)">🔲 Grille</button>'
+            '<button class="btn-secondary sq-view" data-v="list" onclick="sqView(\'list\', this)">📋 Liste</button>'
+            '<span style="display:inline-block;width:1px;height:22px;background:#ddd;margin:0 8px;vertical-align:middle"></span>'
+        ) if posts else ''
+
+        # Bandeau lecture seule : sans mode Éditeur/Admin, Approuver/Publier sont bloqués.
+        can_edit, _msg = self.security_manager.can_perform_action('edit')
+        readonly_banner = '' if can_edit else (
+            '<div class="alert" style="background:#fff3cd;border:1px solid #f59e0b;color:#7a5b00">'
+            '🔒 <strong>Mode lecture seule</strong> — Approuver / Publier / Éditer sont désactivés. '
+            'Va sur <a href="/security" style="color:#b45309;font-weight:700">🔒 Sécurité</a>, '
+            'entre ton PIN pour passer en <strong>mode Admin</strong>, puis reviens ici.'
+            '</div>')
+
+        header = f"""
+            <h2>📱 File des posts Instagram — @kumacontes</h2>
+            {readonly_banner}
+            <div class="alert alert-info">
+                Workflow : <strong>À valider</strong> → tu cliques <strong>✅ Approuver</strong> →
+                le post se <strong>publie automatiquement à son heure programmée</strong> (statut → Publié).
+                <em>« Publier maintenant »</em> pour poster tout de suite. Clique une vignette pour la revoir/éditer.
+            </div>
+            <div class="metrics-grid">
+                <div class="metric-card"><h3>Total</h3><div class="metric-number">{total}</div></div>
+                <div class="metric-card"><h3>⏳ À valider</h3><div class="metric-number">{counts.get('pending_review', 0)}</div></div>
+                <div class="metric-card"><h3>🗓️ Programmés</h3><div class="metric-number">{counts.get('approved', 0)}</div></div>
+                <div class="metric-card"><h3>🎬 Sans vidéo</h3><div class="metric-number">{counts.get('needs_video', 0)}</div></div>
+                <div class="metric-card"><h3>✅ Publiés</h3><div class="metric-number">{counts.get('published', 0)}</div></div>
+            </div>
+            <div class="actions-bar">
+                {view_toggle}
+                <button class="btn-secondary sq-filter btn-primary" onclick="sqFilter('all', this)">Tous</button>
+                <button class="btn-secondary sq-filter" onclick="sqFilter('pending_review', this)">⏳ À valider</button>
+                <button class="btn-secondary sq-filter" onclick="sqFilter('needs_video', this)">🎬 Sans vidéo</button>
+                <button class="btn-secondary sq-filter" onclick="sqFilter('published', this)">✅ Publiés</button>
+                <button class="btn-secondary" style="background:#2563eb;color:#fff" onclick="sqApproveAll()">✅ Tout approuver</button>
+                <a href="/social-queue" class="btn-secondary" style="text-decoration:none;display:inline-block">🔄 Rafraîchir</a>
+            </div>
+        """
+        content = header + grid_block + list_block + self._social_queue_script()
+        self.send_html_response(self.get_base_html('social-queue', content))
+
+    def handle_update_social_post(self, post_id, post_data):
+        """Met à jour caption / hook / status d'un post de la file."""
+        try:
+            can_edit, message = self.security_manager.can_perform_action('edit')
+            if not can_edit:
+                self.send_error_response(403, message)
+                return
+            self.security_manager.update_activity()
+            form = urllib.parse.parse_qs(post_data, keep_blank_values=True)
+            fields = {}
+            if 'caption' in form:
+                fields['caption'] = form['caption'][0]
+            if 'hook' in form:
+                fields['hook'] = form['hook'][0]
+            if 'status' in form and form['status'][0]:
+                fields['status'] = form['status'][0]
+            if not fields:
+                self.send_error_response(400, 'Aucun champ à mettre à jour')
+                return
+            if self.firebase_manager.update_social_post(post_id, fields):
+                self.send_json_response({'success': True, 'redirect': '/social-queue'})
+            else:
+                self.send_error_response(500, 'Erreur lors de la mise à jour')
+        except Exception as e:
+            print(f"❌ Erreur update social post: {e}")
+            self.send_error_response(500, f'Erreur: {str(e)}')
+
+    def handle_delete_social_post(self, post_id):
+        """Supprime un post de la file."""
+        try:
+            can_delete, message = self.security_manager.can_perform_action('delete')
+            if not can_delete:
+                self.send_error_response(403, message)
+                return
+            self.security_manager.update_activity()
+            if self.firebase_manager.delete_social_post(post_id):
+                self.send_json_response({'success': True, 'redirect': '/social-queue'})
+            else:
+                self.send_error_response(500, 'Erreur lors de la suppression')
+        except Exception as e:
+            print(f"❌ Erreur delete social post: {e}")
+            self.send_error_response(500, f'Erreur: {str(e)}')
+
+    def handle_publish_social_post(self, post_id):
+        """Publie un post validé sur Instagram via la Cloud Function kumaPublishQueued."""
+        try:
+            can_edit, message = self.security_manager.can_perform_action('edit')
+            if not can_edit:
+                self.send_error_response(403, message)
+                return
+            self.security_manager.update_activity()
+            import requests
+            url = 'https://europe-west1-kumafire-7864b.cloudfunctions.net/kumaPublishQueued'
+            r = requests.get(url, params={'id': post_id}, timeout=180)
+            try:
+                body = r.json()
+            except Exception:
+                body = {'raw': r.text[:500]}
+            if r.status_code == 200 and body.get('ok'):
+                self.send_json_response({'success': True, 'result': body, 'redirect': '/social-queue'})
+            else:
+                self.send_error_response(502, f"Échec publication Instagram: {body}")
+        except Exception as e:
+            print(f"❌ Erreur publish social post: {e}")
+            self.send_error_response(500, f'Erreur: {str(e)}')
+
     def send_html_response(self, html):
         """Envoie une réponse HTML"""
         self.send_response(200)
@@ -14390,6 +15003,58 @@ Un avis nous aide enormement a faire decouvrir Kuma a d'autres familles !<br><br
             self.send_json_response(result)
         except json.JSONDecodeError as e:
             self.send_json_response({'success': False, 'error': f'Invalid JSON: {e}'})
+
+    def handle_schedule_campaign_v2(self, post_data):
+        """POST /api/notifications-v2/schedule"""
+        try:
+            data = json.loads(post_data)
+            handler = self._get_notifications_v2_handler()
+            result = handler.handle_schedule_campaign(data)
+            self.send_json_response(result)
+        except json.JSONDecodeError as e:
+            self.send_json_response({'success': False, 'error': f'Invalid JSON: {e}'})
+
+    def handle_get_scheduled_campaigns_v2(self):
+        """GET /api/notifications-v2/scheduled"""
+        params = {}
+        if '?' in self.path:
+            query = self.path.split('?')[1]
+            params = dict(p.split('=') for p in query.split('&') if '=' in p)
+        handler = self._get_notifications_v2_handler()
+        result = handler.handle_get_scheduled_campaigns(params)
+        self.send_json_response(result)
+
+    def handle_cancel_scheduled_campaign_v2(self, campaign_id):
+        """POST /api/notifications-v2/scheduled/{id}/cancel"""
+        handler = self._get_notifications_v2_handler()
+        result = handler.handle_cancel_scheduled_campaign(campaign_id)
+        self.send_json_response(result)
+
+    def handle_send_scheduled_now_v2(self, campaign_id):
+        """POST /api/notifications-v2/scheduled/{id}/send-now"""
+        handler = self._get_notifications_v2_handler()
+        result = handler.handle_send_scheduled_now(campaign_id)
+        self.send_json_response(result)
+
+    def handle_update_scheduled_campaign_v2(self, campaign_id, post_data):
+        """POST /api/notifications-v2/scheduled/{id}/update"""
+        try:
+            data = json.loads(post_data) if post_data else {}
+            handler = self._get_notifications_v2_handler()
+            result = handler.handle_update_scheduled_campaign(campaign_id, data)
+            self.send_json_response(result)
+        except json.JSONDecodeError as e:
+            self.send_json_response({'success': False, 'error': f'Invalid JSON: {e}'})
+
+    def handle_get_notification_history_v2(self):
+        """GET /api/notifications-v2/history"""
+        params = {}
+        if '?' in self.path:
+            query = self.path.split('?')[1]
+            params = dict(p.split('=') for p in query.split('&') if '=' in p)
+        handler = self._get_notifications_v2_handler()
+        result = handler.handle_get_notification_history(params)
+        self.send_json_response(result)
 
     def handle_save_automation_rule_v2(self, post_data):
         """POST /api/notifications-v2/automation/rules"""

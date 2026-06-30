@@ -3,10 +3,10 @@ Kuma Notifications V2 Page
 ==========================
 
 Page de notifications modernisee avec:
-- Layout 3 panneaux (listes, compositeur, automatisation)
+- Layout 2 panneaux (listes, compositeur avec historique)
 - Templates Duolingo-style
 - Listes intelligentes
-- Automation builder visuel
+- Support Push et Email
 """
 
 import json
@@ -387,7 +387,23 @@ class NotificationsV2APIHandlers:
     # =========================================================================
 
     def handle_send_notification_v2(self, data: Dict) -> Dict:
-        """POST /api/notifications-v2/send - Envoyer des notifications (push ou email)"""
+        """POST /api/notifications-v2/send - Envoyer des notifications (push ou email).
+
+        Delegue au moteur partage `campaign_sender` afin que les envois immediats
+        et les envois programmes (scheduler Cloud Run) se comportent a l'identique.
+        """
+        import campaign_sender
+        return campaign_sender.send_campaign(
+            data,
+            firebase_manager=self.firebase_manager,
+            push_manager=self.push_manager,
+            email_manager=self.email_manager,
+            users=self._get_all_users(),
+            campaign_id=data.get('campaign_id'),
+        )
+
+    def _legacy_handle_send_notification_v2(self, data: Dict) -> Dict:
+        """(Conserve pour reference historique - remplace par campaign_sender)"""
         channel = data.get('channel', 'push')  # 'push' ou 'email'
         template_id = data.get('template_id')
         custom_message = data.get('custom_message')  # {title, body}
@@ -637,6 +653,69 @@ class NotificationsV2APIHandlers:
         return results
 
     # =========================================================================
+    # SCHEDULED CAMPAIGNS API (programmation / file d'attente / historique)
+    # =========================================================================
+
+    def _scheduled_manager(self):
+        from scheduled_campaigns_manager import ScheduledCampaignsManager
+        return ScheduledCampaignsManager(firebase_manager=self.firebase_manager)
+
+    def handle_schedule_campaign(self, data: Dict) -> Dict:
+        """POST /api/notifications-v2/schedule - Mettre une campagne en file."""
+        schedule = data.get('schedule') or {}
+        title = data.get('title')
+        # Le payload est le meme format que /send, sans les champs de programmation
+        payload = {k: v for k, v in data.items() if k not in ('schedule', 'title')}
+        return self._scheduled_manager().create_campaign(
+            payload, schedule, title=title, created_by='backoffice'
+        )
+
+    def handle_get_scheduled_campaigns(self, params: Dict = None) -> Dict:
+        """GET /api/notifications-v2/scheduled - Campagnes en file."""
+        mgr = self._scheduled_manager()
+        return {'success': True, 'campaigns': mgr.list_campaigns(statuses=['queued', 'sending'], limit=200)}
+
+    def handle_cancel_scheduled_campaign(self, campaign_id: str) -> Dict:
+        """POST /api/notifications-v2/scheduled/{id}/cancel."""
+        return self._scheduled_manager().cancel(campaign_id)
+
+    def handle_update_scheduled_campaign(self, campaign_id: str, data: Dict) -> Dict:
+        """POST /api/notifications-v2/scheduled/{id}/update."""
+        schedule = data.get('schedule')
+        title = data.get('title')
+        payload = None
+        if any(k in data for k in ('channel', 'template_id', 'custom_message', 'email', 'target', 'options')):
+            payload = {k: v for k, v in data.items() if k not in ('schedule', 'title')}
+        return self._scheduled_manager().update(campaign_id, payload=payload, schedule=schedule, title=title)
+
+    def handle_send_scheduled_now(self, campaign_id: str) -> Dict:
+        """POST /api/notifications-v2/scheduled/{id}/send-now."""
+        mgr = self._scheduled_manager()
+        camp = mgr.get_campaign(campaign_id)
+        if not camp:
+            return {'success': False, 'error': 'Campagne introuvable'}
+        if camp.get('status') not in ('queued', 'sending'):
+            return {'success': False, 'error': 'Campagne deja traitee'}
+        import campaign_sender
+        mgr.mark_sending(campaign_id)
+        result = campaign_sender.send_campaign(
+            camp.get('payload', {}),
+            firebase_manager=self.firebase_manager,
+            push_manager=self.push_manager,
+            email_manager=self.email_manager,
+            users=self._get_all_users(),
+            campaign_id=campaign_id,
+        )
+        mgr.record_run(campaign_id, result, result.get('success', False))
+        return result
+
+    def handle_get_notification_history(self, params: Dict = None) -> Dict:
+        """GET /api/notifications-v2/history - Historique des envois + ouvertures."""
+        params = params or {}
+        limit = int(params.get('limit', 50))
+        return self._scheduled_manager().get_sent_history(limit=limit)
+
+    # =========================================================================
     # HELPERS
     # =========================================================================
 
@@ -740,14 +819,14 @@ def generate_notifications_v2_page(firebase_initialized: bool = False) -> str:
     firebase_notice = "Systeme de notifications connecte" if firebase_initialized else "Firebase deconnecte - fonctionnalites limitees"
     notice_class = "alert-success" if firebase_initialized else "alert-warning"
 
-    return f'''
+    html = f'''
         <h2>🔔 Centre de Notifications V2</h2>
 
         <div class="{notice_class}">
             {firebase_notice}
         </div>
 
-        <!-- Layout 3 panneaux -->
+        <!-- Layout 2 panneaux -->
         <div class="notifications-v2-layout">
 
             <!-- PANNEAU GAUCHE: Listes -->
@@ -781,15 +860,15 @@ def generate_notifications_v2_page(firebase_initialized: bool = False) -> str:
                 </div>
 
                 <!-- Channel Toggle (Push/Email) -->
-                <div class="channel-toggle">
-                    <button id="channel-push" class="channel-btn active" onclick="setChannel('push')">🔔 Push</button>
-                    <button id="channel-email" class="channel-btn" onclick="setChannel('email')">📧 Email</button>
+                <div class="toggle-container channel">
+                    <button id="channel-push" class="toggle-btn active" onclick="setChannel('push')">🔔 Push</button>
+                    <button id="channel-email" class="toggle-btn" onclick="setChannel('email')">📧 Email</button>
                 </div>
 
                 <!-- Mode Toggle (Template/Custom) -->
-                <div class="mode-toggle" id="mode-toggle-section">
-                    <button id="mode-template" class="mode-btn active" onclick="setMode('template')">📋 Template</button>
-                    <button id="mode-custom" class="mode-btn" onclick="setMode('custom')">✏️ Personnalisé</button>
+                <div class="toggle-container" id="mode-toggle-section">
+                    <button id="mode-template" class="toggle-btn active" onclick="setMode('template')">📋 Template</button>
+                    <button id="mode-custom" class="toggle-btn" onclick="setMode('custom')">✏️ Personnalisé</button>
                 </div>
 
                 <!-- Selection template -->
@@ -805,7 +884,7 @@ def generate_notifications_v2_page(firebase_initialized: bool = False) -> str:
 
                 <!-- Champs personnalisés -->
                 <div id="custom-section" style="display: none;">
-                    <div class="custom-form">
+                    <div class="composer-form">
                         <div class="form-group">
                             <label>🏷️ Titre</label>
                             <input type="text" id="custom-title" placeholder="Ex: 🔥 Ta flamme africaine vacille !" oninput="updatePreview()">
@@ -822,7 +901,7 @@ def generate_notifications_v2_page(firebase_initialized: bool = False) -> str:
 
                 <!-- Email Section (hidden by default) -->
                 <div id="email-section" style="display: none;">
-                    <div class="email-form">
+                    <div class="composer-form">
                         <div class="form-group">
                             <label>📬 Sujet</label>
                             <input type="text" id="email-subject" placeholder="Ex: Kuma t'attend pour de nouvelles aventures !" oninput="updateEmailPreview()">
@@ -897,52 +976,12 @@ def generate_notifications_v2_page(firebase_initialized: bool = False) -> str:
                     </div>
                 </div>
 
-                <!-- Historique recent -->
-                <div class="recent-sends" id="recent-sends">
-                    <h4>🕒 Envois recents</h4>
-                    <div class="sends-list">
-                        <!-- Historique -->
-                    </div>
-                </div>
-            </div>
-
-            <!-- PANNEAU DROITE: Automatisation -->
-            <div class="panel panel-automation">
-                <div class="panel-header">
-                    <h3>⚡ Automatisation</h3>
-                    <button onclick="createNewRule()" class="btn-primary btn-sm">+ Nouvelle regle</button>
-                </div>
-
-                <div class="automation-stats" id="automation-stats">
-                    <!-- Stats automation -->
-                </div>
-
-                <div class="rules-list" id="rules-list">
-                    <!-- Liste des regles -->
-                </div>
-
-                <div class="execution-logs">
-                    <h4>📜 Historique d'execution</h4>
+                <!-- Historique d'execution -->
+                <div class="execution-history">
+                    <h4>📜 Historique</h4>
                     <div id="execution-logs-list">
                         <!-- Logs -->
                     </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Modal Editeur de regle -->
-        <div id="rule-editor-modal" class="modal hidden">
-            <div class="modal-content modal-large">
-                <div class="modal-header">
-                    <h3 id="rule-editor-title">Nouvelle regle</h3>
-                    <button onclick="closeRuleEditor()" class="btn-close">&times;</button>
-                </div>
-                <div class="modal-body" id="rule-editor-body">
-                    <!-- Formulaire de regle -->
-                </div>
-                <div class="modal-footer">
-                    <button onclick="closeRuleEditor()" class="btn-secondary">Annuler</button>
-                    <button onclick="saveRule()" class="btn-primary">Sauvegarder</button>
                 </div>
             </div>
         </div>
@@ -978,17 +1017,18 @@ def generate_notifications_v2_page(firebase_initialized: bool = False) -> str:
         <style>
             /* Override container pour layout pleine largeur */
             .container {{
-                max-width: 100% !important;
-                padding: 15px 20px !important;
+                max-width: 100%;
+                padding: 15px 20px;
+                overflow: visible;
             }}
 
-            /* Layout 3 panneaux */
+            /* Layout 2 panneaux */
             .notifications-v2-layout {{
                 display: grid;
-                grid-template-columns: 280px 1fr 350px;
+                grid-template-columns: 300px 1fr;
                 gap: 15px;
-                height: calc(100vh - 180px);
                 min-height: 500px;
+                max-height: calc(100vh - 180px);
             }}
 
             .panel {{
@@ -1129,6 +1169,9 @@ def generate_notifications_v2_page(firebase_initialized: bool = False) -> str:
             /* Panneau Compositeur */
             .panel-composer {{
                 overflow-y: auto;
+                min-height: 400px;
+                display: flex;
+                flex-direction: column;
             }}
 
             .composer-actions {{
@@ -1136,8 +1179,8 @@ def generate_notifications_v2_page(firebase_initialized: bool = False) -> str:
                 gap: 8px;
             }}
 
-            /* Mode Toggle */
-            .mode-toggle {{
+            /* Toggle Buttons (unified) */
+            .toggle-container {{
                 display: flex;
                 gap: 0;
                 margin: 15px;
@@ -1146,7 +1189,11 @@ def generate_notifications_v2_page(firebase_initialized: bool = False) -> str:
                 border: 2px solid #e5e7eb;
             }}
 
-            .mode-btn {{
+            .toggle-container.channel {{
+                border-color: #22c55e;
+            }}
+
+            .toggle-btn {{
                 flex: 1;
                 padding: 12px 16px;
                 border: none;
@@ -1156,64 +1203,64 @@ def generate_notifications_v2_page(firebase_initialized: bool = False) -> str:
                 transition: all 0.2s;
             }}
 
-            .mode-btn:hover {{
+            .toggle-container.channel .toggle-btn {{
+                background: #f0fdf4;
+                font-weight: 600;
+            }}
+
+            .toggle-btn:hover {{
                 background: #f3f4f6;
             }}
 
-            .mode-btn.active {{
+            .toggle-container.channel .toggle-btn:hover {{
+                background: #dcfce7;
+            }}
+
+            .toggle-btn.active {{
                 background: #FF6B35;
                 color: white;
             }}
 
-            /* Channel Toggle */
-            .channel-toggle {{
-                display: flex;
-                gap: 0;
-                margin: 15px;
-                border-radius: 10px;
-                overflow: hidden;
-                border: 2px solid #22c55e;
-            }}
-
-            .channel-btn {{
-                flex: 1;
-                padding: 12px 16px;
-                border: none;
-                background: #f0fdf4;
-                cursor: pointer;
-                font-weight: 600;
-                transition: all 0.2s;
-            }}
-
-            .channel-btn:hover {{
-                background: #dcfce7;
-            }}
-
-            .channel-btn.active {{
+            .toggle-container.channel .toggle-btn.active {{
                 background: #22c55e;
                 color: white;
             }}
 
-            /* Email Form */
-            .email-form {{
+            /* Composer Form (unified) */
+            .composer-form {{
                 padding: 15px;
             }}
 
-            .email-form .form-group {{
+            .composer-form .form-group {{
                 margin-bottom: 15px;
             }}
 
-            .email-form input,
-            .email-form textarea {{
+            .composer-form label {{
+                display: block;
+                font-weight: 600;
+                margin-bottom: 6px;
+                color: #374151;
+            }}
+
+            .composer-form input,
+            .composer-form textarea {{
                 width: 100%;
                 padding: 12px;
                 border: 2px solid #e5e7eb;
                 border-radius: 10px;
                 font-size: 14px;
                 font-family: inherit;
+                box-sizing: border-box;
+                transition: border-color 0.2s;
             }}
 
-            .email-form textarea {{
+            .composer-form input:focus,
+            .composer-form textarea:focus {{
+                outline: none;
+                border-color: #FF6B35;
+            }}
+
+            .composer-form textarea {{
                 resize: vertical;
                 min-height: 120px;
             }}
@@ -1250,39 +1297,6 @@ def generate_notifications_v2_page(firebase_initialized: bool = False) -> str:
                 padding: 15px;
                 min-height: 100px;
                 font-size: 14px;
-            }}
-
-            /* Custom Form */
-            .custom-form {{
-                padding: 15px;
-            }}
-
-            .custom-form .form-group {{
-                margin-bottom: 15px;
-            }}
-
-            .custom-form label {{
-                display: block;
-                font-weight: 600;
-                margin-bottom: 6px;
-                color: #374151;
-            }}
-
-            .custom-form input,
-            .custom-form textarea {{
-                width: 100%;
-                padding: 12px;
-                border: 2px solid #e5e7eb;
-                border-radius: 10px;
-                font-size: 0.95rem;
-                transition: border-color 0.2s;
-                box-sizing: border-box;
-            }}
-
-            .custom-form input:focus,
-            .custom-form textarea:focus {{
-                outline: none;
-                border-color: #FF6B35;
             }}
 
             .variables-hint {{
@@ -1481,123 +1495,14 @@ def generate_notifications_v2_page(firebase_initialized: bool = False) -> str:
                 font-weight: 500;
             }}
 
-            /* Panneau Automatisation */
-            .panel-automation {{
-                overflow-y: auto;
-            }}
-
-            .automation-stats {{
-                padding: 10px 15px;
-                background: #f3f4f6;
-                display: flex;
-                gap: 20px;
-                font-size: 0.85rem;
-            }}
-
-            .rules-list {{
-                padding: 10px;
-                overflow-y: auto;
-                flex: 1;
-            }}
-
-            .rule-card {{
-                padding: 12px 15px;
-                border: 1px solid #e5e7eb;
-                border-radius: 8px;
-                margin-bottom: 10px;
-                transition: all 0.2s;
-            }}
-
-            .rule-card:hover {{
-                box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-            }}
-
-            .rule-card.disabled {{
-                opacity: 0.6;
-            }}
-
-            .rule-header {{
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-                margin-bottom: 8px;
-            }}
-
-            .rule-name {{
-                font-weight: 500;
-                display: flex;
-                align-items: center;
-                gap: 8px;
-            }}
-
-            .rule-toggle {{
-                position: relative;
-                width: 44px;
-                height: 24px;
-            }}
-
-            .rule-toggle input {{
-                opacity: 0;
-                width: 0;
-                height: 0;
-            }}
-
-            .toggle-slider {{
-                position: absolute;
-                cursor: pointer;
-                top: 0;
-                left: 0;
-                right: 0;
-                bottom: 0;
-                background-color: #ccc;
-                border-radius: 24px;
-                transition: 0.4s;
-            }}
-
-            .toggle-slider:before {{
-                position: absolute;
-                content: "";
-                height: 18px;
-                width: 18px;
-                left: 3px;
-                bottom: 3px;
-                background-color: white;
-                border-radius: 50%;
-                transition: 0.4s;
-            }}
-
-            input:checked + .toggle-slider {{
-                background-color: #22c55e;
-            }}
-
-            input:checked + .toggle-slider:before {{
-                transform: translateX(20px);
-            }}
-
-            .rule-info {{
-                font-size: 0.8rem;
-                color: #6b7280;
-            }}
-
-            .rule-actions {{
-                display: flex;
-                gap: 8px;
-                margin-top: 8px;
-            }}
-
-            .rule-actions button {{
-                padding: 4px 10px;
-                font-size: 0.8rem;
-                border-radius: 4px;
-                cursor: pointer;
-            }}
-
-            .execution-logs {{
+            /* Historique d'execution */
+            .execution-history {{
                 padding: 15px;
                 border-top: 1px solid #e5e7eb;
+                margin-top: auto;
             }}
 
-            .execution-logs h4 {{
+            .execution-history h4 {{
                 margin: 0 0 10px 0;
                 font-size: 0.95rem;
             }}
@@ -1909,12 +1814,7 @@ def generate_notifications_v2_page(firebase_initialized: bool = False) -> str:
             @media (max-width: 1024px) {{
                 .notifications-v2-layout {{
                     grid-template-columns: 250px 1fr;
-                    height: auto;
-                }}
-
-                .panel-automation {{
-                    grid-column: 1 / -1;
-                    max-height: 400px;
+                    max-height: none;
                 }}
             }}
 
@@ -1922,11 +1822,15 @@ def generate_notifications_v2_page(firebase_initialized: bool = False) -> str:
             @media (max-width: 768px) {{
                 .notifications-v2-layout {{
                     grid-template-columns: 1fr;
-                    height: auto;
+                    max-height: none;
                 }}
 
                 .panel {{
-                    max-height: 500px;
+                    max-height: 600px;
+                }}
+
+                .panel-lists {{
+                    max-height: 300px;
                 }}
             }}
         </style>
@@ -1935,7 +1839,6 @@ def generate_notifications_v2_page(firebase_initialized: bool = False) -> str:
             // Variables globales
             let lists = [];
             let templates = [];
-            let rules = [];
             let selectedList = null;
             let selectedTemplate = null;
             let currentCategory = 'all';
@@ -1946,8 +1849,8 @@ def generate_notifications_v2_page(firebase_initialized: bool = False) -> str:
 
             function setChannel(channel) {{
                 currentChannel = channel;
-                document.getElementById('channel-push').classList.toggle('active', channel === 'push');
-                document.getElementById('channel-email').classList.toggle('active', channel === 'email');
+                document.querySelectorAll('.toggle-container.channel .toggle-btn').forEach(btn => btn.classList.remove('active'));
+                document.getElementById('channel-' + channel).classList.add('active');
 
                 // Show/hide appropriate sections
                 const pushSections = ['mode-toggle-section', 'template-section', 'custom-section', 'notification-preview'];
@@ -1982,8 +1885,8 @@ def generate_notifications_v2_page(firebase_initialized: bool = False) -> str:
 
             function setMode(mode) {{
                 currentMode = mode;
-                document.getElementById('mode-template').classList.toggle('active', mode === 'template');
-                document.getElementById('mode-custom').classList.toggle('active', mode === 'custom');
+                document.querySelectorAll('#mode-toggle-section .toggle-btn').forEach(btn => btn.classList.remove('active'));
+                document.getElementById('mode-' + mode).classList.add('active');
                 document.getElementById('template-section').style.display = mode === 'template' ? 'block' : 'none';
                 document.getElementById('custom-section').style.display = mode === 'custom' ? 'block' : 'none';
                 updatePreview();
@@ -1993,7 +1896,7 @@ def generate_notifications_v2_page(firebase_initialized: bool = False) -> str:
             document.addEventListener('DOMContentLoaded', function() {{
                 loadLists();
                 loadTemplates();
-                loadAutomationRules();
+                loadExecutionLogs();
             }});
 
             // ===== LISTES =====
@@ -2358,129 +2261,7 @@ def generate_notifications_v2_page(firebase_initialized: bool = False) -> str:
                 }}
             }}
 
-            // ===== AUTOMATISATION =====
-
-            async function loadAutomationRules() {{
-                try {{
-                    const response = await fetch('/api/notifications-v2/automation/rules');
-                    const data = await response.json();
-
-                    if (data.success) {{
-                        rules = data.rules;
-                        displayAutomationStats();
-                        displayRules(data.rules);
-                        loadExecutionLogs();
-                    }}
-                }} catch (error) {{
-                    console.error('Erreur chargement regles:', error);
-                }}
-            }}
-
-            function displayAutomationStats() {{
-                const enabled = rules.filter(r => r.enabled).length;
-                const container = document.getElementById('automation-stats');
-                container.innerHTML = `
-                    <div class="stat-item">
-                        <span>📋 Total:</span>
-                        <span class="stat-value">${{rules.length}}</span>
-                    </div>
-                    <div class="stat-item">
-                        <span>✅ Actives:</span>
-                        <span class="stat-value">${{enabled}}</span>
-                    </div>
-                `;
-            }}
-
-            function displayRules(rulesList) {{
-                const container = document.getElementById('rules-list');
-                container.innerHTML = rulesList.map(rule => `
-                    <div class="rule-card ${{rule.enabled ? '' : 'disabled'}}" id="rule-${{rule.id}}">
-                        <div class="rule-header">
-                            <div class="rule-name">
-                                <span>${{getCategoryIcon(rule.category)}}</span>
-                                <span>${{rule.name}}</span>
-                            </div>
-                            <label class="rule-toggle">
-                                <input type="checkbox" ${{rule.enabled ? 'checked' : ''}}
-                                    onchange="toggleRule('${{rule.id}}', this.checked)">
-                                <span class="toggle-slider"></span>
-                            </label>
-                        </div>
-                        <div class="rule-info">
-                            ${{rule.description || ''}}
-                            <br>
-                            <small>Conditions: ${{rule.conditions?.length || 0}} | Actions: ${{rule.actions?.length || 0}}</small>
-                        </div>
-                        <div class="rule-actions">
-                            <button onclick="editRule('${{rule.id}}')" class="btn-secondary btn-sm">✏️ Editer</button>
-                            <button onclick="executeRule('${{rule.id}}')" class="btn-secondary btn-sm">▶️ Executer</button>
-                        </div>
-                    </div>
-                `).join('');
-            }}
-
-            function getCategoryIcon(category) {{
-                const icons = {{
-                    'streak': '🔥',
-                    'reengagement': '💤',
-                    'progression': '🎯',
-                    'subscription': '💎',
-                    'engagement': '❤️'
-                }};
-                return icons[category] || '📋';
-            }}
-
-            async function toggleRule(ruleId, enabled) {{
-                try {{
-                    await fetch(`/api/notifications-v2/automation/rules/${{ruleId}}/toggle`, {{
-                        method: 'POST',
-                        headers: {{'Content-Type': 'application/json'}},
-                        body: JSON.stringify({{ enabled }})
-                    }});
-
-                    const ruleCard = document.getElementById(`rule-${{ruleId}}`);
-                    if (ruleCard) {{
-                        ruleCard.classList.toggle('disabled', !enabled);
-                    }}
-                }} catch (error) {{
-                    console.error('Erreur toggle:', error);
-                }}
-            }}
-
-            async function executeRule(ruleId) {{
-                if (!confirm('Executer cette regle maintenant ?')) return;
-
-                try {{
-                    const response = await fetch(`/api/notifications-v2/automation/rules/${{ruleId}}/execute`, {{
-                        method: 'POST'
-                    }});
-
-                    const data = await response.json();
-
-                    if (data.success) {{
-                        alert(`Regle executee ! Push: ${{data.push_sent || 0}}, Email: ${{data.email_sent || 0}}`);
-                        loadExecutionLogs();
-                    }} else {{
-                        alert(`Erreur: ${{data.error}}`);
-                    }}
-                }} catch (error) {{
-                    console.error('Erreur execution:', error);
-                }}
-            }}
-
-            function createNewRule() {{
-                // TODO: Ouvrir modal creation
-                alert('Fonctionnalite en cours de developpement');
-            }}
-
-            function editRule(ruleId) {{
-                // TODO: Ouvrir modal edition
-                alert('Fonctionnalite en cours de developpement');
-            }}
-
-            function closeRuleEditor() {{
-                document.getElementById('rule-editor-modal').classList.add('hidden');
-            }}
+            // ===== HISTORIQUE D'EXECUTION =====
 
             async function loadExecutionLogs() {{
                 try {{
@@ -2501,13 +2282,19 @@ def generate_notifications_v2_page(firebase_initialized: bool = False) -> str:
             let executionLogs = [];
 
             function displayExecutionLogs(logs) {{
-                executionLogs = logs;  // Stocker pour accès modal
-                const container = document.getElementById('execution-logs-list');
+                try {{
+                    executionLogs = logs || [];
+                    const container = document.getElementById('execution-logs-list');
 
-                if (!logs || logs.length === 0) {{
-                    container.innerHTML = '<div class="log-item">Aucune execution recente</div>';
-                    return;
-                }}
+                    if (!container) {{
+                        console.error('Container execution-logs-list not found');
+                        return;
+                    }}
+
+                    if (!logs || logs.length === 0) {{
+                        container.innerHTML = '<div class="log-item">Aucune execution recente</div>';
+                        return;
+                    }}
 
                 container.innerHTML = logs.slice(0, 20).map((log, index) => {{
                     // Icône selon la source
@@ -2570,11 +2357,15 @@ def generate_notifications_v2_page(firebase_initialized: bool = False) -> str:
                         </div>
                     `;
                 }}).join('');
+                }} catch (error) {{
+                    console.error('Erreur displayExecutionLogs:', error);
+                }}
             }}
 
             function showLogDetails(index) {{
-                const log = executionLogs[index];
-                if (!log) return;
+                try {{
+                    const log = executionLogs[index];
+                    if (!log) return;
 
                 const modal = document.getElementById('log-details-modal');
                 const title = document.getElementById('log-details-title');
@@ -2675,6 +2466,9 @@ def generate_notifications_v2_page(firebase_initialized: bool = False) -> str:
                 body.innerHTML = html;
 
                 modal.classList.remove('hidden');
+                }} catch (error) {{
+                    console.error('Erreur showLogDetails:', error);
+                }}
             }}
 
             function closeLogDetailsModal() {{
@@ -2685,6 +2479,340 @@ def generate_notifications_v2_page(firebase_initialized: bool = False) -> str:
             function closeUsersModal() {{
                 document.getElementById('users-modal').classList.add('hidden');
             }}
+        </script>
+    '''
+    html += _scheduling_section()
+    return html
+
+
+def _scheduling_section() -> str:
+    """Section "Programmation & Historique" (HTML + JS).
+
+    Renvoyee comme chaine simple (pas une f-string) : les accolades JS/CSS
+    n'ont donc pas besoin d'etre echappees. Le JS reutilise les variables
+    globales du compositeur (selectedList, currentChannel, currentMode,
+    selectedTemplate) definies dans le script principal de la page.
+    """
+    return r'''
+        <style>
+            .scheduling-section { margin-top: 24px; background: var(--card-bg, #1e1e2e); border-radius: 12px; padding: 20px; }
+            .scheduling-section h3 { margin-top: 0; }
+            .schedule-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; align-items: end; margin-bottom: 8px; }
+            .schedule-form .form-group { display: flex; flex-direction: column; gap: 4px; }
+            .schedule-form label { font-size: 12px; opacity: 0.8; }
+            .schedule-form input, .schedule-form select { padding: 8px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.15); background: rgba(0,0,0,0.2); color: inherit; }
+            .schedule-days { display: flex; flex-wrap: wrap; gap: 4px; }
+            .schedule-days label { display: inline-flex; align-items: center; gap: 3px; font-size: 12px; padding: 4px 6px; border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; cursor: pointer; }
+            .notif-tabs { display: flex; gap: 6px; margin: 16px 0 12px; }
+            .sched-card { border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 12px; margin-bottom: 10px; }
+            .sched-card .sched-head { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+            .sched-card .sched-title { font-weight: 600; }
+            .sched-meta { font-size: 12px; opacity: 0.75; margin-top: 4px; display: flex; flex-wrap: wrap; gap: 10px; }
+            .sched-actions { display: flex; gap: 6px; }
+            .sched-badge { font-size: 11px; padding: 2px 8px; border-radius: 10px; background: rgba(255,255,255,0.1); }
+            .sched-badge.queued { background: rgba(59,130,246,0.25); }
+            .sched-badge.sending { background: rgba(234,179,8,0.25); }
+            .sched-badge.sent { background: rgba(34,197,94,0.25); }
+            .sched-badge.failed { background: rgba(239,68,68,0.25); }
+            .sched-badge.canceled { background: rgba(148,163,184,0.25); }
+            .history-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+            .history-table th, .history-table td { text-align: left; padding: 8px; border-bottom: 1px solid rgba(255,255,255,0.08); }
+            .history-table th { opacity: 0.7; font-weight: 600; }
+            .taps-pending { opacity: 0.5; font-style: italic; }
+            .btn-mini { padding: 4px 10px; font-size: 12px; border-radius: 6px; cursor: pointer; border: 1px solid rgba(255,255,255,0.2); background: transparent; color: inherit; }
+            .btn-mini.danger { border-color: rgba(239,68,68,0.5); }
+        </style>
+
+        <div class="scheduling-section">
+            <h3>🗓️ Programmation &amp; Historique</h3>
+            <p style="opacity:0.75; font-size:13px; margin-top:-4px;">
+                Programme l'envoi automatique de la notification composee ci-dessus.
+                Selectionne d'abord une liste et le contenu, puis choisis le jour et l'heure.
+            </p>
+
+            <div class="schedule-form">
+                <div class="form-group">
+                    <label>Type</label>
+                    <select id="sched-type" onchange="onSchedTypeChange()">
+                        <option value="once">Une seule fois</option>
+                        <option value="recurring">Recurrent</option>
+                    </select>
+                </div>
+                <div class="form-group" id="sched-once-date-group">
+                    <label>Date</label>
+                    <input type="date" id="sched-date">
+                </div>
+                <div class="form-group">
+                    <label>Heure</label>
+                    <input type="time" id="sched-time" value="09:00">
+                </div>
+                <div class="form-group" id="sched-freq-group" style="display:none;">
+                    <label>Frequence</label>
+                    <select id="sched-freq" onchange="onSchedFreqChange()">
+                        <option value="daily">Tous les jours</option>
+                        <option value="weekly">Chaque semaine</option>
+                    </select>
+                </div>
+                <div class="form-group" id="sched-days-group" style="display:none; grid-column: 1 / -1;">
+                    <label>Jours</label>
+                    <div class="schedule-days" id="sched-days">
+                        <label><input type="checkbox" value="0">Lun</label>
+                        <label><input type="checkbox" value="1">Mar</label>
+                        <label><input type="checkbox" value="2">Mer</label>
+                        <label><input type="checkbox" value="3">Jeu</label>
+                        <label><input type="checkbox" value="4">Ven</label>
+                        <label><input type="checkbox" value="5">Sam</label>
+                        <label><input type="checkbox" value="6">Dim</label>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>&nbsp;</label>
+                    <button class="btn-primary" onclick="queueScheduledNotification()">📅 Mettre en file</button>
+                </div>
+            </div>
+            <div id="sched-tz-note" style="font-size:11px; opacity:0.6;"></div>
+
+            <div class="notif-tabs">
+                <button id="tab-queue-btn" class="toggle-btn active" onclick="switchNotifTab('queue')">⏳ File d'attente</button>
+                <button id="tab-history-btn" class="toggle-btn" onclick="switchNotifTab('history')">📨 Envoyees</button>
+            </div>
+
+            <div id="notif-tab-queue">
+                <div id="scheduled-list"><div class="sched-card">Chargement...</div></div>
+            </div>
+            <div id="notif-tab-history" style="display:none;">
+                <div id="sent-history-list"><div class="sched-card">Chargement...</div></div>
+            </div>
+        </div>
+
+        <script>
+            // Timezone du navigateur (utilisee par le backend pour l'heure locale)
+            const SCHED_TZ = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+            (function(){
+                const note = document.getElementById('sched-tz-note');
+                if (note) note.textContent = 'Fuseau horaire : ' + SCHED_TZ;
+            })();
+
+            function onSchedTypeChange() {
+                const type = document.getElementById('sched-type').value;
+                const isRec = type === 'recurring';
+                document.getElementById('sched-once-date-group').style.display = isRec ? 'none' : 'flex';
+                document.getElementById('sched-freq-group').style.display = isRec ? 'flex' : 'none';
+                onSchedFreqChange();
+            }
+            function onSchedFreqChange() {
+                const type = document.getElementById('sched-type').value;
+                const freq = document.getElementById('sched-freq').value;
+                const showDays = (type === 'recurring' && freq === 'weekly');
+                document.getElementById('sched-days-group').style.display = showDays ? 'flex' : 'none';
+            }
+
+            // Construit le payload d'envoi a partir de l'etat du compositeur.
+            function buildComposerPayload() {
+                if (typeof selectedList === 'undefined' || !selectedList) {
+                    return { error: 'Veuillez selectionner une liste de destinataires' };
+                }
+                const fcmOnly = document.getElementById('fcm-only') ? document.getElementById('fcm-only').checked : true;
+                const abTest = document.getElementById('ab-test') ? document.getElementById('ab-test').checked : false;
+                const payload = {
+                    channel: currentChannel,
+                    target: { type: 'list', list_id: selectedList.id },
+                    options: { fcm_only: fcmOnly, ab_test: abTest }
+                };
+                if (currentChannel === 'push') {
+                    if (currentMode === 'custom') {
+                        const t = document.getElementById('custom-title').value.trim();
+                        const b = document.getElementById('custom-body').value.trim();
+                        if (!t || !b) return { error: 'Veuillez remplir le titre et le message' };
+                        payload.custom_message = { title: t, body: b };
+                    } else {
+                        if (!selectedTemplate) return { error: 'Veuillez selectionner un template' };
+                        payload.template_id = selectedTemplate.id;
+                    }
+                } else {
+                    const s = document.getElementById('email-subject').value.trim();
+                    const b = document.getElementById('email-body').value.trim();
+                    if (!s || !b) return { error: 'Veuillez remplir le sujet et le corps de l\'email' };
+                    payload.email = { subject: s, body: b };
+                }
+                return { payload: payload };
+            }
+
+            function readScheduleFromForm() {
+                const type = document.getElementById('sched-type').value;
+                if (type === 'once') {
+                    const date = document.getElementById('sched-date').value;
+                    const time = document.getElementById('sched-time').value || '09:00';
+                    if (!date) return { error: 'Veuillez choisir une date' };
+                    return { schedule: { type: 'once', timezone: SCHED_TZ, scheduled_at: date + 'T' + time } };
+                }
+                const freq = document.getElementById('sched-freq').value;
+                const time = document.getElementById('sched-time').value || '09:00';
+                const days = Array.from(document.querySelectorAll('#sched-days input:checked')).map(c => parseInt(c.value, 10));
+                if (freq === 'weekly' && days.length === 0) return { error: 'Choisissez au moins un jour' };
+                return { schedule: { type: 'recurring', timezone: SCHED_TZ, recurrence: { freq: freq, time: time, days: days, timezone: SCHED_TZ } } };
+            }
+
+            async function queueScheduledNotification() {
+                if (typeof currentChannel !== 'undefined' && currentChannel === 'email') {
+                    alert('La programmation est disponible uniquement pour les notifications push.');
+                    return;
+                }
+                const pc = buildComposerPayload();
+                if (pc.error) { alert(pc.error); return; }
+                const sc = readScheduleFromForm();
+                if (sc.error) { alert(sc.error); return; }
+
+                const body = Object.assign({}, pc.payload, { schedule: sc.schedule });
+                try {
+                    const r = await fetch('/api/notifications-v2/schedule', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(body)
+                    });
+                    const data = await r.json();
+                    if (data.success) {
+                        const when = data.next_run_at ? new Date(data.next_run_at).toLocaleString('fr-FR') : '';
+                        alert('✅ Campagne mise en file. Prochain envoi : ' + when);
+                        switchNotifTab('queue');
+                        loadScheduled();
+                    } else {
+                        alert('Erreur: ' + (data.error || 'Echec programmation'));
+                    }
+                } catch (e) {
+                    console.error('queue error', e);
+                    alert('Erreur lors de la programmation');
+                }
+            }
+
+            function switchNotifTab(tab) {
+                const isQueue = tab === 'queue';
+                document.getElementById('notif-tab-queue').style.display = isQueue ? 'block' : 'none';
+                document.getElementById('notif-tab-history').style.display = isQueue ? 'none' : 'block';
+                document.getElementById('tab-queue-btn').classList.toggle('active', isQueue);
+                document.getElementById('tab-history-btn').classList.toggle('active', !isQueue);
+                if (isQueue) loadScheduled(); else loadHistory();
+            }
+
+            function schedDescribe(c) {
+                const s = c.schedule || {};
+                if (s.type === 'recurring') {
+                    const rec = s.recurrence || {};
+                    if (rec.freq === 'weekly') {
+                        const names = ['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'];
+                        const ds = (rec.days || []).map(d => names[d]).join(', ');
+                        return 'Chaque semaine (' + ds + ') a ' + (rec.time || '');
+                    }
+                    return 'Tous les jours a ' + (rec.time || '');
+                }
+                return 'Une fois';
+            }
+
+            async function loadScheduled() {
+                const container = document.getElementById('scheduled-list');
+                try {
+                    const r = await fetch('/api/notifications-v2/scheduled');
+                    const data = await r.json();
+                    const items = (data && data.campaigns) || [];
+                    if (!items.length) {
+                        container.innerHTML = '<div class="sched-card">Aucune campagne en file.</div>';
+                        return;
+                    }
+                    container.innerHTML = items.map(c => {
+                        const channelEmoji = c.channel === 'email' ? '📧' : '🔔';
+                        const next = c.next_run_at ? new Date(c.next_run_at).toLocaleString('fr-FR') : '-';
+                        const canAct = (c.status === 'queued' || c.status === 'sending');
+                        return '<div class="sched-card">'
+                            + '<div class="sched-head">'
+                            + '<span class="sched-title">' + channelEmoji + ' ' + escapeHtml(c.title || '(sans titre)') + '</span>'
+                            + '<span class="sched-badge ' + c.status + '">' + c.status + '</span>'
+                            + '</div>'
+                            + '<div class="sched-meta">'
+                            + '<span>⏰ ' + next + '</span>'
+                            + '<span>🔁 ' + schedDescribe(c) + '</span>'
+                            + (c.run_count ? '<span>↪︎ ' + c.run_count + ' envoi(s)</span>' : '')
+                            + '</div>'
+                            + (canAct ? '<div class="sched-actions" style="margin-top:8px;">'
+                                + '<button class="btn-mini" onclick="sendScheduledNow(\'' + c.id + '\')">📤 Envoyer maintenant</button>'
+                                + '<button class="btn-mini danger" onclick="cancelScheduled(\'' + c.id + '\')">✖ Annuler</button>'
+                                + '</div>' : '')
+                            + '</div>';
+                    }).join('');
+                } catch (e) {
+                    console.error('loadScheduled error', e);
+                    container.innerHTML = '<div class="sched-card">Erreur de chargement.</div>';
+                }
+            }
+
+            async function cancelScheduled(id) {
+                if (!confirm('Annuler cette campagne programmee ?')) return;
+                try {
+                    const r = await fetch('/api/notifications-v2/scheduled/' + id + '/cancel', { method: 'POST' });
+                    const data = await r.json();
+                    if (data.success) { loadScheduled(); }
+                    else alert('Erreur: ' + (data.error || 'Echec annulation'));
+                } catch (e) { console.error(e); alert('Erreur'); }
+            }
+
+            async function sendScheduledNow(id) {
+                if (!confirm('Envoyer cette campagne immediatement ?')) return;
+                try {
+                    const r = await fetch('/api/notifications-v2/scheduled/' + id + '/send-now', { method: 'POST' });
+                    const data = await r.json();
+                    if (data.success) {
+                        alert('✅ Envoye : ' + (data.sent || 0) + '/' + (data.total || 0));
+                    } else {
+                        alert('Erreur: ' + (data.error || 'Echec envoi'));
+                    }
+                    loadScheduled();
+                } catch (e) { console.error(e); alert('Erreur'); }
+            }
+
+            async function loadHistory() {
+                const container = document.getElementById('sent-history-list');
+                try {
+                    const r = await fetch('/api/notifications-v2/history?limit=50');
+                    const data = await r.json();
+                    const items = (data && data.history) || [];
+                    if (!items.length) {
+                        container.innerHTML = '<div class="sched-card">Aucun envoi enregistre.</div>';
+                        return;
+                    }
+                    let rows = items.map(h => {
+                        const channelEmoji = h.channel === 'email' ? '📧' : '🔔';
+                        const when = h.sent_at ? new Date(h.sent_at).toLocaleString('fr-FR') : '-';
+                        // Touches : alimente par l'app a partir d'une prochaine release.
+                        const taps = (h.open_count && h.open_count > 0)
+                            ? String(h.open_count)
+                            : '<span class="taps-pending">a venir</span>';
+                        return '<tr>'
+                            + '<td>' + when + '</td>'
+                            + '<td>' + channelEmoji + ' ' + escapeHtml(h.title || h.type || '') + '</td>'
+                            + '<td>' + (h.total_targeted || 0) + '</td>'
+                            + '<td>' + (h.total_sent || 0) + '</td>'
+                            + '<td>' + (h.total_failed || 0) + '</td>'
+                            + '<td>' + taps + '</td>'
+                            + '</tr>';
+                    }).join('');
+                    container.innerHTML = '<table class="history-table"><thead><tr>'
+                        + '<th>Date</th><th>Notification</th><th>Cibles</th><th>Envoyes</th><th>Echecs</th><th>Touches</th>'
+                        + '</tr></thead><tbody>' + rows + '</tbody></table>';
+                } catch (e) {
+                    console.error('loadHistory error', e);
+                    container.innerHTML = '<div class="sched-card">Erreur de chargement.</div>';
+                }
+            }
+
+            function escapeHtml(s) {
+                return String(s || '').replace(/[&<>"']/g, function(c) {
+                    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+                });
+            }
+
+            document.addEventListener('DOMContentLoaded', function() {
+                onSchedTypeChange();
+                loadScheduled();
+            });
         </script>
     '''
 
