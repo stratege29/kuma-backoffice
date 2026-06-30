@@ -65,14 +65,6 @@ LIST_CATEGORIES = {
         'description': 'Niveau d\'engagement',
         'color': '#E91E63',
         'order': 5
-    },
-    'geography': {
-        'id': 'geography',
-        'name': 'Geographie',
-        'icon': '🌍',
-        'description': 'Par pays de depart',
-        'color': '#20B2AA',
-        'order': 6
     }
 }
 
@@ -108,24 +100,6 @@ class SmartListsManager:
             'priority': 'low',
             'suggested_templates': ['daily_reminder']
         },
-        'active_7d': {
-            'id': 'active_7d',
-            'name': 'Actifs (7 jours)',
-            'description': 'Utilisateurs actifs dans les 7 derniers jours',
-            'icon': '✅',
-            'category': 'behavior',
-            'priority': 'low',
-            'suggested_templates': []
-        },
-        'inactive_1d': {
-            'id': 'inactive_1d',
-            'name': 'Inactifs 1 jour',
-            'description': 'Utilisateurs sans activite depuis hier',
-            'icon': '💭',
-            'category': 'behavior',
-            'priority': 'medium',
-            'suggested_templates': ['miss_you_1d', 'streak_at_risk']
-        },
         'inactive_3d': {
             'id': 'inactive_3d',
             'name': 'Inactifs 3 jours',
@@ -138,7 +112,7 @@ class SmartListsManager:
         'inactive_7d': {
             'id': 'inactive_7d',
             'name': 'Inactifs 7 jours',
-            'description': 'Utilisateurs inactifs depuis 7-29 jours',
+            'description': 'Utilisateurs inactifs depuis 7-13 jours',
             'icon': '😴',
             'category': 'behavior',
             'priority': 'high',
@@ -148,7 +122,7 @@ class SmartListsManager:
             'id': 'inactive_14d',
             'name': 'Inactifs 14 jours',
             'description': 'Utilisateurs inactifs depuis 14-29 jours',
-            'icon': '💔',
+            'icon': '😔',
             'category': 'behavior',
             'priority': 'urgent',
             'suggested_templates': ['miss_you_14d']
@@ -157,7 +131,7 @@ class SmartListsManager:
             'id': 'inactive_30d',
             'name': 'Inactifs 30+ jours',
             'description': 'Utilisateurs inactifs depuis plus de 30 jours',
-            'icon': '💀',
+            'icon': '🌑',
             'category': 'behavior',
             'priority': 'urgent',
             'suggested_templates': ['comeback_offer']
@@ -180,23 +154,14 @@ class SmartListsManager:
             'priority': 'high',
             'suggested_templates': ['first_story']
         },
-        'new_day3': {
-            'id': 'new_day3',
-            'name': 'Nouveaux - Jour 3',
-            'description': 'Inscrits il y a 3 jours',
-            'icon': '📅',
+        'onboarding_incomplete': {
+            'id': 'onboarding_incomplete',
+            'name': 'Onboarding incomplet',
+            'description': 'Inscrits mais aucune histoire lue',
+            'icon': '🚪',
             'category': 'behavior',
-            'priority': 'medium',
-            'suggested_templates': ['daily_reminder']
-        },
-        'new_day7': {
-            'id': 'new_day7',
-            'name': 'Nouveaux - Jour 7',
-            'description': 'Inscrits il y a 7 jours',
-            'icon': '🗓️',
-            'category': 'behavior',
-            'priority': 'medium',
-            'suggested_templates': ['daily_reminder']
+            'priority': 'high',
+            'suggested_templates': ['engagement_first_adventure', 'first_story']
         },
 
         # =====================================================================
@@ -251,15 +216,6 @@ class SmartListsManager:
         # =====================================================================
         # STREAK LISTS (Flamme de l'Afrique)
         # =====================================================================
-        'streak_active': {
-            'id': 'streak_active',
-            'name': 'Streak actif',
-            'description': 'Utilisateurs avec un streak en cours',
-            'icon': '🔥',
-            'category': 'streak',
-            'priority': 'low',
-            'suggested_templates': []
-        },
         'streak_at_risk': {
             'id': 'streak_at_risk',
             'name': 'Flamme en danger',
@@ -376,7 +332,7 @@ class SmartListsManager:
             'id': 'lapsed_premium',
             'name': 'Ex-Premium',
             'description': 'Anciens abonnes Premium',
-            'icon': '💔',
+            'icon': '💤',
             'category': 'subscription',
             'priority': 'high',
             'suggested_templates': ['special_offer', 'comeback_offer']
@@ -385,15 +341,6 @@ class SmartListsManager:
         # =====================================================================
         # ENGAGEMENT LISTS
         # =====================================================================
-        'high_engagement': {
-            'id': 'high_engagement',
-            'name': 'Tres engages',
-            'description': 'Utilisateurs tres actifs (10+ histoires, actifs)',
-            'icon': '🌟',
-            'category': 'engagement',
-            'priority': 'low',
-            'suggested_templates': []
-        },
         'low_engagement': {
             'id': 'low_engagement',
             'name': 'Peu engages',
@@ -438,15 +385,6 @@ class SmartListsManager:
             'category': 'engagement',
             'priority': 'medium',
             'suggested_templates': []
-        },
-        'with_children': {
-            'id': 'with_children',
-            'name': 'Avec enfants',
-            'description': 'Utilisateurs ayant cree des profils enfants',
-            'icon': '👶',
-            'category': 'engagement',
-            'priority': 'medium',
-            'suggested_templates': []
         }
     }
 
@@ -460,16 +398,13 @@ class SmartListsManager:
         filters = {
             # Behavior
             'active_today': lambda u: self._days_since_activity(u) == 0,
-            'active_7d': lambda u: self._days_since_activity(u) <= 7,
-            'inactive_1d': lambda u: self._days_since_activity(u) == 1,
             'inactive_3d': lambda u: 3 <= self._days_since_activity(u) < 7,
-            'inactive_7d': lambda u: 7 <= self._days_since_activity(u) < 30,
+            'inactive_7d': lambda u: 7 <= self._days_since_activity(u) < 14,
             'inactive_14d': lambda u: 14 <= self._days_since_activity(u) < 30,
             'inactive_30d': lambda u: self._days_since_activity(u) >= 30,
             'churn_risk': lambda u: 14 <= self._days_since_activity(u) <= 21,
             'new_day1': lambda u: self._days_since_created(u) == 0,
-            'new_day3': lambda u: 2 <= self._days_since_created(u) <= 4,
-            'new_day7': lambda u: 6 <= self._days_since_created(u) <= 8,
+            'onboarding_incomplete': lambda u: self._days_since_created(u) >= 1 and self._get_stories_count(u) == 0,
 
             # Progression
             'beginners': lambda u: (u.get('dayNumber') or 0) <= 10,
@@ -479,7 +414,6 @@ class SmartListsManager:
             'near_completion': lambda u: 50 <= (u.get('dayNumber') or 0) <= 53,
 
             # Streak
-            'streak_active': lambda u: (u.get('currentStreak') or 0) > 0,
             'streak_at_risk': lambda u: self._is_streak_at_risk(u),
             'streak_lost_today': lambda u: self._streak_lost_recently(u),
             'streak_7plus': lambda u: (u.get('currentStreak') or 0) >= 7,
@@ -497,19 +431,12 @@ class SmartListsManager:
             'lapsed_premium': lambda u: self._is_lapsed_premium(u),
 
             # Engagement
-            'high_engagement': lambda u: self._is_high_engagement(u),
             'low_engagement': lambda u: self._is_low_engagement(u),
             'quiz_masters': lambda u: (u.get('perfectQuizzes') or 0) >= 5,
             'listeners': lambda u: (u.get('totalListeningMinutes') or 0) >= 300,
             'readers': lambda u: self._get_stories_count(u) >= 10,
-            'parents': lambda u: u.get('userType') == 'parent',
-            'with_children': lambda u: len(u.get('children') or []) > 0
+            'parents': lambda u: u.get('userType') == 'parent'
         }
-
-        # Listes pays dynamiques: country_<code> -> filtre sur startCountry
-        if list_id and list_id.startswith('country_'):
-            code = list_id[len('country_'):].lower()
-            return lambda u: ((u.get('startCountry') or u.get('start_country') or '').lower() == code)
 
         return filters.get(list_id, lambda u: False)
 
@@ -963,10 +890,7 @@ def get_lists_for_ui(users: List[Dict] = None) -> Dict:
     all_lists = manager.get_all_lists_with_counts(users)
     categories = get_categories_for_ui()
 
-    # Ajouter les listes par pays
-    if users:
-        country_lists = generate_country_lists(users)
-        all_lists.extend(country_lists)
+    # Note: ciblage par pays retire (audience par pays supprimee).
 
     # Grouper par categorie
     grouped = {}

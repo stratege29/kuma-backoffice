@@ -589,10 +589,10 @@ NOTIFICATION_TEMPLATES = {
         'icon': '🌟',
         'priority': 'medium',
         'title': {
-            'default': '🌟 Bienvenue dans ton essai Premium !'
+            'default': '🌟 Votre essai Premium est ouvert !'
         },
         'body': {
-            'default': '{child_name} peut maintenant explorer toute l\'Afrique sans limites ! Profite bien ! 🌍'
+            'default': 'C\'est parti : {child_name} peut maintenant explorer toute l\'Afrique sans limites. Profitez-en ! 🌍'
         },
         'variables': ['child_name'],
         'celebration': True
@@ -605,7 +605,7 @@ NOTIFICATION_TEMPLATES = {
         'icon': '⏳',
         'priority': 'high',
         'title': {
-            'default': '⏳ Ton essai se termine dans 3 jours !'
+            'default': '⏳ Votre essai se termine dans 3 jours'
         },
         'body': {
             'default': 'Plus que 3 jours d\'essai ! Passez à Premium pour que {child_name} continue son voyage ! 🌍⭐'
@@ -654,10 +654,10 @@ NOTIFICATION_TEMPLATES = {
         'icon': '⭐',
         'priority': 'medium',
         'title': {
-            'default': '⭐ Découvre Premium !'
+            'default': '⭐ Débloquez tout Kuma'
         },
         'body': {
-            'default': 'Accès illimité aux 54 pays, écoute hors-ligne, et plus encore ! {child_name} mérite le meilleur ! 🌟'
+            'default': 'Accès illimité aux 54 pays, écoute hors-ligne et bien plus : offrez le meilleur à {child_name} ! 🌟'
         },
         'variables': ['child_name'],
         'cta': 'view_premium'
@@ -673,7 +673,7 @@ NOTIFICATION_TEMPLATES = {
             'default': '🌟 Bienvenue dans Premium !'
         },
         'body': {
-            'default': 'Merci ! {child_name} peut maintenant explorer toute l\'Afrique sans limites ! Bon voyage ! 🌍✨'
+            'default': 'Merci pour votre confiance ! {child_name} peut désormais explorer toute l\'Afrique sans limites. Bon voyage ! 🌍✨'
         },
         'variables': ['child_name'],
         'celebration': True,
@@ -858,6 +858,65 @@ NOTIFICATION_TEMPLATES = {
         'android_channel': 'parent_channel',
         'ios_category': 'parent_report',
         'channels': ['push']
+    },
+
+    'comeback_offer': {
+        'id': 'comeback_offer',
+        'category': 'reengagement',
+        'name': 'Offre de retour',
+        'icon': '🎁',
+        'priority': 'urgent',
+        'title': {
+            'default': '🎁 {child_name}, l\'Afrique t\'a gardé une surprise !',
+            'variant_a': '🌍 Reviens, ton voyage t\'attend !'
+        },
+        'body': {
+            'default': 'Cela fait un moment ! De nouvelles histoires africaines attendent {child_name}. Reprends ton voyage là où tu l\'avais laissé 🌍',
+            'variant_a': 'Ton aventure africaine n\'est pas terminée ! Reviens découvrir ce qui t\'attend 🗺️'
+        },
+        'variables': ['child_name'],
+        'recommended_timing': 'evening',
+        'optimal_hours': [18, 19, 20],
+        'cooldown_hours': 336,
+        'action': 'open_story',
+        'deep_link': 'kuma://home',
+        'channels': ['push', 'email']
+    },
+
+    'special_offer': {
+        'id': 'special_offer',
+        'category': 'subscription',
+        'name': 'Offre spéciale',
+        'icon': '🎉',
+        'priority': 'high',
+        'title': {
+            'default': '🎉 Offre spéciale pour {child_name} !',
+            'variant_a': '⭐ Premium à prix doux cette semaine'
+        },
+        'body': {
+            'default': 'Offre limitée : passez à Premium et offrez à {child_name} un accès illimité aux 54 pays d\'Afrique ! 🌍',
+            'variant_a': 'C\'est le moment : débloquez toute l\'Afrique pour {child_name} à tarif réduit ⭐'
+        },
+        'variables': ['child_name'],
+        'cta': 'upgrade_premium',
+        'deep_link': 'kuma://subscription',
+        'channels': ['push', 'email']
+    },
+
+    'perfect_quiz_streak': {
+        'id': 'perfect_quiz_streak',
+        'category': 'gamification',
+        'name': 'Série de quiz parfaits',
+        'icon': '🧠💯',
+        'priority': 'medium',
+        'title': {
+            'default': '🧠 {child_name}, quel cerveau !'
+        },
+        'body': {
+            'default': '{child_name} enchaîne les quiz parfaits ! Continue comme ça, champion des contes africains ! 💯'
+        },
+        'variables': ['child_name'],
+        'celebration': True
     }
 }
 

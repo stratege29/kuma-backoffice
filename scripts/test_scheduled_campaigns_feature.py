@@ -96,6 +96,29 @@ def test_validation():
     check("validate refuse email (push uniquement)", not ok5)
 
 
+def test_segments_and_templates_content():
+    from notification_templates import NOTIFICATION_TEMPLATES
+    from smart_lists_manager import SmartListsManager, LIST_CATEGORIES
+
+    # Les 3 templates auparavant fantomes existent desormais
+    for tid in ('comeback_offer', 'special_offer', 'perfect_quiz_streak'):
+        check(f"template '{tid}' existe", tid in NOTIFICATION_TEMPLATES)
+
+    # Tous les suggested_templates des segments resolvent vers un vrai template
+    dangling = []
+    for list_id, cfg in SmartListsManager.SMART_LISTS.items():
+        for tid in cfg.get('suggested_templates', []):
+            if tid not in NOTIFICATION_TEMPLATES:
+                dangling.append(f"{list_id}->{tid}")
+    check(f"aucun suggested_template fantome ({dangling})", not dangling)
+
+    # Le ciblage par pays est retire
+    check("categorie geography retiree", 'geography' not in LIST_CATEGORIES)
+    mgr = SmartListsManager()
+    sample = [{'uid': 'x', 'startCountry': 'SN', 'fcmToken': 't'}]
+    check("country_sn ne cible plus personne", len(mgr.get_list_users('country_sn', sample)) == 0)
+
+
 def test_freeze_template():
     mgr = scm.ScheduledCampaignsManager(db="__fake_truthy__")
     frozen = mgr._freeze_template(
@@ -225,6 +248,8 @@ if __name__ == '__main__':
     test_compute_next_run()
     print("\n=== validation ===")
     test_validation()
+    print("\n=== contenu segments & templates ===")
+    test_segments_and_templates_content()
     print("\n=== freeze template ===")
     test_freeze_template()
     print("\n=== send_campaign ===")
