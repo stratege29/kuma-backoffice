@@ -100,7 +100,7 @@ _PAGE = r'''
   .cb-phone { background: #111827; border-radius: 18px; padding: 14px 10px; position: sticky; top: 12px; }
   .cb-phone .t { color: #9ca3af; font-size: 11px; text-align: center; margin-bottom: 8px; }
   .cb-notif { background: #fff; border-radius: 10px; padding: 10px; display: flex; gap: 8px; }
-  .cb-notif .ic { width: 30px; height: 30px; border-radius: 7px; background: #FF6B35; color: #fff; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .cb-notif .cb-avatar { width: 38px; height: 38px; border-radius: 9px; object-fit: cover; flex-shrink: 0; background: #fff; }
   .cb-notif .tt { font-weight: 600; font-size: 12px; color: #111827; }
   .cb-notif .bb { font-size: 11px; color: #4b5563; margin-top: 2px; }
 
@@ -169,6 +169,17 @@ _PAGE = r'''
             <div id="cb-template-block">
               <div class="cb-seg-row" id="cb-tpl-cats"></div>
               <div class="cb-tpl-grid" id="cb-templates"><div class="cb-hint">Chargement...</div></div>
+              <div id="cb-tpl-edit" style="display:none; margin-top:14px; border-top:1px solid #eef0f2; padding-top:14px;">
+                <div class="cb-field"><label>Titre <span style="font-weight:400;color:#9ca3af;">— modifiable</span></label>
+                  <input id="cb-tpl-title" oninput="cbTplEdited()"></div>
+                <div class="cb-field"><label>Message <span style="font-weight:400;color:#9ca3af;">— modifiable</span></label>
+                  <textarea id="cb-tpl-body" oninput="cbTplEdited()"></textarea></div>
+                <div class="cb-vars">Variables : <code onclick="cbInsertVar('{child_name}','cb-tpl-body')">{child_name}</code>
+                  <code onclick="cbInsertVar('{country}','cb-tpl-body')">{country}</code>
+                  <code onclick="cbInsertVar('{streak}','cb-tpl-body')">{streak}</code>
+                  <code onclick="cbInsertVar('{days_inactive}','cb-tpl-body')">{days_inactive}</code></div>
+                <p class="cb-hint" id="cb-tpl-editnote" style="margin:8px 0 0;"></p>
+              </div>
             </div>
             <div id="cb-custom-block" style="display:none;">
               <div class="cb-field"><label>Titre</label><input id="cb-custom-title" oninput="cbUpdatePreview()" placeholder="Ex: 🔥 {child_name}, ta flamme faiblit…"></div>
@@ -190,7 +201,8 @@ _PAGE = r'''
         <div>
           <div class="cb-phone" id="cb-preview">
             <div class="t">maintenant</div>
-            <div class="cb-notif"><div class="ic" id="cb-pv-ic">🔔</div>
+            <div class="cb-notif"><img class="cb-avatar" id="cb-pv-avatar" alt="Kuma"
+                 src="https://storage.googleapis.com/kumafire-7864b.firebasestorage.app/app_assets/storyteller/sage_encouragements.png">
               <div style="min-width:0"><div class="tt" id="cb-pv-title">Aperçu</div>
               <div class="bb" id="cb-pv-body">Choisis un template ou écris ton message.</div></div></div>
           </div>
@@ -272,6 +284,19 @@ _PAGE = r'''
   const STEPS = ['Audience','Message','Programmation','Vérif & envoi','Résultats'];
   const DAY_NAMES = ['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'];
   const DEMO = { child_name: 'Awa', country: 'Sénégal', streak: '6', days_inactive: '3' };
+  const SAGE_BASE = 'https://storage.googleapis.com/kumafire-7864b.firebasestorage.app/app_assets/storyteller/';
+  const SAGE_AVATARS = { bravo: SAGE_BASE+'sage_bravo.png', encouragements: SAGE_BASE+'sage_encouragements.png',
+    informative: SAGE_BASE+'sage_informative.png', letsgo: SAGE_BASE+'sage_letsgo.png', thumbsup: SAGE_BASE+'sage_thumbsup.png' };
+  function sageAvatar(t){
+    if (!t) return SAGE_AVATARS.encouragements;
+    const id = t.id||'', cat = t.category||'';
+    if (id.includes('milestone') || id.includes('complete') || cat==='gamification') return SAGE_AVATARS.bravo;
+    if (id.includes('at_risk') || id.includes('lost') || cat==='streak') return SAGE_AVATARS.encouragements;
+    if (id.includes('miss_you') || id.includes('inactive') || id.includes('comeback') || id.includes('continue') || cat==='reengagement') return SAGE_AVATARS.letsgo;
+    if (cat==='subscription') return SAGE_AVATARS.informative;
+    if (cat==='engagement') return SAGE_AVATARS.thumbsup;
+    return SAGE_AVATARS.encouragements;
+  }
 
   function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
   function el(id){ return document.getElementById(id); }
@@ -368,8 +393,26 @@ _PAGE = r'''
   };
   window.cbSelectTemplate = function(id){
     CB.sel.template = CB.templates.find(t => t.id===id) || null;
+    CB.sel.templateEdited = false;
+    const t = CB.sel.template;
+    if (t){
+      el('cb-tpl-title').value = t.title_default || '';
+      el('cb-tpl-body').value = t.body_default || '';
+      el('cb-tpl-edit').style.display = 'block';
+      el('cb-tpl-editnote').textContent = t.has_variants ? 'Ce template a des variantes A/B (actives si tu ne modifies pas le texte).' : '';
+    } else {
+      el('cb-tpl-edit').style.display = 'none';
+    }
     cbRenderTemplates(document.querySelector('#cb-tpl-cats .cb-chip.on')?.dataset.cat || 'all');
     cbUpdatePreview(); renderContext();
+  };
+  window.cbTplEdited = function(){
+    const t = CB.sel.template; if (!t) return;
+    CB.sel.templateEdited = (el('cb-tpl-title').value !== (t.title_default||'')) || (el('cb-tpl-body').value !== (t.body_default||''));
+    el('cb-tpl-editnote').textContent = CB.sel.templateEdited
+      ? '✏️ Texte modifié — envoyé comme message personnalisé (A/B désactivé).'
+      : (t.has_variants ? 'Ce template a des variantes A/B (actives si tu ne modifies pas le texte).' : '');
+    cbUpdatePreview();
   };
   window.cbSetChannel = function(c){
     CB.sel.channel = c;
@@ -386,31 +429,41 @@ _PAGE = r'''
     cbUpdatePreview(); renderContext();
   };
   window.cbSyncAb = function(){ CB.sel.ab = el('cb-ab').checked; };
-  window.cbInsertVar = function(v){
-    const ta = el('cb-custom-body'); if (!ta) return;
-    ta.value += v; ta.focus(); cbUpdatePreview();
+  window.cbInsertVar = function(v, targetId){
+    const ta = el(targetId || 'cb-custom-body'); if (!ta) return;
+    ta.value += v; ta.focus();
+    if (targetId === 'cb-tpl-body') cbTplEdited(); else cbUpdatePreview();
   };
   window.cbUpdatePreview = async function(){
-    let ic='🔔', title='Aperçu', body='Choisis un template ou écris ton message.';
+    let title='Aperçu', body='Choisis un template ou écris ton message.', avatar=SAGE_AVATARS.encouragements;
     if (CB.sel.channel==='push'){
       if (CB.sel.mode==='custom'){
-        ic='📢'; title = demoSub(val('cb-custom-title')||'Titre de la notification'); body = demoSub(val('cb-custom-body')||'Ton message ici.');
+        title = demoSub(val('cb-custom-title')||'Titre de la notification'); body = demoSub(val('cb-custom-body')||'Ton message ici.');
+        avatar = SAGE_AVATARS.informative;
       } else if (CB.sel.template){
-        try {
-          const r = await fetch('/api/notifications-v2/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({template_id:CB.sel.template.id})});
-          const d = await r.json();
-          if (d.success){ ic=d.rendered.icon||'🔔'; title=d.rendered.title; body=d.rendered.body; }
-        } catch(e){ title = CB.sel.template.name; body = demoSub(CB.sel.template.body_default); }
+        avatar = sageAvatar(CB.sel.template);
+        if (CB.sel.templateEdited){
+          title = demoSub(el('cb-tpl-title').value || CB.sel.template.title_default);
+          body = demoSub(el('cb-tpl-body').value || CB.sel.template.body_default);
+        } else {
+          try {
+            const r = await fetch('/api/notifications-v2/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({template_id:CB.sel.template.id})});
+            const d = await r.json();
+            if (d.success){ title=d.rendered.title; body=d.rendered.body; }
+            else { title = demoSub(CB.sel.template.title_default); body = demoSub(CB.sel.template.body_default); }
+          } catch(e){ title = demoSub(CB.sel.template.title_default); body = demoSub(CB.sel.template.body_default); }
+        }
       }
     } else {
-      ic='📧'; title = demoSub(val('cb-email-subject')||'Sujet de l\'email'); body = 'Aperçu email dans le récapitulatif.';
+      title = demoSub(val('cb-email-subject')||'Sujet de l\'email'); body = 'Aperçu email dans le récapitulatif.';
+      avatar = SAGE_AVATARS.informative;
     }
-    CB.preview = { ic, title, body };
-    el('cb-pv-ic').textContent = ic; el('cb-pv-title').textContent = title; el('cb-pv-body').textContent = body;
+    CB.preview = { title, body };
+    el('cb-pv-avatar').src = avatar; el('cb-pv-title').textContent = title; el('cb-pv-body').textContent = body;
   };
   function cbMessageValid(){
     if (CB.sel.channel==='push'){
-      if (CB.sel.mode==='template') return !!CB.sel.template;
+      if (CB.sel.mode==='template') return !!(CB.sel.template && val('cb-tpl-title') && val('cb-tpl-body'));
       return !!(val('cb-custom-title') && val('cb-custom-body'));
     }
     return !!(val('cb-email-subject') && val('cb-email-body'));
@@ -465,10 +518,13 @@ _PAGE = r'''
   }
   function buildPayload(){
     const s = CB.sel;
-    const p = { channel: s.channel, target:{ type:'list', list_id: s.list.id }, options:{ fcm_only: s.fcmOnly, ab_test: s.ab } };
+    const useTemplateId = (s.channel==='push' && s.mode==='template' && s.template && !s.templateEdited);
+    const p = { channel: s.channel, target:{ type:'list', list_id: s.list.id },
+                options:{ fcm_only: s.fcmOnly, ab_test: !!(s.ab && useTemplateId) } };
     if (s.channel==='push'){
       if (s.mode==='custom') p.custom_message = { title: val('cb-custom-title'), body: val('cb-custom-body') };
-      else p.template_id = s.template.id;
+      else if (useTemplateId) p.template_id = s.template.id;
+      else p.custom_message = { title: val('cb-tpl-title'), body: val('cb-tpl-body') };
     } else { p.email = { subject: val('cb-email-subject'), body: val('cb-email-body') }; }
     return p;
   }
@@ -553,9 +609,10 @@ _PAGE = r'''
   };
 
   window.cbReset = function(){
-    CB.sel.list=null; CB.sel.template=null; CB.sel.mode='template'; CB.sel.channel='push'; CB.sel.ab=false; CB.sel.sched={when:'now',type:'once',freq:'daily',days:[]};
-    ['cb-custom-title','cb-custom-body','cb-email-subject','cb-email-body','cb-list-search'].forEach(i=>{ if(el(i)) el(i).value=''; });
+    CB.sel.list=null; CB.sel.template=null; CB.sel.templateEdited=false; CB.sel.mode='template'; CB.sel.channel='push'; CB.sel.ab=false; CB.sel.sched={when:'now',type:'once',freq:'daily',days:[]};
+    ['cb-custom-title','cb-custom-body','cb-email-subject','cb-email-body','cb-list-search','cb-tpl-title','cb-tpl-body'].forEach(i=>{ if(el(i)) el(i).value=''; });
     if (el('cb-ab')) el('cb-ab').checked=false;
+    if (el('cb-tpl-edit')) el('cb-tpl-edit').style.display='none';
     el('cb-next-1').disabled = true;
     cbSetChannel('push'); cbSetMode('template'); cbSetWhen('now'); cbUpdatePreview(); cbRenderLists();
     cbGoto(1);
