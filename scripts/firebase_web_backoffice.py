@@ -14928,7 +14928,15 @@ Un avis nous aide enormement a faire decouvrir Kuma a d'autres familles !<br><br
             self.send_error_page("Module notifications_v2 non disponible")
             return
 
-        html_content = generate_notifications_v2_page(self.firebase_manager.initialized)
+        # Nouvelle refonte "Campaign Builder" (parcours guide en 5 etapes).
+        # Repli automatique sur l'ancienne page en cas de souci.
+        try:
+            from campaign_builder_page import generate_campaign_builder_page
+            html_content = generate_campaign_builder_page(self.firebase_manager.initialized)
+        except Exception as e:
+            print(f"⚠️ Campaign Builder indisponible, repli sur la page v2: {e}")
+            html_content = generate_notifications_v2_page(self.firebase_manager.initialized)
+
         html = self.get_base_html('notifications-v2', html_content)
         self.send_html_response(html)
 

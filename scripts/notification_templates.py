@@ -70,855 +70,610 @@ TEMPLATE_CATEGORIES = {
 # NOTIFICATION TEMPLATES - DUOLINGO STYLE
 # =============================================================================
 
-NOTIFICATION_TEMPLATES = {
-
-    # =========================================================================
-    # CATEGORY: STREAK - "Flamme de l'Afrique"
-    # =========================================================================
-
-    'streak_at_risk': {
-        'id': 'streak_at_risk',
-        'category': 'streak',
-        'name': 'Flamme en danger',
-        'icon': '🔥⚠️',
-        'priority': 'high',
-        'title': {
-            'default': '🔥 Ta flamme africaine vacille !',
-            'variant_a': '⚠️ {child_name}, attention !',
-            'variant_b': '🔥 Ne laisse pas s\'éteindre ta flamme !'
-        },
-        'body': {
-            'default': '{child_name}, ta série de {streak} jours est en danger ! Une histoire et elle brille à nouveau !',
-            'variant_a': 'Plus que quelques heures pour sauver ta flamme de {streak} jours ! 🔥',
-            'variant_b': 'Ta flamme de {streak} jours a besoin de toi ! Une petite histoire suffit 💫'
-        },
-        'variables': ['child_name', 'streak'],
-        'recommended_timing': 'evening',
-        'optimal_hours': [17, 18, 19, 20],
-        'user_segments': ['streak_active', 'streak_at_risk'],
-        'cooldown_hours': 12,
-        'action': 'open_story',
-        'deep_link': 'kuma://home',
-        'sound': 'urgent',
-        'badge_count': 1,
-        'android_channel': 'streak_channel',
-        'ios_category': 'streak_reminder'
-    },
-
-    'streak_lost': {
-        'id': 'streak_lost',
-        'category': 'streak',
-        'name': 'Flamme perdue',
-        'icon': '😢',
-        'priority': 'high',
-        'title': {
-            'default': '🔥 Une nouvelle flamme t\'attend !',
-            'variant_a': '{child_name}, c\'est reparti pour une nouvelle aventure !'
-        },
-        'body': {
-            'default': '{child_name}, ta série de {streak} jours est terminée, mais une nouvelle aventure commence ! Rallume ta flamme 🌍',
-            'variant_a': 'Chaque grand explorateur recommence ! Une nouvelle flamme t\'attend, {child_name} ! 🌍'
-        },
-        'variables': ['child_name', 'streak'],
-        'recommended_timing': 'morning',
-        'optimal_hours': [8, 9, 10],
-        'cooldown_hours': 24,
-        'action': 'restart_streak',
-        'deep_link': 'kuma://home',
-        'sound': 'gentle',
-        'android_channel': 'streak_channel'
-    },
-
-    'streak_milestone_7': {
-        'id': 'streak_milestone_7',
-        'category': 'streak',
-        'name': '1 semaine de flamme',
-        'icon': '🌟',
-        'priority': 'medium',
-        'title': {
-            'default': '🌟 1 SEMAINE de flamme !'
-        },
-        'body': {
-            'default': '{child_name}, ta flamme africaine brille depuis 7 jours ! Tu es un vrai explorateur ! 🌍'
-        },
-        'variables': ['child_name'],
-        'celebration': True,
-        'confetti': True,
-        'special_reward': 'badge_streak_7',
-        'action': 'view_badges',
-        'deep_link': 'kuma://badges',
-        'android_channel': 'streak_channel'
-    },
-
-    'streak_milestone_14': {
-        'id': 'streak_milestone_14',
-        'category': 'streak',
-        'name': '2 semaines de flamme',
-        'icon': '🏆',
-        'priority': 'medium',
-        'title': {
-            'default': '🏆 2 SEMAINES de flamme !'
-        },
-        'body': {
-            'default': '{child_name}, 14 jours sans interruption ! Tu es un champion de l\'Afrique ! 🌍'
-        },
-        'variables': ['child_name'],
-        'celebration': True,
-        'confetti': True,
-        'special_reward': 'badge_streak_14',
-        'action': 'view_badges',
-        'deep_link': 'kuma://badges'
-    },
-
-    'streak_milestone_30': {
-        'id': 'streak_milestone_30',
-        'category': 'streak',
-        'name': '1 mois de flamme',
-        'icon': '🔥👑',
-        'priority': 'high',
-        'title': {
-            'default': '🔥👑 1 MOIS de flamme !'
-        },
-        'body': {
-            'default': '{child_name}, 30 jours LÉGENDAIRES ! Ta flamme brûle plus fort que jamais ! 🌍✨'
-        },
-        'variables': ['child_name'],
-        'celebration': True,
-        'confetti': True,
-        'special_reward': 'badge_streak_30',
-        'action': 'view_badges'
-    },
-
-    'streak_milestone_60': {
-        'id': 'streak_milestone_60',
-        'category': 'streak',
-        'name': '2 mois de flamme',
-        'icon': '👑✨',
-        'priority': 'high',
-        'title': {
-            'default': '👑 2 MOIS de flamme africaine !'
-        },
-        'body': {
-            'default': '{child_name}, 60 jours incroyables ! Tu es un MAÎTRE des contes africains !'
-        },
-        'variables': ['child_name'],
-        'celebration': True,
-        'confetti': True,
-        'special_reward': 'badge_streak_60'
-    },
-
-    'streak_milestone_100': {
-        'id': 'streak_milestone_100',
-        'category': 'streak',
-        'name': '100 jours de flamme',
-        'icon': '🌈💯',
-        'priority': 'urgent',
-        'title': {
-            'default': '🌈💯 100 JOURS DE FLAMME !'
-        },
-        'body': {
-            'default': '{child_name}, LÉGENDAIRE ! 100 jours à explorer l\'Afrique ! L\'Afrique entière est fière de toi ! 🌍🎉'
-        },
-        'variables': ['child_name'],
-        'celebration': True,
-        'confetti': True,
-        'special_reward': 'badge_streak_100'
-    },
-
-    'streak_milestone_365': {
-        'id': 'streak_milestone_365',
-        'category': 'streak',
-        'name': '1 an de flamme',
-        'icon': '🌍🏆',
-        'priority': 'urgent',
-        'title': {
-            'default': '🌍🏆 1 AN DE FLAMME AFRICAINE !'
-        },
-        'body': {
-            'default': '{child_name}, tu es une LÉGENDE ! 365 jours de voyage à travers l\'Afrique ! Tu as fait le tour du continent ! 🎊'
-        },
-        'variables': ['child_name'],
-        'celebration': True,
-        'confetti': True,
-        'special_reward': 'badge_streak_365'
-    },
-
-    # =========================================================================
-    # CATEGORY: RE-ENGAGEMENT
-    # =========================================================================
-
-    'miss_you_1d': {
-        'id': 'miss_you_1d',
-        'category': 'reengagement',
-        'name': 'Tu nous manques (1 jour)',
-        'icon': '💭',
-        'priority': 'medium',
-        'title': {
-            'default': '💭 {child_name}, Kuma pense à toi !',
-            'variant_a': '🌍 Une nouvelle aventure t\'attend !'
-        },
-        'body': {
-            'default': 'Une nouvelle histoire africaine est prête ! Viens découvrir la suite de ton voyage ! 🌍',
-            'variant_a': '{country} t\'attend pour de nouvelles découvertes ! 🗺️'
-        },
-        'variables': ['child_name', 'country'],
-        'recommended_timing': 'evening',
-        'optimal_hours': [18, 19, 20],
-        'cooldown_hours': 24,
-        'action': 'open_story',
-        'deep_link': 'kuma://home'
-    },
-
-    'miss_you_3d': {
-        'id': 'miss_you_3d',
-        'category': 'reengagement',
-        'name': 'Tu nous manques (3 jours)',
-        'icon': '🌍',
-        'priority': 'high',
-        'title': {
-            'default': '🌍 {child_name}, l\'Afrique t\'attend !',
-            'variant_a': '🌍 De belles histoires t\'attendent, {child_name} !',
-            'variant_b': '💫 Explore avec Kuma !'
-        },
-        'body': {
-            'default': 'Les histoires de {country} t\'attendent pour continuer ton voyage ! 🗺️',
-            'variant_a': 'Le continent africain a tant à te montrer ! Viens explorer {country} 🌍'
-        },
-        'variables': ['child_name', 'country', 'days_inactive'],
-        'recommended_timing': 'evening',
-        'optimal_hours': [17, 18, 19],
-        'cooldown_hours': 72,
-        'action': 'open_story',
-        'channels': ['push', 'email']
-    },
-
-    'miss_you_7d': {
-        'id': 'miss_you_7d',
-        'category': 'reengagement',
-        'name': 'Tu nous manques (7 jours)',
-        'icon': '✨',
-        'priority': 'high',
-        'title': {
-            'default': '✨ {child_name}, de belles aventures t\'attendent !'
-        },
-        'body': {
-            'default': 'Kuma et les 54 pays d\'Afrique t\'attendent ! Viens découvrir {country} et ses merveilles ! 🌍'
-        },
-        'variables': ['child_name', 'country'],
-        'recommended_timing': 'afternoon',
-        'cooldown_hours': 168,
-        'channels': ['push', 'email']
-    },
-
-    'miss_you_14d': {
-        'id': 'miss_you_14d',
-        'category': 'reengagement',
-        'name': 'Tu nous manques (14 jours)',
-        'icon': '🌍',
-        'priority': 'urgent',
-        'title': {
-            'default': '🌍 {child_name}, ton voyage continue !'
-        },
-        'body': {
-            'default': 'Ton voyage en {country} n\'est pas terminé ! De belles histoires t\'attendent 🌍'
-        },
-        'variables': ['child_name', 'country'],
-        'cooldown_hours': 336,
-        'channels': ['push', 'email']
-    },
-
-    # =========================================================================
-    # CATEGORY: PROGRESSION
-    # =========================================================================
-
-    'country_complete': {
-        'id': 'country_complete',
-        'category': 'progression',
-        'name': 'Pays terminé',
-        'icon': '✅🎉',
-        'priority': 'high',
-        'title': {
-            'default': '✅ {country} terminé !'
-        },
-        'body': {
-            'default': 'Bravo {child_name} ! Tu as découvert toutes les histoires de {country} ! Un nouveau pays t\'attend ! 🗺️'
-        },
-        'variables': ['child_name', 'country'],
-        'celebration': True,
-        'confetti': True,
-        'action': 'view_map',
-        'deep_link': 'kuma://map'
-    },
-
-    'journey_milestone_10': {
-        'id': 'journey_milestone_10',
-        'category': 'progression',
-        'name': '10 pays explorés',
-        'icon': '🗺️',
-        'priority': 'medium',
-        'title': {
-            'default': '🗺️ 10 pays explorés !'
-        },
-        'body': {
-            'default': '{child_name}, tu as déjà découvert 10 pays africains ! Continue ton tour d\'Afrique ! 🌍'
-        },
-        'variables': ['child_name'],
-        'celebration': True,
-        'special_reward': 'badge_countries_10'
-    },
-
-    'journey_milestone_20': {
-        'id': 'journey_milestone_20',
-        'category': 'progression',
-        'name': '20 pays explorés',
-        'icon': '🌍',
-        'priority': 'medium',
-        'title': {
-            'default': '🌍 20 pays explorés !'
-        },
-        'body': {
-            'default': 'Incroyable {child_name} ! Tu connais maintenant 20 pays d\'Afrique ! Tu es un vrai voyageur ! ✈️'
-        },
-        'variables': ['child_name'],
-        'celebration': True,
-        'special_reward': 'badge_countries_20'
-    },
-
-    'journey_milestone_30': {
-        'id': 'journey_milestone_30',
-        'category': 'progression',
-        'name': '30 pays - Plus de la moitié',
-        'icon': '🏅',
-        'priority': 'high',
-        'title': {
-            'default': '🏅 30 pays - Plus de la moitié !'
-        },
-        'body': {
-            'default': '{child_name}, tu as exploré plus de la moitié de l\'Afrique ! Tu es un EXPERT ! 🌟'
-        },
-        'variables': ['child_name'],
-        'celebration': True,
-        'confetti': True,
-        'special_reward': 'badge_countries_30'
-    },
-
-    'journey_milestone_54': {
-        'id': 'journey_milestone_54',
-        'category': 'progression',
-        'name': 'Tour d\'Afrique complet',
-        'icon': '🏆🌍',
-        'priority': 'urgent',
-        'title': {
-            'default': '🏆 TOUR D\'AFRIQUE COMPLET !'
-        },
-        'body': {
-            'default': '{child_name}, tu as visité LES 54 PAYS ! Tu es un CHAMPION DE L\'AFRIQUE ! 🎉🌍'
-        },
-        'variables': ['child_name'],
-        'celebration': True,
-        'confetti': True,
-        'special_reward': 'badge_africa_complete',
-        'action': 'view_completion'
-    },
-
-    'first_story': {
-        'id': 'first_story',
-        'category': 'progression',
-        'name': 'Première histoire',
-        'icon': '🌟📖',
-        'priority': 'high',
-        'title': {
-            'default': '🌟 Ta première histoire africaine !'
-        },
-        'body': {
-            'default': 'Bravo {child_name} ! Tu viens de commencer ton voyage en Afrique ! 54 pays t\'attendent ! 🌍'
-        },
-        'variables': ['child_name'],
-        'celebration': True
-    },
-
-    # =========================================================================
-    # CATEGORY: GAMIFICATION
-    # =========================================================================
-
-    'badge_unlock': {
-        'id': 'badge_unlock',
-        'category': 'gamification',
-        'name': 'Badge débloqué',
-        'icon': '🏅',
-        'priority': 'high',
-        'title': {
-            'default': '🏅 Nouveau badge débloqué !'
-        },
-        'body': {
-            'default': '{child_name} a obtenu le badge "{badge_name}" ! Bravo ! ✨'
-        },
-        'variables': ['child_name', 'badge_name', 'badge_icon'],
-        'celebration': True,
-        'confetti': True,
-        'action': 'view_badges',
-        'deep_link': 'kuma://badges'
-    },
-
-    'perfect_quiz': {
-        'id': 'perfect_quiz',
-        'category': 'gamification',
-        'name': 'Quiz parfait',
-        'icon': '💯',
-        'priority': 'medium',
-        'title': {
-            'default': '💯 Quiz PARFAIT !'
-        },
-        'body': {
-            'default': '{child_name} a obtenu 100% au quiz de {country} ! Quelle mémoire ! 🧠'
-        },
-        'variables': ['child_name', 'country'],
-        'celebration': True,
-        'confetti': True
-    },
-
-    'listening_milestone_1h': {
-        'id': 'listening_milestone_1h',
-        'category': 'gamification',
-        'name': '1 heure d\'écoute',
-        'icon': '🎧',
-        'priority': 'medium',
-        'title': {
-            'default': '🎧 1 heure d\'écoute !'
-        },
-        'body': {
-            'default': '{child_name} a écouté 1 heure d\'histoires africaines ! Les oreilles d\'un vrai explorateur ! 👂'
-        },
-        'variables': ['child_name'],
-        'celebration': True
-    },
-
-    'listening_milestone_5h': {
-        'id': 'listening_milestone_5h',
-        'category': 'gamification',
-        'name': '5 heures d\'écoute',
-        'icon': '🎧⭐',
-        'priority': 'medium',
-        'title': {
-            'default': '🎧 5 heures d\'écoute !'
-        },
-        'body': {
-            'default': '{child_name} a écouté 5 heures d\'histoires ! Un vrai mélomane africain ! 🌍'
-        },
-        'variables': ['child_name'],
-        'celebration': True,
-        'special_reward': 'badge_listener_5h'
-    },
-
-    'listening_milestone_10h': {
-        'id': 'listening_milestone_10h',
-        'category': 'gamification',
-        'name': '10 heures d\'écoute',
-        'icon': '🎧🏆',
-        'priority': 'high',
-        'title': {
-            'default': '🎧🏆 10 heures d\'écoute !'
-        },
-        'body': {
-            'default': '{child_name} a écouté 10 heures d\'histoires africaines ! LÉGENDAIRE ! 🌟'
-        },
-        'variables': ['child_name'],
-        'celebration': True,
-        'confetti': True,
-        'special_reward': 'badge_listener_10h'
-    },
-
-    'stories_milestone_10': {
-        'id': 'stories_milestone_10',
-        'category': 'gamification',
-        'name': '10 histoires lues',
-        'icon': '📚',
-        'priority': 'medium',
-        'title': {
-            'default': '📚 10 histoires !'
-        },
-        'body': {
-            'default': '{child_name} a lu 10 histoires africaines ! Le voyage continue ! 🌍'
-        },
-        'variables': ['child_name'],
-        'celebration': True
-    },
-
-    'stories_milestone_50': {
-        'id': 'stories_milestone_50',
-        'category': 'gamification',
-        'name': '50 histoires lues',
-        'icon': '📚🌟',
-        'priority': 'high',
-        'title': {
-            'default': '📚🌟 50 histoires !'
-        },
-        'body': {
-            'default': '{child_name} a lu 50 histoires ! Un vrai conteur africain ! 👑'
-        },
-        'variables': ['child_name'],
-        'celebration': True,
-        'confetti': True
-    },
-
-    'stories_milestone_25': {
-        'id': 'stories_milestone_25',
-        'category': 'gamification',
-        'name': '25 histoires lues',
-        'icon': '📖🌟',
-        'priority': 'medium',
-        'title': {
-            'default': '📖 25 histoires africaines !'
-        },
-        'body': {
-            'default': '{child_name} a déjà lu 25 histoires ! Un vrai passionné des contes africains ! 🌍'
-        },
-        'variables': ['child_name'],
-        'celebration': True,
-        'special_reward': 'badge_reader_25'
-    },
-
-    # =========================================================================
-    # CATEGORY: SUBSCRIPTION
-    # =========================================================================
-
-    'trial_started': {
-        'id': 'trial_started',
-        'category': 'subscription',
-        'name': 'Essai démarré',
-        'icon': '🌟',
-        'priority': 'medium',
-        'title': {
-            'default': '🌟 Votre essai Premium est ouvert !'
-        },
-        'body': {
-            'default': 'C\'est parti : {child_name} peut maintenant explorer toute l\'Afrique sans limites. Profitez-en ! 🌍'
-        },
-        'variables': ['child_name'],
-        'celebration': True
-    },
-
-    'trial_ending_3d': {
-        'id': 'trial_ending_3d',
-        'category': 'subscription',
-        'name': 'Essai finit dans 3 jours',
-        'icon': '⏳',
-        'priority': 'high',
-        'title': {
-            'default': '⏳ Votre essai se termine dans 3 jours'
-        },
-        'body': {
-            'default': 'Plus que 3 jours d\'essai ! Passez à Premium pour que {child_name} continue son voyage ! 🌍⭐'
-        },
-        'variables': ['child_name'],
-        'cta': 'upgrade_premium',
-        'deep_link': 'kuma://subscription'
-    },
-
-    'trial_ending_1d': {
-        'id': 'trial_ending_1d',
-        'category': 'subscription',
-        'name': 'Essai finit demain',
-        'icon': '⚠️⏳',
-        'priority': 'urgent',
-        'title': {
-            'default': '⚠️ Dernier jour d\'essai !'
-        },
-        'body': {
-            'default': 'L\'essai Premium se termine demain. Passez à Premium pour que {child_name} garde un accès illimité ! 🌍'
-        },
-        'variables': ['child_name'],
-        'cta': 'upgrade_premium'
-    },
-
-    'trial_expired': {
-        'id': 'trial_expired',
-        'category': 'subscription',
-        'name': 'Essai expiré',
-        'icon': '⏳',
-        'priority': 'high',
-        'title': {
-            'default': '⏳ L\'essai Premium est terminé'
-        },
-        'body': {
-            'default': 'L\'essai Premium de {child_name} est terminé. Passez à Premium pour continuer l\'aventure ! 🌍⭐'
-        },
-        'variables': ['child_name'],
-        'cta': 'upgrade_premium'
-    },
-
-    'premium_benefits': {
-        'id': 'premium_benefits',
-        'category': 'subscription',
-        'name': 'Avantages Premium',
-        'icon': '⭐',
-        'priority': 'medium',
-        'title': {
-            'default': '⭐ Débloquez tout Kuma'
-        },
-        'body': {
-            'default': 'Accès illimité aux 54 pays, écoute hors-ligne et bien plus : offrez le meilleur à {child_name} ! 🌟'
-        },
-        'variables': ['child_name'],
-        'cta': 'view_premium'
-    },
-
-    'welcome_premium': {
-        'id': 'welcome_premium',
-        'category': 'subscription',
-        'name': 'Bienvenue Premium',
-        'icon': '🌟⭐',
-        'priority': 'high',
-        'title': {
-            'default': '🌟 Bienvenue dans Premium !'
-        },
-        'body': {
-            'default': 'Merci pour votre confiance ! {child_name} peut désormais explorer toute l\'Afrique sans limites. Bon voyage ! 🌍✨'
-        },
-        'variables': ['child_name'],
-        'celebration': True,
-        'confetti': True
-    },
-
-    'subscription_renewed': {
-        'id': 'subscription_renewed',
-        'category': 'subscription',
-        'name': 'Abonnement renouvelé',
-        'icon': '🔄✨',
-        'priority': 'medium',
-        'title': {
-            'default': '🔄 Abonnement renouvelé !'
-        },
-        'body': {
-            'default': 'Merci pour votre fidélité ! {child_name} continue son voyage africain ! 🌍'
-        },
-        'variables': ['child_name']
-    },
-
-    # =========================================================================
-    # CATEGORY: ENGAGEMENT
-    # =========================================================================
-
-    'story_unlock': {
-        'id': 'story_unlock',
-        'category': 'engagement',
-        'name': 'Nouvelle histoire',
-        'icon': '🌍',
-        'priority': 'medium',
-        'title': {
-            'default': '🌍 Nouvelle histoire de {country} !'
-        },
-        'body': {
-            'default': 'Découvre "{story_title}" ! Une aventure magique t\'attend ! ✨'
-        },
-        'variables': ['country', 'story_title', 'country_flag'],
-        'action': 'open_story'
-    },
-
-    'daily_reminder': {
-        'id': 'daily_reminder',
-        'category': 'engagement',
-        'name': 'Rappel quotidien',
-        'icon': '🌙',
-        'priority': 'low',
-        'title': {
-            'default': '🌙 C\'est l\'heure des histoires !',
-            'variant_a': '📖 Une histoire avant de dormir ?',
-            'variant_b': '🌍 L\'Afrique t\'attend ce soir !'
-        },
-        'body': {
-            'default': '{child_name}, quelle aventure africaine vas-tu vivre ce soir ? 🌟',
-            'variant_a': 'Une nouvelle histoire de {country} t\'attend ! 🗺️'
-        },
-        'variables': ['child_name', 'country'],
-        'recommended_timing': 'evening',
-        'optimal_hours': [19, 20],
-        'cooldown_hours': 24,
-        'android_channel': 'story_reminders_channel'
-    },
-
-    'morning_motivation': {
-        'id': 'morning_motivation',
-        'category': 'engagement',
-        'name': 'Motivation matinale',
-        'icon': '☀️',
-        'priority': 'low',
-        'title': {
-            'default': '☀️ Bonjour {child_name} !'
-        },
-        'body': {
-            'default': 'Une belle journée pour découvrir {country} ! Prêt pour l\'aventure ? 🌍'
-        },
-        'variables': ['child_name', 'country'],
-        'recommended_timing': 'morning',
-        'optimal_hours': [7, 8, 9],
-        'cooldown_hours': 24
-    },
-
-    'quiz_reminder': {
-        'id': 'quiz_reminder',
-        'category': 'engagement',
-        'name': 'Rappel quiz',
-        'icon': '🧠',
-        'priority': 'medium',
-        'title': {
-            'default': '🧠 Quiz en attente !'
-        },
-        'body': {
-            'default': '{child_name}, le quiz de {country} t\'attend ! Montre ce que tu as appris ! 💪'
-        },
-        'variables': ['child_name', 'country'],
-        'action': 'open_quiz',
-        'deep_link': 'kuma://quiz/{story_id}'
-    },
-
-    'weekend_special': {
-        'id': 'weekend_special',
-        'category': 'engagement',
-        'name': 'Special weekend',
-        'icon': '🎉',
-        'priority': 'medium',
-        'title': {
-            'default': '🎉 C\'est le weekend !'
-        },
-        'body': {
-            'default': '{child_name}, c\'est le moment parfait pour explorer {country} ! Une histoire t\'attend ! 🌍'
-        },
-        'variables': ['child_name', 'country'],
-        'recommended_days': ['saturday', 'sunday']
-    },
-
-    'new_content': {
-        'id': 'new_content',
-        'category': 'engagement',
-        'name': 'Nouveau contenu',
-        'icon': '🆕',
-        'priority': 'medium',
-        'title': {
-            'default': '🆕 Nouveau contenu disponible !'
-        },
-        'body': {
-            'default': 'De nouvelles histoires de {country} viennent d\'arriver ! Découvre-les maintenant ! 🌟'
-        },
-        'variables': ['country', 'content_count'],
-        'action': 'view_new_content'
-    },
-
-    'engagement_first_adventure': {
-        'id': 'engagement_first_adventure',
-        'category': 'engagement',
-        'name': 'Première aventure',
-        'icon': '🌍✨',
-        'priority': 'medium',
-        'title': {
-            'default': '🌍 {child_name}, l\'Afrique t\'attend !',
-            'variant_a': '✨ 54 pays à découvrir !',
-            'variant_b': '🦁 Ta première aventure africaine t\'attend !'
-        },
-        'body': {
-            'default': 'Kuma t\'attend pour ta première aventure africaine ! Découvre les merveilles du continent.',
-            'variant_a': '{child_name}, viens écouter ta première histoire africaine ! Un monde de contes t\'attend.',
-            'variant_b': 'Les histoires de l\'Afrique sont prêtes pour toi ! Commence ton voyage maintenant.'
-        },
-        'variables': ['child_name'],
-        'recommended_timing': 'afternoon',
-        'optimal_hours': [14, 15, 16, 17],
-        'user_segments': ['no_stories', 'new_user'],
-        'cooldown_hours': 48,
-        'action': 'open_story',
-        'deep_link': 'kuma://home',
-        'sound': 'gentle',
-        'badge_count': 1,
-        'android_channel': 'engagement_channel',
-        'ios_category': 'engagement_reminder',
-        'channels': ['push', 'email']
-    },
-
-    'parent_weekly_report': {
-        'id': 'parent_weekly_report',
-        'category': 'engagement',
-        'name': 'Rapport hebdomadaire parents',
-        'icon': '📊',
-        'priority': 'low',
-        'title': {
-            'default': '📊 Le voyage de {child_name} cette semaine',
-            'variant_a': '🌍 Résumé hebdomadaire de {child_name}'
-        },
-        'body': {
-            'default': '{child_name} a lu {stories_this_week} histoires cette semaine ! Découvrez ses progrès dans l\'app.',
-            'variant_a': 'Cette semaine : {stories_this_week} histoires lues. Continuez à encourager {child_name} ! 🌟'
-        },
-        'variables': ['child_name', 'stories_this_week'],
-        'recommended_timing': 'morning',
-        'optimal_hours': [9, 10],
-        'recommended_days': ['sunday'],
-        'cooldown_hours': 168,
-        'action': 'view_profile',
-        'deep_link': 'kuma://profile',
-        'android_channel': 'parent_channel',
-        'ios_category': 'parent_report',
-        'channels': ['push']
-    },
-
-    'comeback_offer': {
-        'id': 'comeback_offer',
-        'category': 'reengagement',
-        'name': 'Offre de retour',
-        'icon': '🎁',
-        'priority': 'urgent',
-        'title': {
-            'default': '🎁 {child_name}, l\'Afrique t\'a gardé une surprise !',
-            'variant_a': '🌍 Reviens, ton voyage t\'attend !'
-        },
-        'body': {
-            'default': 'Cela fait un moment ! De nouvelles histoires africaines attendent {child_name}. Reprends ton voyage là où tu l\'avais laissé 🌍',
-            'variant_a': 'Ton aventure africaine n\'est pas terminée ! Reviens découvrir ce qui t\'attend 🗺️'
-        },
-        'variables': ['child_name'],
-        'recommended_timing': 'evening',
-        'optimal_hours': [18, 19, 20],
-        'cooldown_hours': 336,
-        'action': 'open_story',
-        'deep_link': 'kuma://home',
-        'channels': ['push', 'email']
-    },
-
-    'special_offer': {
-        'id': 'special_offer',
-        'category': 'subscription',
-        'name': 'Offre spéciale',
-        'icon': '🎉',
-        'priority': 'high',
-        'title': {
-            'default': '🎉 Offre spéciale pour {child_name} !',
-            'variant_a': '⭐ Premium à prix doux cette semaine'
-        },
-        'body': {
-            'default': 'Offre limitée : passez à Premium et offrez à {child_name} un accès illimité aux 54 pays d\'Afrique ! 🌍',
-            'variant_a': 'C\'est le moment : débloquez toute l\'Afrique pour {child_name} à tarif réduit ⭐'
-        },
-        'variables': ['child_name'],
-        'cta': 'upgrade_premium',
-        'deep_link': 'kuma://subscription',
-        'channels': ['push', 'email']
-    },
-
-    'perfect_quiz_streak': {
-        'id': 'perfect_quiz_streak',
-        'category': 'gamification',
-        'name': 'Série de quiz parfaits',
-        'icon': '🧠💯',
-        'priority': 'medium',
-        'title': {
-            'default': '🧠 {child_name}, quel cerveau !'
-        },
-        'body': {
-            'default': '{child_name} enchaîne les quiz parfaits ! Continue comme ça, champion des contes africains ! 💯'
-        },
-        'variables': ['child_name'],
-        'celebration': True
-    }
-}
+NOTIFICATION_TEMPLATES = {'streak_at_risk': {'id': 'streak_at_risk',
+                    'category': 'streak',
+                    'name': 'Flamme en danger',
+                    'icon': '🔥⚠️',
+                    'priority': 'high',
+                    'title': {'default': '🔥 {child_name}, ta flamme faiblit…',
+                              'variant_a': '🔥 Vite, {streak} jours à sauver !',
+                              'variant_b': "🔥 Ne laisse pas la flamme s'éteindre"},
+                    'body': {'default': "Ta série de {streak} jours s'éteint à minuit. Une seule histoire et "
+                                        'elle repart de plus belle 🌟',
+                             'variant_a': '{child_name}, il te reste quelques heures pour garder tes '
+                                          "{streak} jours d'affilée. Prêt ?",
+                             'variant_b': "{streak} jours de suite, ce serait dommage de s'arrêter là ! Une "
+                                          'histoire suffit pour continuer 🔥'},
+                    'variables': ['child_name', 'streak'],
+                    'recommended_timing': 'evening',
+                    'optimal_hours': [17, 18, 19, 20],
+                    'user_segments': ['streak_active', 'streak_at_risk'],
+                    'cooldown_hours': 12,
+                    'action': 'open_story',
+                    'deep_link': 'kuma://home',
+                    'sound': 'urgent',
+                    'badge_count': 1,
+                    'android_channel': 'streak_channel',
+                    'ios_category': 'streak_reminder'},
+ 'streak_lost': {'id': 'streak_lost',
+                 'category': 'streak',
+                 'name': 'Flamme perdue',
+                 'icon': '😢',
+                 'priority': 'medium',
+                 'title': {'default': '🌱 On repart pour une nouvelle flamme ?',
+                           'variant_a': '{child_name}, chaque explorateur repart plus fort'},
+                 'body': {'default': "Pas grave, {child_name} ! Ta série s'est arrêtée à {streak} jours — "
+                                     'mais la prochaine peut aller encore plus loin. On rallume ? 🔥',
+                          'variant_a': 'Les plus grands conteurs ont tous recommencé un jour. Une histoire '
+                                       "aujourd'hui et une nouvelle flamme s'allume 🌍"},
+                 'variables': ['child_name', 'streak'],
+                 'recommended_timing': 'morning',
+                 'optimal_hours': [8, 9, 10],
+                 'cooldown_hours': 24,
+                 'action': 'restart_streak',
+                 'deep_link': 'kuma://home',
+                 'sound': 'gentle',
+                 'android_channel': 'streak_channel'},
+ 'streak_milestone_7': {'id': 'streak_milestone_7',
+                        'category': 'streak',
+                        'name': '1 semaine de flamme',
+                        'icon': '🌟',
+                        'priority': 'medium',
+                        'title': {'default': "🌟 7 jours d'affilée !"},
+                        'body': {'default': '{child_name} allume sa flamme depuis une semaine entière. Une '
+                                            'belle habitude prend forme — bravo ! 🔥'},
+                        'variables': ['child_name'],
+                        'celebration': True,
+                        'confetti': True,
+                        'special_reward': 'badge_streak_7',
+                        'action': 'view_badges',
+                        'deep_link': 'kuma://badges',
+                        'android_channel': 'streak_channel'},
+ 'streak_milestone_30': {'id': 'streak_milestone_30',
+                         'category': 'streak',
+                         'name': '1 mois de flamme',
+                         'icon': '🔥👑',
+                         'priority': 'high',
+                         'title': {'default': '🔥 30 jours ! Un mois complet'},
+                         'body': {'default': "{child_name} n'a pas manqué un seul jour depuis un mois. C'est "
+                                             'le genre de constance dont on se souvient. Chapeau ! 👑'},
+                         'variables': ['child_name'],
+                         'celebration': True,
+                         'confetti': True,
+                         'special_reward': 'badge_streak_30',
+                         'action': 'view_badges'},
+ 'streak_milestone_100': {'id': 'streak_milestone_100',
+                          'category': 'streak',
+                          'name': '100 jours de flamme',
+                          'icon': '🌈💯',
+                          'priority': 'urgent',
+                          'title': {'default': '💯 100 jours de flamme !'},
+                          'body': {'default': "Cent jours d'histoires, sans jamais lâcher. {child_name} "
+                                              'entre au panthéon des explorateurs de Kuma 🌍🎉'},
+                          'variables': ['child_name'],
+                          'celebration': True,
+                          'confetti': True,
+                          'special_reward': 'badge_streak_100'},
+ 'miss_you_1d': {'id': 'miss_you_1d',
+                 'category': 'reengagement',
+                 'name': 'Tu nous manques (1 jour)',
+                 'icon': '💭',
+                 'priority': 'medium',
+                 'title': {'default': '💭 {child_name}, on a pensé à toi',
+                           'variant_a': "🌍 Ton voyage t'attend, {child_name}"},
+                 'body': {'default': "Ton conte de {country} s'est arrêté en plein milieu. Tu veux savoir "
+                                     'comment il se termine ? 📖',
+                          'variant_a': 'Un jour sans histoire, ça passe vite ! {country} a encore des '
+                                       'secrets à te confier 🗺️'},
+                 'variables': ['child_name', 'country'],
+                 'recommended_timing': 'evening',
+                 'optimal_hours': [18, 19, 20],
+                 'cooldown_hours': 24,
+                 'action': 'open_story',
+                 'deep_link': 'kuma://home'},
+ 'miss_you_3d': {'id': 'miss_you_3d',
+                 'category': 'reengagement',
+                 'name': 'Tu nous manques (3 jours)',
+                 'icon': '🌍',
+                 'priority': 'high',
+                 'title': {'default': "🌍 {child_name}, {country} t'a gardé une histoire",
+                           'variant_a': '📖 Où en étais-tu déjà, {child_name} ?'},
+                 'body': {'default': "Ça fait {days_inactive} jours ! Un nouveau conte de {country} n'attend "
+                                     'que toi pour être découvert 🌟',
+                          'variant_a': "Ton voyage s'est mis en pause en {country}. Reprends-le là où tu "
+                                       "l'avais laissé — 5 minutes suffisent 🗺️"},
+                 'variables': ['child_name', 'country', 'days_inactive'],
+                 'recommended_timing': 'evening',
+                 'optimal_hours': [17, 18, 19],
+                 'cooldown_hours': 72,
+                 'action': 'open_story',
+                 'channels': ['push', 'email']},
+ 'miss_you_7d': {'id': 'miss_you_7d',
+                 'category': 'reengagement',
+                 'name': 'Tu nous manques (7 jours)',
+                 'icon': '✨',
+                 'priority': 'high',
+                 'title': {'default': '✨ {child_name}, il te reste tant à découvrir'},
+                 'body': {'default': 'Cela fait une semaine… {country} et ses contes sont toujours là, prêts '
+                                     'à faire voyager {child_name} ce soir 🌙'},
+                 'variables': ['child_name', 'country'],
+                 'recommended_timing': 'afternoon',
+                 'cooldown_hours': 168,
+                 'channels': ['push', 'email']},
+ 'miss_you_14d': {'id': 'miss_you_14d',
+                  'category': 'reengagement',
+                  'name': 'Tu nous manques (14 jours)',
+                  'icon': '🌍',
+                  'priority': 'urgent',
+                  'title': {'default': '🌍 Le voyage de {child_name} peut reprendre'},
+                  'body': {'default': '14 jours sans conte. Et si ce soir vous rallumiez ensemble le goût '
+                                      'des histoires ? {country} vous attend 📖'},
+                  'variables': ['child_name', 'country'],
+                  'cooldown_hours': 336,
+                  'channels': ['push', 'email']},
+ 'country_complete': {'id': 'country_complete',
+                      'category': 'progression',
+                      'name': 'Pays terminé',
+                      'icon': '✅🎉',
+                      'priority': 'high',
+                      'title': {'default': '✅ {country}, terminé !'},
+                      'body': {'default': 'Bravo {child_name} ! Tu as percé tous les secrets de {country}. '
+                                          "Un nouveau pays vient de s'ouvrir sur ta carte — lequel "
+                                          'choisiras-tu ? 🗺️'},
+                      'variables': ['child_name', 'country'],
+                      'celebration': True,
+                      'confetti': True,
+                      'action': 'view_map',
+                      'deep_link': 'kuma://map'},
+ 'journey_milestone_10': {'id': 'journey_milestone_10',
+                          'category': 'progression',
+                          'name': '10 pays explorés',
+                          'icon': '🗺️',
+                          'priority': 'medium',
+                          'title': {'default': '🗺️ 10 pays au compteur !'},
+                          'body': {'default': "{child_name} a déjà traversé 10 pays d'Afrique. Le continent "
+                                              "commence à révéler ses couleurs — et ce n'est que le début ! "
+                                              '🌍'},
+                          'variables': ['child_name'],
+                          'celebration': True,
+                          'special_reward': 'badge_countries_10'},
+ 'journey_milestone_30': {'id': 'journey_milestone_30',
+                          'category': 'progression',
+                          'name': '30 pays - Plus de la moitié',
+                          'icon': '🏅',
+                          'priority': 'high',
+                          'title': {'default': '🏅 30 pays — plus de la moitié !'},
+                          'body': {'default': '{child_name} connaît désormais plus de la moitié de '
+                                              "l'Afrique. 24 pays encore à découvrir avant le grand tour "
+                                              'complet ! 🌟'},
+                          'variables': ['child_name'],
+                          'celebration': True,
+                          'confetti': True,
+                          'special_reward': 'badge_countries_30'},
+ 'journey_milestone_54': {'id': 'journey_milestone_54',
+                          'category': 'progression',
+                          'name': "Tour d'Afrique complet",
+                          'icon': '🏆🌍',
+                          'priority': 'urgent',
+                          'title': {'default': "🏆 Le tour de l'Afrique est complet !"},
+                          'body': {'default': "54 pays. {child_name} a parcouru l'Afrique tout entière, "
+                                              "conte après conte. Peu d'explorateurs vont aussi loin — "
+                                              'quelle fierté ! 🌍🎉'},
+                          'variables': ['child_name'],
+                          'celebration': True,
+                          'confetti': True,
+                          'special_reward': 'badge_africa_complete',
+                          'action': 'view_completion'},
+ 'first_story': {'id': 'first_story',
+                 'category': 'progression',
+                 'name': 'Première histoire',
+                 'icon': '🌟📖',
+                 'priority': 'high',
+                 'title': {'default': '🌟 Et voilà, le voyage commence !'},
+                 'body': {'default': "{child_name} vient d'écouter sa toute première histoire africaine. 53 "
+                                     'pays et mille contes attendent la suite 🌍'},
+                 'variables': ['child_name'],
+                 'celebration': True},
+ 'badge_unlock': {'id': 'badge_unlock',
+                  'category': 'gamification',
+                  'name': 'Badge débloqué',
+                  'icon': '🏅',
+                  'priority': 'high',
+                  'title': {'default': '🏅 Nouveau badge pour {child_name} !'},
+                  'body': {'default': '{child_name} vient de débloquer le badge « {badge_name} ». Une belle '
+                                      'preuve de curiosité — à voir dans sa collection ! ✨'},
+                  'variables': ['child_name', 'badge_name'],
+                  'celebration': True,
+                  'confetti': True,
+                  'action': 'view_badges',
+                  'deep_link': 'kuma://badges'},
+ 'listening_milestone_5h': {'id': 'listening_milestone_5h',
+                            'category': 'gamification',
+                            'name': "5 heures d'écoute",
+                            'icon': '🎧⭐',
+                            'priority': 'medium',
+                            'title': {'default': "🎧 5 heures d'histoires écoutées !"},
+                            'body': {'default': '{child_name} a passé 5 heures à voyager par les oreilles à '
+                                                "travers l'Afrique. De vraies oreilles d'explorateur ! 🌍"},
+                            'variables': ['child_name'],
+                            'celebration': True,
+                            'special_reward': 'badge_listener_5h'},
+ 'stories_milestone_10': {'id': 'stories_milestone_10',
+                          'category': 'gamification',
+                          'name': '10 histoires lues',
+                          'icon': '📚',
+                          'priority': 'medium',
+                          'title': {'default': '📚 Déjà 10 histoires !'},
+                          'body': {'default': '{child_name} a écouté 10 contes africains. La bibliothèque de '
+                                              "son voyage grandit à vue d'œil 🌟"},
+                          'variables': ['child_name'],
+                          'celebration': True},
+ 'stories_milestone_50': {'id': 'stories_milestone_50',
+                          'category': 'gamification',
+                          'name': '50 histoires lues',
+                          'icon': '📚🌟',
+                          'priority': 'high',
+                          'title': {'default': '📚 50 histoires — un vrai conteur !'},
+                          'body': {'default': '50 contes africains dans la besace de {child_name}. À ce '
+                                              "rythme, c'est lui qui va bientôt raconter les histoires ! 👑"},
+                          'variables': ['child_name'],
+                          'celebration': True,
+                          'confetti': True},
+ 'trial_started': {'id': 'trial_started',
+                   'category': 'subscription',
+                   'name': 'Essai démarré',
+                   'icon': '🌟',
+                   'priority': 'medium',
+                   'title': {'default': '🌟 Votre essai Premium est ouvert'},
+                   'body': {'default': 'Pendant votre essai, {child_name} explore les 54 pays sans aucune '
+                                       "limite. Le meilleur moment pour prendre l'habitude ensemble 🌍"},
+                   'variables': ['child_name'],
+                   'celebration': True},
+ 'trial_ending_3d': {'id': 'trial_ending_3d',
+                     'category': 'subscription',
+                     'name': 'Essai finit dans 3 jours',
+                     'icon': '⏳',
+                     'priority': 'high',
+                     'title': {'default': "⏳ Il reste 3 jours d'essai",
+                               'variant_a': '⏳ Votre essai Premium se termine bientôt'},
+                     'body': {'default': "Dans 3 jours, {child_name} retrouvera l'accès limité. Continuez "
+                                         "son voyage à travers toute l'Afrique en passant à Premium 🌍",
+                              'variant_a': '{child_name} a commencé à explorer sans limites — ce serait '
+                                           "dommage de s'arrêter maintenant. Plus que 3 jours d'essai ⭐"},
+                     'variables': ['child_name'],
+                     'cta': 'upgrade_premium',
+                     'deep_link': 'kuma://subscription'},
+ 'trial_ending_1d': {'id': 'trial_ending_1d',
+                     'category': 'subscription',
+                     'name': 'Essai finit demain',
+                     'icon': '⚠️⏳',
+                     'priority': 'urgent',
+                     'title': {'default': "⚠️ Dernier jour d'essai Premium"},
+                     'body': {'default': "Demain, l'accès de {child_name} redevient limité. Gardez tous les "
+                                         "pays, tous les contes et l'écoute hors-ligne ouverts en passant à "
+                                         'Premium 🌍'},
+                     'variables': ['child_name'],
+                     'cta': 'upgrade_premium'},
+ 'trial_expired': {'id': 'trial_expired',
+                   'category': 'subscription',
+                   'name': 'Essai expiré',
+                   'icon': '⏳',
+                   'priority': 'high',
+                   'title': {'default': 'Le voyage de {child_name} peut continuer'},
+                   'body': {'default': 'Votre essai est terminé, mais {country} et 53 autres pays restent à '
+                                       'explorer. Repassez à Premium quand vous le souhaitez — tout est là '
+                                       "où {child_name} l'a laissé 🌍"},
+                   'variables': ['child_name', 'country'],
+                   'cta': 'upgrade_premium'},
+ 'premium_benefits': {'id': 'premium_benefits',
+                      'category': 'subscription',
+                      'name': 'Avantages Premium',
+                      'icon': '⭐',
+                      'priority': 'medium',
+                      'title': {'default': '⭐ Tout Kuma, sans limites',
+                                'variant_a': '⭐ Offrez tout le continent à {child_name}'},
+                      'body': {'default': "Les 54 pays, l'écoute hors-ligne en voiture ou en avion, et de "
+                                          'nouveaux contes chaque mois : Premium ouvre tout à {child_name} 🌍',
+                               'variant_a': 'Un seul abonnement pour des centaines de contes africains, à '
+                                            'écouter partout, même sans connexion. Le voyage de {child_name} '
+                                            'sans frontières ✨'},
+                      'variables': ['child_name'],
+                      'cta': 'view_premium'},
+ 'welcome_premium': {'id': 'welcome_premium',
+                     'category': 'subscription',
+                     'name': 'Bienvenue Premium',
+                     'icon': '🌟⭐',
+                     'priority': 'high',
+                     'title': {'default': '🌟 Bienvenue dans Kuma Premium !'},
+                     'body': {'default': 'Merci de votre confiance. À partir de maintenant, plus aucune '
+                                         "frontière pour {child_name} : toute l'Afrique est ouverte. Bon "
+                                         'voyage ! 🌍✨'},
+                     'variables': ['child_name'],
+                     'celebration': True,
+                     'confetti': True},
+ 'story_unlock': {'id': 'story_unlock',
+                  'category': 'engagement',
+                  'name': 'Nouvelle histoire',
+                  'icon': '🌍',
+                  'priority': 'medium',
+                  'title': {'default': '🌍 Nouvelle histoire de {country} !'},
+                  'body': {'default': 'Découvre "{story_title}" ! Une aventure magique t\'attend ! ✨'},
+                  'variables': ['country', 'story_title', 'country_flag'],
+                  'action': 'open_story'},
+ 'daily_reminder': {'id': 'daily_reminder',
+                    'category': 'engagement',
+                    'name': 'Rappel quotidien',
+                    'icon': '🌙',
+                    'priority': 'low',
+                    'title': {'default': "🌙 L'heure du conte du soir",
+                              'variant_a': '📖 Une histoire avant de dormir ?',
+                              'variant_b': "🌍 {country} t'attend ce soir, {child_name}"},
+                    'body': {'default': '{child_name}, quel pays vas-tu explorer avant de fermer les yeux ce '
+                                        'soir ? 🌟',
+                             'variant_a': 'Cinq minutes, une histoire, et un pays de plus au compteur. On y '
+                                          'va, {child_name} ? 🗺️',
+                             'variant_b': "Le conte de {country} n'attend que toi pour continuer 🌙"},
+                    'variables': ['child_name', 'country'],
+                    'recommended_timing': 'evening',
+                    'optimal_hours': [19, 20],
+                    'cooldown_hours': 24,
+                    'android_channel': 'story_reminders_channel'},
+ 'weekend_special': {'id': 'weekend_special',
+                     'category': 'engagement',
+                     'name': 'Special weekend',
+                     'icon': '🎉',
+                     'priority': 'medium',
+                     'title': {'default': "🎉 C'est le week-end, place aux histoires !"},
+                     'body': {'default': 'Un moment calme à partager : installez-vous avec {child_name} pour '
+                                         'explorer {country} ensemble 🌍'},
+                     'variables': ['child_name', 'country'],
+                     'recommended_days': ['saturday', 'sunday']},
+ 'new_content': {'id': 'new_content',
+                 'category': 'engagement',
+                 'name': 'Nouveau contenu',
+                 'icon': '🆕',
+                 'priority': 'medium',
+                 'title': {'default': '🆕 De nouveaux contes de {country} !'},
+                 'body': {'default': "De toutes nouvelles histoires de {country} viennent d'arriver dans "
+                                     'Kuma. À découvrir avec {child_name} dès ce soir 🌟'},
+                 'variables': ['country', 'child_name'],
+                 'action': 'view_new_content'},
+ 'engagement_first_adventure': {'id': 'engagement_first_adventure',
+                                'category': 'engagement',
+                                'name': 'Première aventure',
+                                'icon': '🌍✨',
+                                'priority': 'medium',
+                                'title': {'default': "🌍 {child_name}, ta première histoire t'attend",
+                                          'variant_a': '🦁 Prêt pour ta première aventure ?',
+                                          'variant_b': '✨ Tout commence par un premier conte'},
+                                'body': {'default': 'Kuma a préparé une première histoire rien que pour '
+                                                    '{child_name}. Cinq minutes pour lancer le grand voyage '
+                                                    '🌍',
+                                         'variant_a': '54 pays, des centaines de contes… et tout commence '
+                                                      'par une seule histoire. On la découvre, {child_name} '
+                                                      '? 🗺️',
+                                         'variant_b': 'La toute première aventure de {child_name} est prête. '
+                                                      'Il ne manque plus que lui pour appuyer sur play ▶️'},
+                                'variables': ['child_name'],
+                                'recommended_timing': 'afternoon',
+                                'optimal_hours': [14, 15, 16, 17],
+                                'user_segments': ['no_stories', 'new_user'],
+                                'cooldown_hours': 48,
+                                'action': 'open_story',
+                                'deep_link': 'kuma://home',
+                                'sound': 'gentle',
+                                'badge_count': 1,
+                                'android_channel': 'engagement_channel',
+                                'ios_category': 'engagement_reminder',
+                                'channels': ['push', 'email']},
+ 'parent_weekly_report': {'id': 'parent_weekly_report',
+                          'category': 'engagement',
+                          'name': 'Rapport hebdomadaire parents',
+                          'icon': '📊',
+                          'priority': 'low',
+                          'title': {'default': '📊 Le voyage de {child_name} cette semaine',
+                                    'variant_a': '🌍 Résumé hebdomadaire de {child_name}'},
+                          'body': {'default': 'Voici un aperçu des pays explorés et des progrès de '
+                                              '{child_name} cette semaine. Ouvrez Kuma pour tout voir 🌍',
+                                   'variant_a': 'Cette semaine, {child_name} a écouté plusieurs histoires et '
+                                                'avancé sur sa carte. Bravo à votre petit explorateur ! 🌟'},
+                          'variables': ['child_name'],
+                          'recommended_timing': 'morning',
+                          'optimal_hours': [9, 10],
+                          'recommended_days': ['sunday'],
+                          'cooldown_hours': 168,
+                          'action': 'view_profile',
+                          'deep_link': 'kuma://profile',
+                          'android_channel': 'parent_channel',
+                          'ios_category': 'parent_report',
+                          'channels': ['push']},
+ 'comeback_offer': {'id': 'comeback_offer',
+                    'category': 'reengagement',
+                    'name': 'Offre de retour',
+                    'icon': '🎁',
+                    'priority': 'urgent',
+                    'title': {'default': "🎁 {child_name}, une histoire t'attend depuis {days_inactive} jours",
+                              'variant_a': "🌍 Reprends ton voyage là où tu l'as laissé"},
+                    'body': {'default': "Le conte de {country} est resté ouvert à la page où tu t'es arrêté. "
+                                        'Reviens le finir — il ne prend que 5 minutes 📖',
+                             'variant_a': "Ton aventure africaine t'attend exactement là où tu l'avais "
+                                          'laissée. Une histoire pour renouer avec {country} ? 🗺️'},
+                    'variables': ['child_name', 'country', 'days_inactive'],
+                    'recommended_timing': 'evening',
+                    'optimal_hours': [18, 19, 20],
+                    'cooldown_hours': 336,
+                    'action': 'open_story',
+                    'deep_link': 'kuma://home',
+                    'channels': ['push', 'email']},
+ 'special_offer': {'id': 'special_offer',
+                   'category': 'subscription',
+                   'name': 'Offre spéciale',
+                   'icon': '🎉',
+                   'priority': 'high',
+                   'title': {'default': '🎉 Premium à prix doux cette semaine',
+                             'variant_a': "⭐ Le bon moment pour ouvrir toute l'Afrique"},
+                   'body': {'default': 'Offre limitée : passez à Premium et offrez à {child_name} les 54 '
+                                       "pays et l'écoute hors-ligne, sans plus attendre 🌍",
+                            'variant_a': 'Cette semaine seulement, Premium est à tarif réduit. Tout Kuma '
+                                         'pour {child_name}, à petit prix ⭐'},
+                   'variables': ['child_name'],
+                   'cta': 'upgrade_premium',
+                   'deep_link': 'kuma://subscription',
+                   'channels': ['push', 'email']},
+ 'perfect_quiz_streak': {'id': 'perfect_quiz_streak',
+                         'category': 'gamification',
+                         'name': 'Série de quiz parfaits',
+                         'icon': '🧠💯',
+                         'priority': 'medium',
+                         'title': {'default': '🧠 {child_name} enchaîne les sans-faute !'},
+                         'body': {'default': "Plusieurs quiz parfaits d'affilée ! {child_name} retient "
+                                             "vraiment ce qu'il découvre sur l'Afrique. Impressionnant 💯"},
+                         'variables': ['child_name'],
+                         'celebration': True},
+ 'streak_save_tonight': {'id': 'streak_save_tonight',
+                         'category': 'streak',
+                         'name': 'Garde ta flamme (rappel doux)',
+                         'icon': '🔥',
+                         'priority': 'medium',
+                         'title': {'default': "🔥 {child_name}, pense à ta flamme aujourd'hui"},
+                         'body': {'default': "{streak} jours d'affilée, c'est déjà beau ! Une histoire dans "
+                                             'la journée et la série continue 🌟'},
+                         'variables': ['child_name', 'streak'],
+                         'recommended_timing': 'afternoon',
+                         'optimal_hours': [15, 16, 17],
+                         'cooldown_hours': 24,
+                         'action': 'open_story',
+                         'deep_link': 'kuma://home'},
+ 'continue_story': {'id': 'continue_story',
+                    'category': 'reengagement',
+                    'name': 'Reprends ton histoire',
+                    'icon': '📖',
+                    'priority': 'high',
+                    'title': {'default': '📖 {child_name}, ton conte est resté ouvert',
+                              'variant_a': '🌍 Où en étais-tu en {country} ?'},
+                    'body': {'default': "Tu t'es arrêté en plein milieu d'une histoire de {country}. Reviens "
+                                        'découvrir la fin — 5 minutes suffisent ✨',
+                             'variant_a': 'Ton voyage est en pause à {country}. Un tap et tu reprends '
+                                          "exactement là où tu t'es arrêté 🗺️"},
+                    'variables': ['child_name', 'country'],
+                    'recommended_timing': 'evening',
+                    'optimal_hours': [18, 19, 20],
+                    'cooldown_hours': 48,
+                    'action': 'open_story',
+                    'deep_link': 'kuma://home',
+                    'channels': ['push']},
+ 'one_more_country': {'id': 'one_more_country',
+                      'category': 'progression',
+                      'name': "Plus qu'un pays",
+                      'icon': '🎯',
+                      'priority': 'medium',
+                      'title': {'default': "🎯 Plus qu'un pays, {child_name} !"},
+                      'body': {'default': "Un seul pays te sépare d'un nouveau palier dans ton tour "
+                                          "d'Afrique. {country} t'attend pour franchir le cap ! 🗺️"},
+                      'variables': ['child_name', 'country'],
+                      'recommended_timing': 'evening',
+                      'optimal_hours': [18, 19],
+                      'cooldown_hours': 72,
+                      'action': 'open_story',
+                      'deep_link': 'kuma://map'},
+ 'quiz_challenge': {'id': 'quiz_challenge',
+                    'category': 'gamification',
+                    'name': 'Défi quiz',
+                    'icon': '🧠',
+                    'priority': 'medium',
+                    'title': {'default': '🧠 Défi du jour pour {child_name} !',
+                              'variant_a': '🧠 {child_name}, sauras-tu tout retenir ?'},
+                    'body': {'default': "Un quiz rapide sur {country} t'attend. Trois questions pour prouver "
+                                        'que tu es un vrai explorateur ! 💪',
+                             'variant_a': "Tu as exploré {country} — mais t'en souviens-tu vraiment ? Le "
+                                          'quiz va nous le dire 😏'},
+                    'variables': ['child_name', 'country'],
+                    'recommended_timing': 'afternoon',
+                    'optimal_hours': [16, 17],
+                    'cooldown_hours': 72,
+                    'action': 'open_quiz',
+                    'deep_link': 'kuma://quiz'},
+ 'parent_referral': {'id': 'parent_referral',
+                     'category': 'engagement',
+                     'name': 'Parrainage / partage',
+                     'icon': '💛',
+                     'priority': 'low',
+                     'title': {'default': '💛 {child_name} adore Kuma ? Faites-le découvrir'},
+                     'body': {'default': 'Si le voyage de {child_name} vous plaît, il plaira sûrement à '
+                                         "d'autres enfants autour de vous. Partagez Kuma à un parent qui "
+                                         'compte 🌍'},
+                     'variables': ['child_name'],
+                     'recommended_timing': 'morning',
+                     'optimal_hours': [10, 11],
+                     'cooldown_hours': 336,
+                     'action': 'open_share',
+                     'deep_link': 'kuma://share',
+                     'channels': ['push']},
+ 'review_ask': {'id': 'review_ask',
+                'category': 'engagement',
+                'name': "Demande d'avis",
+                'icon': '⭐',
+                'priority': 'low',
+                'title': {'default': '⭐ Une minute pour Kuma ?'},
+                'body': {'default': "{child_name} progresse à merveille sur Kuma. Si l'app vous plaît, un "
+                                    "petit avis nous aide énormément à faire voyager d'autres enfants 🙏"},
+                'variables': ['child_name'],
+                'recommended_timing': 'evening',
+                'optimal_hours': [20, 21],
+                'cooldown_hours': 720,
+                'action': 'open_review',
+                'deep_link': 'kuma://review',
+                'channels': ['push']},
+ 'family_weekend_moment': {'id': 'family_weekend_moment',
+                           'category': 'engagement',
+                           'name': 'Moment famille du week-end',
+                           'icon': '🧡',
+                           'priority': 'low',
+                           'title': {'default': "🧡 Et si c'était l'heure du conte en famille ?"},
+                           'body': {'default': 'Ce week-end, prenez 10 minutes avec {child_name} pour '
+                                               'écouter ensemble une histoire de {country}. Un joli moment à '
+                                               'partager 🌙'},
+                           'variables': ['child_name', 'country'],
+                           'recommended_days': ['saturday', 'sunday'],
+                           'recommended_timing': 'morning',
+                           'optimal_hours': [10, 11],
+                           'cooldown_hours': 168,
+                           'action': 'open_story',
+                           'deep_link': 'kuma://home'},
+ 'back_to_school': {'id': 'back_to_school',
+                    'category': 'engagement',
+                    'name': 'Rentrée',
+                    'icon': '🎒',
+                    'priority': 'medium',
+                    'title': {'default': '🎒 La rentrée, le bon moment pour une belle habitude',
+                              'variant_a': '🎒 {child_name}, on reprend le voyage ?'},
+                    'body': {'default': "Et si cette rentrée, {child_name} découvrait un pays d'Afrique par "
+                                        "semaine ? Contes, cartes et quiz : apprendre en s'amusant 🌍",
+                             'variant_a': 'Nouvelle année, nouvelles aventures ! {country} et 53 autres pays '
+                                          'attendent {child_name} pour la rentrée 📚'},
+                    'variables': ['child_name', 'country'],
+                    'recommended_timing': 'evening',
+                    'optimal_hours': [18, 19],
+                    'cooldown_hours': 720,
+                    'action': 'open_story',
+                    'deep_link': 'kuma://home',
+                    'channels': ['push', 'email']},
+ 'winback_premium_value': {'id': 'winback_premium_value',
+                           'category': 'subscription',
+                           'name': 'Reconquête Premium (valeur)',
+                           'icon': '🌍',
+                           'priority': 'high',
+                           'title': {'default': '🌍 Rouvrez tout le continent à {child_name}'},
+                           'body': {'default': "Sans Premium, {child_name} n'accède qu'à une partie de "
+                                               "l'Afrique. Débloquez les 54 pays et l'écoute hors-ligne, et "
+                                               'relancez son voyage sans limites ✨'},
+                           'variables': ['child_name'],
+                           'recommended_timing': 'evening',
+                           'optimal_hours': [19, 20],
+                           'cooldown_hours': 336,
+                           'cta': 'upgrade_premium',
+                           'deep_link': 'kuma://subscription',
+                           'channels': ['push', 'email']}}
 
 
 # =============================================================================

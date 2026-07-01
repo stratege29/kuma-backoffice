@@ -183,7 +183,7 @@ class SmartListsManager:
             'icon': '🌿',
             'category': 'progression',
             'priority': 'low',
-            'suggested_templates': ['journey_milestone_10', 'journey_milestone_20']
+            'suggested_templates': ['journey_milestone_10']
         },
         'advanced': {
             'id': 'advanced',
@@ -250,7 +250,7 @@ class SmartListsManager:
             'icon': '🏆',
             'category': 'streak',
             'priority': 'low',
-            'suggested_templates': ['streak_milestone_14']
+            'suggested_templates': ['streak_milestone_30']
         },
         'streak_30plus': {
             'id': 'streak_30plus',

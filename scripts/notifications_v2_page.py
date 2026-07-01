@@ -942,12 +942,12 @@ def generate_notifications_v2_page(firebase_initialized: bool = False) -> str:
                             <div class="notification-header">
                                 <span class="notification-title">
                                     <span id="preview-icon">🔔</span>
-                                    <span id="preview-title">Ta flamme africaine vacille !</span>
+                                    <span id="preview-title">Aperçu de la notification</span>
                                 </span>
-                                <span class="notification-time">1m ago</span>
+                                <span class="notification-time">maintenant</span>
                             </div>
                             <div class="notification-body" id="preview-body">
-                                , ta serie de jours est en danger ! Une histoire et elle brille a nouveau !
+                                Sélectionne un template ou écris ton message pour voir l'aperçu ici.
                             </div>
                         </div>
                     </div>
@@ -959,6 +959,7 @@ def generate_notifications_v2_page(firebase_initialized: bool = False) -> str:
                         <label>Cible:</label>
                         <span id="selected-list-name">Aucune liste selectionnee</span>
                         <span id="selected-list-count" class="badge">0</span>
+                        <span style="font-size:12px; color:#6b7280;">joignables push</span>
                     </div>
 
                     <div class="option-group">
@@ -1027,8 +1028,7 @@ def generate_notifications_v2_page(firebase_initialized: bool = False) -> str:
                 display: grid;
                 grid-template-columns: 300px 1fr;
                 gap: 15px;
-                min-height: 500px;
-                max-height: calc(100vh - 180px);
+                align-items: start;
             }}
 
             .panel {{
@@ -1057,6 +1057,9 @@ def generate_notifications_v2_page(firebase_initialized: bool = False) -> str:
             /* Panneau Listes */
             .panel-lists {{
                 overflow-y: auto;
+                max-height: calc(100vh - 200px);
+                position: sticky;
+                top: 15px;
             }}
 
             .lists-search {{
@@ -1343,9 +1346,12 @@ def generate_notifications_v2_page(firebase_initialized: bool = False) -> str:
                 display: grid;
                 grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
                 gap: 10px;
-                max-height: 200px;
+                max-height: 420px;
                 overflow-y: auto;
                 padding: 5px;
+                background: #fafafa;
+                border: 1px solid #eef0f2;
+                border-radius: 10px;
             }}
 
             .template-card {{
@@ -2495,37 +2501,39 @@ def _scheduling_section() -> str:
     """
     return r'''
         <style>
-            .scheduling-section { margin-top: 24px; background: var(--card-bg, #1e1e2e); border-radius: 12px; padding: 20px; }
-            .scheduling-section h3 { margin-top: 0; }
+            .scheduling-section { margin-top: 20px; clear: both; background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); color: #111827; }
+            .scheduling-section h3 { margin: 0 0 4px; font-size: 1.1rem; color: #111827; }
+            .scheduling-section .sched-intro { color: #6b7280; font-size: 13px; margin: 0 0 16px; }
             .schedule-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; align-items: end; margin-bottom: 8px; }
             .schedule-form .form-group { display: flex; flex-direction: column; gap: 4px; }
-            .schedule-form label { font-size: 12px; opacity: 0.8; }
-            .schedule-form input, .schedule-form select { padding: 8px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.15); background: rgba(0,0,0,0.2); color: inherit; }
-            .schedule-days { display: flex; flex-wrap: wrap; gap: 4px; }
-            .schedule-days label { display: inline-flex; align-items: center; gap: 3px; font-size: 12px; padding: 4px 6px; border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; cursor: pointer; }
-            .notif-tabs { display: flex; gap: 6px; margin: 16px 0 12px; }
-            .sched-card { border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 12px; margin-bottom: 10px; }
+            .schedule-form label { font-size: 12px; color: #6b7280; }
+            .schedule-form input, .schedule-form select { padding: 8px 10px; border-radius: 8px; border: 1px solid #d1d5db; background: #fff; color: #111827; font-size: 0.9rem; }
+            .schedule-days { display: flex; flex-wrap: wrap; gap: 6px; }
+            .schedule-days label { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: #374151; padding: 4px 8px; border: 1px solid #d1d5db; border-radius: 6px; cursor: pointer; }
+            .notif-tabs { display: flex; gap: 8px; margin: 20px 0 12px; border-top: 1px solid #e5e7eb; padding-top: 16px; }
+            .sched-card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; background: #fff; color: #374151; }
             .sched-card .sched-head { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
-            .sched-card .sched-title { font-weight: 600; }
-            .sched-meta { font-size: 12px; opacity: 0.75; margin-top: 4px; display: flex; flex-wrap: wrap; gap: 10px; }
-            .sched-actions { display: flex; gap: 6px; }
-            .sched-badge { font-size: 11px; padding: 2px 8px; border-radius: 10px; background: rgba(255,255,255,0.1); }
-            .sched-badge.queued { background: rgba(59,130,246,0.25); }
-            .sched-badge.sending { background: rgba(234,179,8,0.25); }
-            .sched-badge.sent { background: rgba(34,197,94,0.25); }
-            .sched-badge.failed { background: rgba(239,68,68,0.25); }
-            .sched-badge.canceled { background: rgba(148,163,184,0.25); }
+            .sched-card .sched-title { font-weight: 600; color: #111827; }
+            .sched-meta { font-size: 12px; color: #6b7280; margin-top: 6px; display: flex; flex-wrap: wrap; gap: 12px; }
+            .sched-actions { display: flex; gap: 8px; }
+            .sched-badge { font-size: 11px; padding: 2px 10px; border-radius: 999px; font-weight: 600; }
+            .sched-badge.queued { background: #dbeafe; color: #1e40af; }
+            .sched-badge.sending { background: #fef3c7; color: #92400e; }
+            .sched-badge.sent { background: #dcfce7; color: #166534; }
+            .sched-badge.failed { background: #fee2e2; color: #991b1b; }
+            .sched-badge.canceled { background: #e5e7eb; color: #4b5563; }
             .history-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-            .history-table th, .history-table td { text-align: left; padding: 8px; border-bottom: 1px solid rgba(255,255,255,0.08); }
-            .history-table th { opacity: 0.7; font-weight: 600; }
-            .taps-pending { opacity: 0.5; font-style: italic; }
-            .btn-mini { padding: 4px 10px; font-size: 12px; border-radius: 6px; cursor: pointer; border: 1px solid rgba(255,255,255,0.2); background: transparent; color: inherit; }
-            .btn-mini.danger { border-color: rgba(239,68,68,0.5); }
+            .history-table th, .history-table td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #eef0f2; color: #374151; }
+            .history-table th { color: #6b7280; font-weight: 600; background: #f9fafb; }
+            .taps-pending { color: #9ca3af; font-style: italic; }
+            .btn-mini { padding: 5px 12px; font-size: 12px; border-radius: 6px; cursor: pointer; border: 1px solid #d1d5db; background: #fff; color: #374151; }
+            .btn-mini:hover { background: #f3f4f6; }
+            .btn-mini.danger { border-color: #fca5a5; color: #b91c1c; }
         </style>
 
         <div class="scheduling-section">
             <h3>🗓️ Programmation &amp; Historique</h3>
-            <p style="opacity:0.75; font-size:13px; margin-top:-4px;">
+            <p class="sched-intro">
                 Programme l'envoi automatique de la notification composee ci-dessus.
                 Selectionne d'abord une liste et le contenu, puis choisis le jour et l'heure.
             </p>

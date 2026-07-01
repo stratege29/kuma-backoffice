@@ -126,7 +126,9 @@ def test_freeze_template():
          'target': {'type': 'list', 'list_id': 'streak_at_risk'}})
     cm = frozen.get('custom_message')
     check("freeze -> custom_message cree", isinstance(cm, dict) and bool(cm.get('body')))
-    check("freeze -> placeholders conserves", cm and '{child_name}' in cm.get('body', ''))
+    import re as _re
+    _has_ph = bool(cm) and bool(_re.search(r'\{[a-z_]+\}', (cm.get('title', '') + ' ' + cm.get('body', ''))))
+    check("freeze -> placeholders conserves", _has_ph)
     # custom_message existant n'est pas ecrase
     keep = mgr._freeze_template(
         {'channel': 'push', 'template_id': 'streak_at_risk',
