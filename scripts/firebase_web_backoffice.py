@@ -1646,6 +1646,9 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
         elif self.path.startswith('/api/notifications-v2/scheduled/') and self.path.endswith('/update'):
             campaign_id = self.path.split('/')[4]
             self.handle_update_scheduled_campaign_v2(campaign_id, post_data)
+        elif self.path.startswith('/api/notifications-v2/scheduled/') and self.path.endswith('/delete'):
+            campaign_id = self.path.split('/')[4]
+            self.handle_delete_scheduled_campaign_v2(campaign_id)
         elif self.path == '/api/notifications-v2/automation/rules':
             self.handle_save_automation_rule_v2(post_data)
         elif self.path.startswith('/api/notifications-v2/automation/rules/') and '/toggle' in self.path:
@@ -15042,6 +15045,12 @@ Un avis nous aide enormement a faire decouvrir Kuma a d'autres familles !<br><br
         """POST /api/notifications-v2/scheduled/{id}/send-now"""
         handler = self._get_notifications_v2_handler()
         result = handler.handle_send_scheduled_now(campaign_id)
+        self.send_json_response(result)
+
+    def handle_delete_scheduled_campaign_v2(self, campaign_id):
+        """POST /api/notifications-v2/scheduled/{id}/delete"""
+        handler = self._get_notifications_v2_handler()
+        result = handler.handle_delete_scheduled_campaign(campaign_id)
         self.send_json_response(result)
 
     def handle_update_scheduled_campaign_v2(self, campaign_id, post_data):

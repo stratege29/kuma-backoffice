@@ -343,6 +343,21 @@ class ScheduledCampaignsManager:
             logger.error(f"scheduled_campaigns: erreur cancel {campaign_id}: {e}")
             return {'success': False, 'error': str(e)}
 
+    def delete(self, campaign_id: str) -> Dict:
+        """Supprime definitivement la campagne (document Firestore)."""
+        if not self.db:
+            return {'success': False, 'error': 'Firestore non disponible'}
+        try:
+            ref = self.db.collection(COLLECTION).document(campaign_id)
+            doc = ref.get()
+            if not doc.exists:
+                return {'success': False, 'error': 'Campagne introuvable'}
+            ref.delete()
+            return {'success': True, 'id': campaign_id}
+        except Exception as e:
+            logger.error(f"scheduled_campaigns: erreur delete {campaign_id}: {e}")
+            return {'success': False, 'error': str(e)}
+
     def update(self, campaign_id: str, payload: Dict = None, schedule: Dict = None,
                title: str = None) -> Dict:
         if not self.db:

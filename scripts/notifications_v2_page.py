@@ -679,6 +679,10 @@ class NotificationsV2APIHandlers:
         """POST /api/notifications-v2/scheduled/{id}/cancel."""
         return self._scheduled_manager().cancel(campaign_id)
 
+    def handle_delete_scheduled_campaign(self, campaign_id: str) -> Dict:
+        """POST /api/notifications-v2/scheduled/{id}/delete."""
+        return self._scheduled_manager().delete(campaign_id)
+
     def handle_update_scheduled_campaign(self, campaign_id: str, data: Dict) -> Dict:
         """POST /api/notifications-v2/scheduled/{id}/update."""
         schedule = data.get('schedule')

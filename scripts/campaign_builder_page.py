@@ -134,7 +134,10 @@ _PAGE = r'''
 </style>
 
 <div class="cb">
-  <h2>🔔 Nouvelle campagne push</h2>
+  <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+    <h2>🔔 Nouvelle campagne push</h2>
+    <button class="cb-btn" onclick="cbGoto(5)">📋 Campagnes programmées</button>
+  </div>
   __FIREBASE_NOTICE__
 
   <div class="cb-steps" id="cb-steps"></div>
@@ -322,7 +325,8 @@ _PAGE = r'''
   }
 
   window.cbGoto = function(n){
-    if (n>CB.step){
+    // L'étape 5 (suivi des campagnes) est une simple consultation : accès direct autorisé.
+    if (n>CB.step && n!==5){
       if (CB.step===1 && !CB.sel.list) { alert('Choisis d\'abord un segment.'); return; }
       if (CB.step===2 && !cbMessageValid()) { alert('Complète ton message (template ou titre + corps).'); return; }
     }
@@ -572,16 +576,23 @@ _PAGE = r'''
     try {
       const r = await fetch('/api/notifications-v2/scheduled'); const d = await r.json();
       const items = (d&&d.campaigns)||[];
+      CB.queue = {};
       if (!items.length){ c.innerHTML = '<div class="cb-hint">Aucune campagne en file.</div>'; return; }
-      c.innerHTML = items.map(x=>{
+      c.innerHTML = '<p class="cb-hint">Clique sur une campagne pour la modifier.</p>' + items.map(x=>{
+        CB.queue[x.id] = x;
         const next = x.next_run_at ? new Date(x.next_run_at).toLocaleString('fr-FR') : '-';
         const act = (x.status==='queued'||x.status==='sending');
-        return '<div class="cb-seg" style="cursor:default;"><div class="left"><span>'+(x.channel==='email'?'📧':'🔔')+'</span>'
+        return '<div class="cb-seg" style="display:block; cursor:'+(act?'pointer':'default')+';"'+(act?' onclick="cbEditOpen(\''+x.id+'\')"':'')+'>'
+          +'<div style="display:flex; align-items:center; justify-content:space-between; gap:10px;">'
+          +'<div class="left"><span>'+(x.channel==='email'?'📧':'🔔')+'</span>'
           +'<span><span class="nm">'+esc(x.title||'(sans titre)')+'</span><div class="desc">⏰ '+next+' · 🔁 '+schedDesc(x)+'</div></span></div>'
-          +'<div class="right"><span class="cb-status '+x.status+'">'+x.status+'</span>'
-          +(act?' <button class="cb-btn" style="padding:4px 10px;font-size:12px;" onclick="cbSendNow(\''+x.id+'\')">Envoyer</button>'
-              +' <button class="cb-btn" style="padding:4px 10px;font-size:12px;border-color:#fca5a5;color:#b91c1c;" onclick="cbCancel(\''+x.id+'\')">Annuler</button>':'')
-          +'</div></div>';
+          +'<div class="right" onclick="event.stopPropagation();"><span class="cb-status '+x.status+'">'+x.status+'</span>'
+          +(act?' <button class="cb-btn" style="padding:4px 10px;font-size:12px;" onclick="cbEditOpen(\''+x.id+'\')">✏️ Éditer</button>'
+              +' <button class="cb-btn" style="padding:4px 10px;font-size:12px;" onclick="cbSendNow(\''+x.id+'\')">▶️ Envoyer</button>'
+              +' <button class="cb-btn" style="padding:4px 10px;font-size:12px;border-color:#fca5a5;color:#b91c1c;" onclick="cbDelete(\''+x.id+'\')">🗑️ Supprimer</button>':'')
+          +'</div></div>'
+          +'<div id="cb-edit-'+x.id+'" style="display:none; margin-top:12px; border-top:1px solid #eef0f2; padding-top:12px;" onclick="event.stopPropagation();"></div>'
+          +'</div>';
       }).join('');
     } catch(e){ c.innerHTML = '<div class="cb-hint">Erreur.</div>'; }
   }
@@ -599,9 +610,86 @@ _PAGE = r'''
       c.innerHTML = '<table class="cb-htable"><thead><tr><th>Date</th><th>Notification</th><th>Ciblés</th><th>Envoyés</th><th>Échecs</th><th>Touches</th></tr></thead><tbody>'+rows+'</tbody></table>';
     } catch(e){ c.innerHTML = '<div class="cb-hint">Erreur.</div>'; }
   }
-  window.cbCancel = async function(id){
-    if (!confirm('Annuler cette campagne ?')) return;
-    try { const r = await fetch('/api/notifications-v2/scheduled/'+id+'/cancel',{method:'POST'}); const d=await r.json(); if(d.success) loadQueue(); else alert('Erreur : '+(d.error||'')); } catch(e){ alert('Erreur'); }
+  window.cbDelete = async function(id){
+    if (!confirm('Supprimer définitivement cette campagne ?')) return;
+    try { const r = await fetch('/api/notifications-v2/scheduled/'+id+'/delete',{method:'POST'}); const d=await r.json(); if(d.success) loadQueue(); else alert('Erreur : '+(d.error||'')); } catch(e){ alert('Erreur'); }
+  };
+
+  // ---- Édition inline d'une campagne en file -------------------------------
+  window.cbEditOpen = function(id){
+    const box = el('cb-edit-'+id); if (!box) return;
+    if (box.style.display==='block'){ box.style.display='none'; box.innerHTML=''; return; }
+    document.querySelectorAll('[id^="cb-edit-"]').forEach(b=>{ b.style.display='none'; b.innerHTML=''; });
+    const x = CB.queue[id]; if (!x) return;
+    const p = x.payload||{}, cm = p.custom_message||{}, s = x.schedule||{}, rec = s.recurrence||{};
+    const isRec = s.type==='recurring';
+    const time = (isRec ? (rec.time||'') : ((s.scheduled_at||'').slice(11,16))) || '09:00';
+    const date = (s.scheduled_at||'').slice(0,10);
+    const freq = rec.freq || 'daily';
+    const days = rec.days || [];
+    box.style.display = 'block';
+    box.innerHTML =
+      '<div class="cb-field"><label>Titre</label><input id="ce-title-'+id+'" value="'+esc(x.title||'')+'"></div>'
+      +'<div class="cb-field"><label>Message — titre</label><input id="ce-mtitle-'+id+'" value="'+esc(cm.title||'')+'"></div>'
+      +'<div class="cb-field"><label>Message — corps</label><textarea id="ce-mbody-'+id+'">'+esc(cm.body||'')+'</textarea></div>'
+      +'<div class="cb-seg-row">'
+        +'<button type="button" class="cb-chip '+(!isRec?'on':'')+'" id="ce-once-'+id+'" onclick="cbEditSetType(\''+id+'\',\'once\')">Une seule fois</button>'
+        +'<button type="button" class="cb-chip '+(isRec?'on':'')+'" id="ce-rec-'+id+'" onclick="cbEditSetType(\''+id+'\',\'recurring\')">Récurrent</button>'
+      +'</div>'
+      +'<div style="display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end;">'
+        +'<div class="cb-field" id="ce-date-field-'+id+'" style="max-width:200px; display:'+(isRec?'none':'block')+';"><label>Date</label><input type="date" id="ce-date-'+id+'" value="'+esc(date)+'"></div>'
+        +'<div class="cb-field" style="max-width:160px;"><label>Heure</label><input type="time" id="ce-time-'+id+'" value="'+esc(time)+'"></div>'
+        +'<div class="cb-field" id="ce-freq-field-'+id+'" style="max-width:200px; display:'+(isRec?'block':'none')+';"><label>Fréquence</label>'
+          +'<select id="ce-freq-'+id+'" onchange="cbEditSyncFreq(\''+id+'\')"><option value="daily"'+(freq==='daily'?' selected':'')+'>Tous les jours</option><option value="weekly"'+(freq==='weekly'?' selected':'')+'>Chaque semaine</option></select></div>'
+      +'</div>'
+      +'<div class="cb-field" id="ce-days-field-'+id+'" style="display:'+((isRec&&freq==='weekly')?'block':'none')+';"><label>Jours</label><div class="cb-days" id="ce-days-'+id+'">'
+        + DAY_NAMES.map((dn,i)=>'<label><input type="checkbox" value="'+i+'"'+(days.indexOf(i)>=0?' checked':'')+'>'+dn+'</label>').join('')
+      +'</div></div>'
+      +'<div class="cb-nav" style="margin-top:8px;">'
+        +'<button class="cb-btn" onclick="cbEditOpen(\''+id+'\')">Fermer</button>'
+        +'<button class="cb-btn primary" onclick="cbEditSave(\''+id+'\')">💾 Enregistrer</button>'
+      +'</div>';
+  };
+  window.cbEditSetType = function(id, t){
+    el('ce-once-'+id).classList.toggle('on', t==='once');
+    el('ce-rec-'+id).classList.toggle('on', t==='recurring');
+    el('ce-date-field-'+id).style.display = t==='once'?'block':'none';
+    el('ce-freq-field-'+id).style.display = t==='recurring'?'block':'none';
+    cbEditSyncFreq(id);
+  };
+  window.cbEditSyncFreq = function(id){
+    const isRec = el('ce-rec-'+id).classList.contains('on');
+    el('ce-days-field-'+id).style.display = (isRec && el('ce-freq-'+id).value==='weekly')?'block':'none';
+  };
+  window.cbEditSave = async function(id){
+    const x = CB.queue[id]; if (!x) return;
+    const title = (el('ce-title-'+id).value||'').trim();
+    const mtitle = (el('ce-mtitle-'+id).value||'').trim();
+    const mbody = (el('ce-mbody-'+id).value||'').trim();
+    if (!mtitle || !mbody){ alert('Le titre et le corps du message sont requis.'); return; }
+    const isRec = el('ce-rec-'+id).classList.contains('on');
+    const time = el('ce-time-'+id).value || '09:00';
+    const tz = (x.schedule&&x.schedule.timezone) || CB.tz;
+    let schedule;
+    if (isRec){
+      const freq = el('ce-freq-'+id).value;
+      const days = Array.from(document.querySelectorAll('#ce-days-'+id+' input:checked')).map(c=>parseInt(c.value,10));
+      if (freq==='weekly' && !days.length){ alert('Choisis au moins un jour.'); return; }
+      schedule = { type:'recurring', timezone:tz, recurrence:{ freq:freq, time:time, days:days, timezone:tz } };
+    } else {
+      const date = el('ce-date-'+id).value;
+      if (!date){ alert('Choisis une date.'); return; }
+      schedule = { type:'once', timezone:tz, scheduled_at: date+'T'+time };
+    }
+    const p = Object.assign({}, x.payload||{});
+    p.custom_message = { title: mtitle, body: mbody };
+    delete p.template_id;
+    const body = Object.assign({}, p, { title: title||mtitle, schedule: schedule });
+    try {
+      const r = await fetch('/api/notifications-v2/scheduled/'+id+'/update',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+      const d = await r.json();
+      if (d.success){ loadQueue(); } else { alert('Erreur : '+(d.error||'échec')); }
+    } catch(e){ alert('Erreur lors de la mise à jour.'); }
   };
   window.cbSendNow = async function(id){
     if (!confirm('Envoyer cette campagne maintenant ?')) return;
