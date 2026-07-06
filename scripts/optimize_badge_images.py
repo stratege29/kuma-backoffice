@@ -48,7 +48,7 @@ CONFIG = {
     "firebase": {
         "project_id": "kumafire-7864b",
         "bucket": "kumafire-7864b.firebasestorage.app",
-        "credentials_path": "/Users/arnaudkossea/development/kumafire-7864b-firebase-adminsdk-fbsvc-16fcc356e0.json",
+        "credentials_path": "/Users/arnaudkossea/development/kuma_upload/certificats/kumafire-7864b-firebase-adminsdk-NEW-20260118.json",
     },
     "optimization": {
         # Rendu max d'un badge = 130px (badge_unlock_overlay) -> ~390px @3x.
