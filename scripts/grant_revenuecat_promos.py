@@ -90,6 +90,23 @@ def grant(app_user_id: str, duration: str, secret: str) -> dict:
     return {"ok": ok, "status": r.status_code, "body": (r.json() if r.headers.get('content-type','').startswith('application/json') else r.text)}
 
 
+def ensure_subscriber(app_user_id: str, secret: str) -> bool:
+    """Cree le subscriber RevenueCat s'il n'existe pas encore.
+    Un GET cree l'abonne (comportement RevenueCat) ; fallback via POST attributes.
+    Les seeds n'ont jamais utilise RevenueCat -> pas de subscriber -> le grant 404."""
+    h = {"Authorization": f"Bearer {secret}", "Content-Type": "application/json"}
+    g = requests.get(f"{RC_BASE}/subscribers/{app_user_id}", headers=h, timeout=30)
+    if g.status_code == 200:
+        return True
+    requests.post(
+        f"{RC_BASE}/subscribers/{app_user_id}/attributes",
+        headers=h,
+        json={"attributes": {"comp_source": {"value": "seeded_premium_backfill"}}},
+        timeout=30,
+    )
+    return True
+
+
 def verify(app_user_id: str, secret: str) -> dict:
     """GET l'abonne RevenueCat et resume ses entitlements (lecture seule)."""
     url = f"{RC_BASE}/subscribers/{app_user_id}"
@@ -188,7 +205,7 @@ def main():
             print(f"   subscriptions = {v['active_subscriptions'] or 'AUCUNE'}")
         return
 
-    ok = fail = 0
+    ok = fail = skip = 0
     for uid, email, sub in targets:
         exp = parse_dt(sub.get('expirationDate') or sub.get('validUntil'))
         days = (exp - now).days if exp else 366
@@ -197,7 +214,17 @@ def main():
         if args.dry_run:
             print(f"[DRY]  {label}")
             continue
+        # Idempotence : sauter si l'entitlement est deja actif.
+        v = verify(uid, secret)
+        if v.get('ok') and any(e.get('id') == ENTITLEMENT_ID and e.get('active') for e in v.get('entitlements', [])):
+            skip += 1
+            print(f"[SKIP] {label}  (entitlement deja actif)")
+            continue
         res = grant(uid, duration, secret)
+        if not res['ok'] and res['status'] == 404:
+            # subscriber inexistant (seed jamais passe par RevenueCat) -> le creer puis reessayer
+            ensure_subscriber(uid, secret)
+            res = grant(uid, duration, secret)
         if res['ok']:
             ok += 1
             print(f"[OK]   {label}")
@@ -206,7 +233,7 @@ def main():
             print(f"[FAIL] {label}  status={res['status']}  body={str(res['body'])[:200]}")
 
     if not args.dry_run:
-        print(f"\nResultat: {ok} accordes, {fail} echecs.")
+        print(f"\nResultat: {ok} accordes, {skip} deja actifs, {fail} echecs.")
     print("\nNote: apres le grant, l'utilisateur doit rouvrir l'app (RevenueCat rafraichit CustomerInfo) pour retrouver le premium.")
 
 
