@@ -90,12 +90,40 @@ def grant(app_user_id: str, duration: str, secret: str) -> dict:
     return {"ok": ok, "status": r.status_code, "body": (r.json() if r.headers.get('content-type','').startswith('application/json') else r.text)}
 
 
+def verify(app_user_id: str, secret: str) -> dict:
+    """GET l'abonne RevenueCat et resume ses entitlements (lecture seule)."""
+    url = f"{RC_BASE}/subscribers/{app_user_id}"
+    r = requests.get(url, headers={"Authorization": f"Bearer {secret}"}, timeout=30)
+    if r.status_code != 200:
+        return {"ok": False, "status": r.status_code, "body": str(r.text)[:300]}
+    sub = (r.json() or {}).get("subscriber", {})
+    ents = sub.get("entitlements", {}) or {}
+    now = datetime.now(timezone.utc)
+    ent_summary = []
+    for name, e in ents.items():
+        exp = e.get("expires_date")
+        expdt = None
+        try:
+            expdt = datetime.fromisoformat(str(exp).replace('Z', '+00:00')) if exp else None
+        except Exception:
+            pass
+        active = (expdt is None) or (expdt > now)
+        ent_summary.append({"id": name, "expires": exp, "active": active})
+    return {
+        "ok": True,
+        "original_app_user_id": sub.get("original_app_user_id"),
+        "entitlements": ent_summary,
+        "active_subscriptions": list((sub.get("subscriptions") or {}).keys()),
+    }
+
+
 def main():
     ap = argparse.ArgumentParser(description="Grant RevenueCat promotional entitlements")
     g = ap.add_mutually_exclusive_group(required=True)
     g.add_argument('--user', help='email ou uid d\'un seul utilisateur')
     g.add_argument('--all', action='store_true', help='tous les premium seedes encore valides')
     ap.add_argument('--dry-run', action='store_true', help='n\'appelle pas RevenueCat, montre le plan')
+    ap.add_argument('--verify', action='store_true', help='lecture seule: montre l\'etat RevenueCat de la cible (n\'accorde rien)')
     args = ap.parse_args()
 
     secret = os.environ.get('RC_SECRET_KEY', '').strip()
@@ -135,7 +163,21 @@ def main():
                 if exp and exp > now:
                     targets.append((d.id, (data.get('profile') or {}).get('email') or data.get('email'), sub))
 
-    print(f"Cibles: {len(targets)}  |  mode: {'DRY-RUN' if args.dry_run else 'GRANT'}\n")
+    mode = 'VERIFY' if args.verify else ('DRY-RUN' if args.dry_run else 'GRANT')
+    print(f"Cibles: {len(targets)}  |  mode: {mode}\n")
+
+    if args.verify:
+        for uid, email, sub in targets:
+            v = verify(uid, secret)
+            if not v.get('ok'):
+                print(f"[{uid[:12]}] {email or ''}: erreur RevenueCat status={v.get('status')} {v.get('body','')}")
+                continue
+            print(f"[{uid[:12]}] {email or ''}")
+            print(f"   RevenueCat original_app_user_id = {v['original_app_user_id']}")
+            print(f"   entitlements = {v['entitlements'] or 'AUCUN'}")
+            print(f"   subscriptions = {v['active_subscriptions'] or 'AUCUNE'}")
+        return
+
     ok = fail = 0
     for uid, email, sub in targets:
         exp = parse_dt(sub.get('expirationDate') or sub.get('validUntil'))
