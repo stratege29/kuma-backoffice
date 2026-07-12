@@ -124,10 +124,12 @@ def main():
     g.add_argument('--all', action='store_true', help='tous les premium seedes encore valides')
     ap.add_argument('--dry-run', action='store_true', help='n\'appelle pas RevenueCat, montre le plan')
     ap.add_argument('--verify', action='store_true', help='lecture seule: montre l\'etat RevenueCat de la cible (n\'accorde rien)')
+    ap.add_argument('--refresh-validation', action='store_true',
+                    help='Firestore: met subscription.lastRevenueCatValidation=maintenant (debloque l\'acces cote app, fenetre 24h). N\'appelle pas RevenueCat.')
     args = ap.parse_args()
 
     secret = os.environ.get('RC_SECRET_KEY', '').strip()
-    if not args.dry_run and not secret:
+    if not args.dry_run and not args.refresh_validation and not secret:
         print("ERREUR: exporte RC_SECRET_KEY (cle secrete RevenueCat v1) avant de lancer sans --dry-run.")
         sys.exit(1)
 
@@ -163,8 +165,16 @@ def main():
                 if exp and exp > now:
                     targets.append((d.id, (data.get('profile') or {}).get('email') or data.get('email'), sub))
 
-    mode = 'VERIFY' if args.verify else ('DRY-RUN' if args.dry_run else 'GRANT')
+    mode = 'VERIFY' if args.verify else ('REFRESH-VALIDATION' if args.refresh_validation else ('DRY-RUN' if args.dry_run else 'GRANT'))
     print(f"Cibles: {len(targets)}  |  mode: {mode}\n")
+
+    if args.refresh_validation:
+        stamp = now.isoformat()
+        for uid, email, sub in targets:
+            db.collection('users').document(uid).update({'subscription.lastRevenueCatValidation': stamp})
+            print(f"[OK] {uid[:12]} {email or ''}: lastRevenueCatValidation = {stamp}")
+        print("\nDemande a l'utilisateur de rouvrir l'app : premium accorde immediatement (fenetre locale 24h), le temps que le cache RevenueCat du SDK se rechauffe.")
+        return
 
     if args.verify:
         for uid, email, sub in targets:
