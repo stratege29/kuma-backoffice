@@ -1920,10 +1920,39 @@ def generate_notifications_v2_page(firebase_initialized: bool = False) -> str:
                         lists = data.lists;
                         displayListsStats(data.statistics);
                         displayLists(data.grouped);
+                        applyPrefillFromUrl();
                     }}
                 }} catch (error) {{
                     console.error('Erreur chargement listes:', error);
                 }}
+            }}
+
+            // Pre-remplissage depuis le Rapport GA4 (deep-link ?segment=&title=&body=&source=analytics)
+            function applyPrefillFromUrl() {{
+                try {{
+                    var p = new URLSearchParams(window.location.search);
+                    var seg = p.get('segment');
+                    var title = p.get('title');
+                    var body = p.get('body');
+                    if (!seg && !title && !body) return;
+                    if ((title || body) && typeof setMode === 'function') setMode('custom');
+                    if (title) {{ var t = document.getElementById('custom-title'); if (t) t.value = title; }}
+                    if (body) {{ var b = document.getElementById('custom-body'); if (b) b.value = body; }}
+                    if (seg && lists.find(function(l) {{ return l.id === seg; }})) selectList(seg);
+                    if (typeof updatePreview === 'function') updatePreview();
+                    if (p.get('source') === 'analytics' && !document.getElementById('analytics-prefill-banner')) {{
+                        var host = document.querySelector('.container') || document.body;
+                        if (host) {{
+                            var d = document.createElement('div');
+                            d.id = 'analytics-prefill-banner';
+                            d.style.cssText = 'margin:12px 0;padding:12px 16px;border-radius:8px;background:#e8f0fe;border:1px solid #1a73e8;color:#174ea6;';
+                            d.innerHTML = '📉 Campagne pré-remplie depuis le <b>Rapport GA4</b> (segment + message suggérés). Vérifie les destinataires et le texte avant d\\'envoyer.';
+                            host.insertBefore(d, host.firstChild);
+                        }}
+                    }}
+                    var comp = document.getElementById('custom-title') || document.getElementById('selected-list-name');
+                    if (comp) comp.scrollIntoView({{ behavior: 'smooth', block: 'center' }});
+                }} catch (e) {{ console.error('prefill analytics:', e); }}
             }}
 
             function displayListsStats(stats) {{

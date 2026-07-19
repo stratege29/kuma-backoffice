@@ -154,6 +154,15 @@ class SmartListsManager:
             'priority': 'high',
             'suggested_templates': ['first_story']
         },
+        'new_yesterday': {
+            'id': 'new_yesterday',
+            'name': 'Inscrits hier (relance J1)',
+            'description': 'Inscrits il y a 1 jour - cible la falaise de retention D1',
+            'icon': '📆',
+            'category': 'behavior',
+            'priority': 'high',
+            'suggested_templates': ['first_story']
+        },
         'onboarding_incomplete': {
             'id': 'onboarding_incomplete',
             'name': 'Onboarding incomplet',
@@ -404,6 +413,7 @@ class SmartListsManager:
             'inactive_30d': lambda u: self._days_since_activity(u) >= 30,
             'churn_risk': lambda u: 14 <= self._days_since_activity(u) <= 21,
             'new_day1': lambda u: self._days_since_created(u) == 0,
+            'new_yesterday': lambda u: self._days_since_created(u) == 1,
             'onboarding_incomplete': lambda u: self._days_since_created(u) >= 1 and self._get_stories_count(u) == 0,
 
             # Progression

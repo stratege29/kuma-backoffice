@@ -342,7 +342,7 @@ _PAGE = r'''
   async function loadLists(){
     try {
       const r = await fetch('/api/notifications-v2/lists'); const d = await r.json();
-      if (d.success){ CB.lists = d.lists||[]; CB.categories = d.categories||[]; cbRenderLists(); }
+      if (d.success){ CB.lists = d.lists||[]; CB.categories = d.categories||[]; cbRenderLists(); cbApplyPrefill(); }
       else el('cb-lists').innerHTML = '<div class="cb-hint">Erreur : '+esc(d.error||'')+'</div>';
     } catch(e){ el('cb-lists').innerHTML = '<div class="cb-hint">Erreur de chargement.</div>'; }
   }
@@ -704,6 +704,36 @@ _PAGE = r'''
     el('cb-next-1').disabled = true;
     cbSetChannel('push'); cbSetMode('template'); cbSetWhen('now'); cbUpdatePreview(); cbRenderLists();
     cbGoto(1);
+  };
+
+  // ---- Prefill depuis le Rapport GA4 (?segment=&title=&body=&source=analytics) ----
+  let cbPrefillDone = false;
+  window.cbApplyPrefill = function(){
+    if (cbPrefillDone) return;
+    try {
+      const p = new URLSearchParams(window.location.search);
+      const seg = p.get('segment'), title = p.get('title'), body = p.get('body');
+      if (!seg && !title && !body) return;
+      cbPrefillDone = true;
+      if (seg && CB.lists.find(l => l.id===seg)) cbSelectList(seg);
+      if (title || body){
+        cbSetChannel('push'); cbSetMode('custom');
+        if (title && el('cb-custom-title')) el('cb-custom-title').value = title;
+        if (body && el('cb-custom-body')) el('cb-custom-body').value = body;
+        cbUpdatePreview();
+      }
+      if (p.get('source')==='analytics' && !el('cb-analytics-banner')){
+        const host = document.querySelector('.container') || document.body;
+        if (host){
+          const d = document.createElement('div');
+          d.id = 'cb-analytics-banner';
+          d.style.cssText = 'margin:12px 0;padding:12px 16px;border-radius:8px;background:#e8f0fe;border:1px solid #1a73e8;color:#174ea6;';
+          d.innerHTML = '📉 Campagne pré-remplie depuis le <b>Rapport GA4</b> — segment et message suggérés. Vérifie les destinataires, puis avance dans les étapes pour envoyer.';
+          host.insertBefore(d, host.firstChild);
+        }
+      }
+      renderContext();
+    } catch(e){ console.error('cbApplyPrefill', e); }
   };
 
   // ---- init ----------------------------------------------------------------
