@@ -337,6 +337,142 @@ class GA4AnalyticsManager:
         except Exception:
             return False
 
+    # ---- recommendations & alerts ------------------------------------------
+
+    def build_insights(self, report, evolution=None):
+        """Règles simples → recommandations actionnables + alertes seuil.
+
+        Chaque recommandation porte une `action` (segment + message) que la page
+        transforme en bouton vers le Campaign Builder. Les seuils d'alerte sont
+        surchargables par env.
+        """
+        recs, alerts = [], []
+        if not report or not report.get("available"):
+            return {"recommendations": recs, "alerts": alerts}
+
+        fn = report.get("funnel", {})
+        rates = fn.get("rates", {})
+        ret = report.get("retention", {})
+        ke = report.get("key_events", {})
+        ev = evolution or []
+
+        d1 = ret.get("d1", 0) or 0
+        open_rate = rates.get("open_to_onboarding", 0) or 0
+        paywall_reach = rates.get("paywall_reach", 0) or 0
+        app_exc = ke.get("app_exception", {}).get("count", 0) or 0
+
+        # Seuils (env-surchargables)
+        def _envf(name, default):
+            try:
+                return float(os.environ.get(name, default))
+            except Exception:
+                return default
+        D1_MIN = _envf("ALERT_D1_MIN", 6.0)
+        APP_EXC_MAX = _envf("ALERT_APP_EXCEPTION_MAX", 5000.0)
+        ONB_MIN = _envf("REC_ONBOARDING_MIN", 30.0)
+        PAYWALL_MIN = _envf("REC_PAYWALL_MIN", 5.0)
+
+        # ---- ALERTES (seuils) ----
+        if app_exc > APP_EXC_MAX:
+            alerts.append({
+                "code": "app_exception_high", "severity": "critical",
+                "title": "app_exception élevé",
+                "message": f"{app_exc} occurrences sur la période (seuil {int(APP_EXC_MAX)}).",
+            })
+        if d1 and d1 < D1_MIN:
+            alerts.append({
+                "code": "d1_low", "severity": "warning",
+                "title": "Rétention D1 sous le seuil",
+                "message": f"D1 à {d1}% (seuil {D1_MIN}%).",
+            })
+        # Chute de D1 vs snapshot précédent (>15% relatif)
+        if len(ev) >= 2:
+            prev = ev[-2].get("d1") or 0
+            if prev and d1 and (prev - d1) / prev > 0.15:
+                alerts.append({
+                    "code": "d1_drop", "severity": "warning",
+                    "title": "D1 en baisse",
+                    "message": f"D1 {d1}% vs {prev}% au dernier point (-{round((prev-d1)/prev*100)}%).",
+                })
+
+        # ---- RECOMMANDATIONS (actionnables) ----
+        if open_rate < ONB_MIN:
+            recs.append({
+                "severity": "high", "icon": "🚪",
+                "title": "Onboarding sous la barre",
+                "message": f"first_open→onboarding_step à {open_rate}%. Relance les inscrits qui n'ont pas commencé.",
+                "action": {"segment": "onboarding_incomplete",
+                           "title": "🚪 Reprends ton aventure",
+                           "body": "Ton premier conte t'attend — reviens vite le découvrir 🎧",
+                           "label": "Relancer onboarding abandonné"},
+            })
+        if d1 and d1 < 12:
+            recs.append({
+                "severity": "high", "icon": "📆",
+                "title": "Falaise D1",
+                "message": f"D1 à {d1}%. Une relance J1 des inscrits d'hier est le levier le plus direct.",
+                "action": {"segment": "new_yesterday",
+                           "title": "🌍 Un nouveau conte t'attend",
+                           "body": "Le prochain conte est débloqué ! Viens écouter l'histoire du jour 🎧",
+                           "label": "Relancer les inscrits d'hier (J1)"},
+            })
+        if paywall_reach < PAYWALL_MIN:
+            recs.append({
+                "severity": "medium", "icon": "🎁",
+                "title": "Paywall peu vu",
+                "message": f"paywall reach {paywall_reach}%. Pousse une offre aux free users convertibles.",
+                "action": {"segment": "convertible",
+                           "title": "🎁 Accès illimité à tous les contes",
+                           "body": "Débloque tous les contes d'Afrique, hors-ligne et sans limite ✨",
+                           "label": "Campagne convertibles (paywall)"},
+            })
+        if app_exc > APP_EXC_MAX:
+            recs.append({
+                "severity": "critical", "icon": "🐞",
+                "title": "Pic de crashs/exceptions",
+                "message": f"{app_exc} app_exception. Inspecte Crashlytics avant toute campagne d'acquisition.",
+                "link": "https://console.firebase.google.com/project/kumafire-7864b/crashlytics/app/android:com.kumacodex.kumacodex/issues",
+                "link_label": "Ouvrir Crashlytics",
+            })
+
+        return {"recommendations": recs, "alerts": alerts}
+
+    def maybe_send_alert_email(self, db, email_send_fn, alerts):
+        """Envoie un email admin si des alertes existent — OPT-IN via env
+        ANALYTICS_ALERT_EMAIL, avec dédup quotidien (1 mail/jour max, ou si la
+        signature d'alerte change). `email_send_fn(to, subject, html)`.
+        Retourne un dict d'état (sent/skipped) sans jamais lever.
+        """
+        to = os.environ.get("ANALYTICS_ALERT_EMAIL", "").strip()
+        if not to or not alerts or email_send_fn is None:
+            return {"sent": False, "reason": "no_recipient_or_no_alerts"}
+        try:
+            signature = ",".join(sorted(a.get("code", "") for a in alerts))
+            today = datetime.date.today().isoformat()
+            state_ref = db.collection("analytics_alerts").document("state") if db is not None else None
+            if state_ref is not None:
+                snap = state_ref.get()
+                st = snap.to_dict() if snap.exists else {}
+                if st.get("last_sent_date") == today and st.get("last_signature") == signature:
+                    return {"sent": False, "reason": "already_sent_today"}
+            lines = "".join(
+                f"<li><b>{a.get('title')}</b> — {a.get('message')} "
+                f"<i>({a.get('severity')})</i></li>" for a in alerts
+            )
+            subject = f"[Kuma] ⚠️ {len(alerts)} alerte(s) analytics ({today})"
+            html = (
+                f"<h2>Alertes analytics Kuma — {today}</h2><ul>{lines}</ul>"
+                f"<p>Voir le <a href='https://kuma-backoffice-116620596804.us-central1.run.app/analytics-report'>"
+                f"Rapport GA4</a> du backoffice.</p>"
+            )
+            ok, msg = email_send_fn(to, subject, html)
+            if ok and state_ref is not None:
+                state_ref.set({"last_sent_date": today, "last_signature": signature,
+                               "last_alerts": alerts})
+            return {"sent": bool(ok), "detail": msg, "to": to}
+        except Exception as e:
+            return {"sent": False, "reason": str(e)}
+
     def get_evolution(self, db, limit=90):
         """Return snapshots sorted by date ascending, for trend charts."""
         if db is None:

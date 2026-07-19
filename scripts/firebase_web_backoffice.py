@@ -14512,11 +14512,28 @@ Un avis nous aide enormement a faire decouvrir Kuma a d'autres familles !<br><br
             if report.get('available') and db is not None:
                 mgr.save_snapshot(db, report)
             evolution = mgr.get_evolution(db) if db is not None else []
+            insights = mgr.build_insights(report, evolution)
+
+            # Alerte email admin — OPT-IN via env ANALYTICS_ALERT_EMAIL (dédup quotidien).
+            # Déclenchée quotidiennement par le cron qui appelle cet endpoint.
+            alert_status = None
+            if insights.get('alerts') and EMAIL_AVAILABLE and os.environ.get('ANALYTICS_ALERT_EMAIL'):
+                try:
+                    from email_manager import get_email_manager
+                    em = get_email_manager()
+                    if em.is_configured():
+                        def _send(to, subject, html):
+                            return em.send_email(to, subject, html, {})
+                        alert_status = mgr.maybe_send_alert_email(db, _send, insights['alerts'])
+                except Exception as e:
+                    alert_status = {'sent': False, 'reason': str(e)}
 
             self.send_json_response({
                 'success': True,
                 'report': report,
-                'evolution': evolution
+                'evolution': evolution,
+                'insights': insights,
+                'alert_status': alert_status
             })
         except Exception as e:
             import traceback
@@ -14544,6 +14561,8 @@ Un avis nous aide enormement a faire decouvrir Kuma a d'autres familles !<br><br
             <div id="ar-loading" style="text-align:center;padding:40px;">Chargement du rapport GA4…</div>
             <div id="ar-setup" style="display:none;"></div>
             <div id="ar-content" style="display:none;">
+                <div id="ar-alerts"></div>
+                <div id="ar-reco"></div>
                 <div class="section"><h3>Top-line</h3>
                     <div id="ar-topline" style="display:grid;grid-template-columns:repeat(4,1fr);gap:20px;margin-bottom:30px;"></div>
                 </div>
@@ -14574,6 +14593,34 @@ Un avis nous aide enormement a faire decouvrir Kuma a d'autres familles !<br><br
             function arActions(inner){
                 return '<div style="margin-top:14px;padding-top:12px;border-top:1px dashed #ddd;">'+
                     '<div style="color:#666;font-size:0.82em;margin-bottom:4px;">Action → ouvre une campagne pré-remplie (tu valides les destinataires &amp; le texte, puis tu envoies) :</div>'+inner+'</div>';
+            }
+            function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+            function renderInsights(ins){
+                var alerts = ins.alerts||[], recs = ins.recommendations||[];
+                var sevColor = {critical:'#dc3545', warning:'#e8710a', high:'#dc3545', medium:'#e8710a', low:'#5f6368'};
+                var aHtml = '';
+                if(alerts.length){
+                    aHtml = '<div style="margin:0 0 18px;padding:14px 16px;border-radius:8px;background:#fdeded;border:1px solid #dc3545;">'+
+                        '<div style="font-weight:bold;color:#b3261e;margin-bottom:6px;">⚠️ '+alerts.length+' alerte(s) seuil</div>'+
+                        alerts.map(function(a){ return '<div style="color:#5f2120;font-size:0.92em;margin:3px 0;">• <b>'+esc(a.title)+'</b> — '+esc(a.message)+'</div>'; }).join('')+
+                        '</div>';
+                }
+                document.getElementById('ar-alerts').innerHTML = aHtml;
+                var rHtml = '';
+                if(recs.length){
+                    rHtml = '<div class="section"><h3>💡 Recommandations</h3><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;">'+
+                        recs.map(function(r){
+                            var act = '';
+                            if(r.action){ act = arBtn(r.action.segment, r.action.title, r.action.body, r.action.label||'Créer la campagne', '#1a73e8'); }
+                            else if(r.link){ act = linkBtn(r.link, r.link_label||'Ouvrir', '#dc3545'); }
+                            var bar = sevColor[r.severity]||'#5f6368';
+                            return '<div style="background:#fff;border:1px solid #e0e0e0;border-left:4px solid '+bar+';border-radius:10px;padding:16px;">'+
+                                '<div style="font-weight:bold;margin-bottom:4px;">'+(r.icon||'💡')+' '+esc(r.title)+'</div>'+
+                                '<div style="color:#555;font-size:0.9em;margin-bottom:8px;">'+esc(r.message)+'</div>'+act+'</div>';
+                        }).join('')+
+                        '</div></div>';
+                }
+                document.getElementById('ar-reco').innerHTML = rHtml;
             }
             function card(icon, value, label, sub){
                 return '<div style="background:#fff;border:1px solid #e0e0e0;border-radius:10px;padding:18px;text-align:center;">'+
@@ -14631,6 +14678,7 @@ Un avis nous aide enormement a faire decouvrir Kuma a d'autres familles !<br><br
                     }
                     document.getElementById('ar-content').style.display='block';
                     document.getElementById('ar-generated').textContent = 'généré '+(rep.generated_at||'');
+                    renderInsights(res.insights||{});
                     var cur=(rep.topline&&rep.topline.current)||{}, prev=(rep.topline&&rep.topline.previous)||{};
                     document.getElementById('ar-topline').innerHTML =
                         card('👥', cur.activeUsers||0, 'Utilisateurs actifs', delta(cur.activeUsers,prev.activeUsers))+
