@@ -735,6 +735,16 @@ class NotificationsV2APIHandlers:
 
                 users_ref = self.firebase_manager.db.collection('users')
                 docs = users_ref.stream()
+
+                # Jointure user_journeys (day_number, current_streak) — même source que /api/users,
+                # sinon les segments de progression lisent des champs absents et attrapent toute la base.
+                journeys_dict = {}
+                try:
+                    for jdoc in self.firebase_manager.db.collection('user_journeys').stream():
+                        journeys_dict[jdoc.id] = jdoc.to_dict() or {}
+                except Exception as e:
+                    logger.debug(f"user_journeys join failed: {e}")
+
                 users = []
                 for doc in docs:
                     user_data = doc.to_dict()
@@ -776,6 +786,27 @@ class NotificationsV2APIHandlers:
                     # Ajouter countriesCompleted count
                     countries = journey.get('countriesCompleted', [])
                     user_data['countriesCount'] = len(countries) if isinstance(countries, list) else 0
+
+                    # --- Progression (même logique que get_users_data / page Users) ---
+                    # storiesCompleted : compte les entrées de la map `progress` avec status == 'completed'.
+                    progress_map = user_data.get('progress', {})
+                    stories_completed = 0
+                    listening_seconds = 0
+                    if isinstance(progress_map, dict):
+                        for _sid, sp in progress_map.items():
+                            if isinstance(sp, dict):
+                                if sp.get('status') == 'completed':
+                                    stories_completed += 1
+                                lt = sp.get('listeningTime', 0)
+                                if isinstance(lt, (int, float)):
+                                    listening_seconds += lt
+                    user_data['storiesCompleted'] = stories_completed
+                    user_data['totalListeningMinutes'] = listening_seconds // 60 if listening_seconds else 0
+
+                    # dayNumber / currentStreak : collection user_journeys, repli sur le champ `journey` embarqué.
+                    jd = journeys_dict.get(doc.id, {}) if isinstance(journeys_dict.get(doc.id), dict) else {}
+                    user_data['dayNumber'] = jd.get('day_number') or (journey.get('day_number') if isinstance(journey, dict) else None) or 0
+                    user_data['currentStreak'] = jd.get('current_streak') or (journey.get('currentStreak') if isinstance(journey, dict) else None) or 0
 
                     users.append(user_data)
 

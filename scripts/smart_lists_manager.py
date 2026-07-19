@@ -416,12 +416,14 @@ class SmartListsManager:
             'new_yesterday': lambda u: self._days_since_created(u) == 1,
             'onboarding_incomplete': lambda u: self._days_since_created(u) >= 1 and self._get_stories_count(u) == 0,
 
-            # Progression
-            'beginners': lambda u: (u.get('dayNumber') or 0) <= 10,
-            'intermediate': lambda u: 11 <= (u.get('dayNumber') or 0) <= 30,
-            'advanced': lambda u: 31 <= (u.get('dayNumber') or 0) <= 53,
-            'completed': lambda u: (u.get('dayNumber') or 0) >= 54,
-            'near_completion': lambda u: 50 <= (u.get('dayNumber') or 0) <= 53,
+            # Progression — basée sur la progression réelle (max dayNumber / storiesCompleted),
+            # car dayNumber n'est pas synchronisé côté backend (toujours 0) → on retombe sur
+            # storiesCompleted, dérivé de la map `progress` (voir _get_progression).
+            'beginners': lambda u: self._get_progression(u) <= 10,
+            'intermediate': lambda u: 11 <= self._get_progression(u) <= 30,
+            'advanced': lambda u: 31 <= self._get_progression(u) <= 53,
+            'completed': lambda u: self._get_progression(u) >= 54,
+            'near_completion': lambda u: 50 <= self._get_progression(u) <= 53,
 
             # Streak
             'streak_at_risk': lambda u: self._is_streak_at_risk(u),
@@ -599,6 +601,16 @@ class SmartListsManager:
 
         stories_count = self._get_stories_count(user)
         return stories_count < 3
+
+    def _get_progression(self, user: Dict) -> int:
+        """Progression réelle de l'utilisateur = max(dayNumber, storiesCompleted).
+        dayNumber étant absent du backend (toujours 0), storiesCompleted (dérivé de la
+        map `progress`) pilote de fait la segmentation par niveau."""
+        try:
+            day = int(user.get('dayNumber') or 0)
+        except (TypeError, ValueError):
+            day = 0
+        return max(day, self._get_stories_count(user))
 
     def _get_stories_count(self, user: Dict) -> int:
         """Retourne le nombre d'histoires completees"""
