@@ -443,8 +443,9 @@ class GA4AnalyticsManager:
         signature d'alerte change). `email_send_fn(to, subject, html)`.
         Retourne un dict d'état (sent/skipped) sans jamais lever.
         """
-        to = os.environ.get("ANALYTICS_ALERT_EMAIL", "").strip()
-        if not to or not alerts or email_send_fn is None:
+        raw = os.environ.get("ANALYTICS_ALERT_EMAIL", "").strip()
+        recipients = [r.strip() for r in raw.replace(";", ",").split(",") if r.strip()]
+        if not recipients or not alerts or email_send_fn is None:
             return {"sent": False, "reason": "no_recipient_or_no_alerts"}
         try:
             signature = ",".join(sorted(a.get("code", "") for a in alerts))
@@ -465,11 +466,18 @@ class GA4AnalyticsManager:
                 f"<p>Voir le <a href='https://kuma-backoffice-116620596804.us-central1.run.app/analytics-report'>"
                 f"Rapport GA4</a> du backoffice.</p>"
             )
-            ok, msg = email_send_fn(to, subject, html)
-            if ok and state_ref is not None:
+            results, any_ok = {}, False
+            for rcpt in recipients:
+                try:
+                    ok, msg = email_send_fn(rcpt, subject, html)
+                except Exception as e:
+                    ok, msg = False, str(e)
+                results[rcpt] = {"ok": bool(ok), "msg": msg}
+                any_ok = any_ok or bool(ok)
+            if any_ok and state_ref is not None:
                 state_ref.set({"last_sent_date": today, "last_signature": signature,
                                "last_alerts": alerts})
-            return {"sent": bool(ok), "detail": msg, "to": to}
+            return {"sent": any_ok, "recipients": results}
         except Exception as e:
             return {"sent": False, "reason": str(e)}
 
