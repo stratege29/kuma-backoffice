@@ -96,6 +96,13 @@ except ImportError as e:
     print(f"⚠️ Module funnel non disponible: {e}")
     FUNNEL_AVAILABLE = False
 
+try:
+    from ga4_analytics import GA4AnalyticsManager
+    GA4_AVAILABLE = True
+except Exception as e:
+    print(f"⚠️ Module GA4 non disponible: {e}")
+    GA4_AVAILABLE = False
+
 class FirebaseManager:
     """Gestionnaire Firebase pour le backoffice"""
     
@@ -833,6 +840,41 @@ class FirebaseManager:
             print(f"❌ Erreur upload image badge: {e}")
             return None, str(e)
 
+    def upload_story_audio(self, object_name, audio_bytes):
+        """Upload un master MP3 de conte vers audio/{COUNTRY}_{NNN}.mp3 (public).
+        Retourne (public_url, error)."""
+        if not self.initialized:
+            return None, "Firebase non initialisé"
+        try:
+            bucket = storage.bucket('kumafire-7864b.firebasestorage.app')
+            blob = bucket.blob(object_name)
+            blob.cache_control = 'public,max-age=86400'
+            blob.upload_from_string(audio_bytes, content_type='audio/mpeg')
+            blob.make_public()
+            url = f"https://storage.googleapis.com/kumafire-7864b.firebasestorage.app/{object_name}"
+            print(f"✅ Audio conte uploadé: {url}")
+            return url, None
+        except Exception as e:
+            print(f"❌ Erreur upload audio conte: {e}")
+            return None, str(e)
+
+    def set_story_audio(self, story_id, audio_url, duration, audio_source='elevenlabs_pipeline_v1'):
+        """Attache l'audio généré au conte dans Firestore (merge)."""
+        if not self.initialized:
+            return False, "Firebase non initialisé"
+        try:
+            self.db.collection('stories').document(story_id).set({
+                'audioUrl': audio_url,
+                'estimatedAudioDuration': int(duration),
+                'audioSource': audio_source,
+                'metadata': {'updatedAt': firestore.SERVER_TIMESTAMP},
+            }, merge=True)
+            print(f"✅ Firestore patché: {story_id} audioUrl={audio_url}")
+            return True, None
+        except Exception as e:
+            print(f"❌ Erreur patch Firestore audio: {e}")
+            return False, str(e)
+
     def get_badges_stats(self):
         """Statistiques sur les badges"""
         badges = self.get_badges()
@@ -1292,8 +1334,14 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
             self.send_kpis_page()
         elif self.path == '/funnel':
             self.send_funnel_page()
+        elif self.path == '/analytics-report':
+            self.send_analytics_report_page()
+        elif self.path.startswith('/api/analytics-report'):
+            self.handle_get_analytics_report()
         elif self.path == '/social-queue':
             self.send_social_queue_page()
+        elif self.path == '/story-audio':
+            self.send_story_audio_page()
         elif self.path.startswith('/api/funnel/overview'):
             self.handle_funnel_overview()
         elif self.path.startswith('/api/funnel/'):
@@ -1596,6 +1644,8 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
 
         if self.path == '/api/stories':
             self.handle_create_story(post_data)
+        elif self.path == '/api/story-audio/generate':
+            self.handle_generate_story_audio(post_data)
         elif self.path.startswith('/api/stories/') and '/update' in self.path:
             story_id = self.path.split('/')[-2]
             self.handle_update_story(story_id, post_data)
@@ -11570,10 +11620,12 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                     <a href="/users" class="{'active' if page == 'users' else ''}">👥 Utilisateurs</a>
                     <a href="/notifications-v2" class="{'active' if page == 'notifications-v2' else ''}" style="background: linear-gradient(135deg, #FF6B35, #F7931E); color: white;">📢 Marketing</a>
                     <a href="/social-queue" class="{'active' if page == 'social-queue' else ''}" style="background: linear-gradient(135deg, #833AB4, #FD1D1D, #FCB045); color: white;">📱 Social</a>
+                    <a href="/story-audio" class="{'active' if page == 'story-audio' else ''}" style="background: linear-gradient(135deg, #0F9B8E, #14B8A6); color: white;">🎙️ Audio contes</a>
                     <a href="/mailing" class="{'active' if page == 'mailing' else ''}">📧 Emails</a>
                     <a href="/logs-analytics" class="{'active' if page == 'logs-analytics' else ''}">📊 Logs</a>
                     <a href="/kpis" class="{'active' if page == 'kpis' else ''}">📈 KPIs</a>
                     <a href="/funnel" class="{'active' if page == 'funnel' else ''}">📊 Funnel</a>
+                    <a href="/analytics-report" class="{'active' if page == 'analytics-report' else ''}" style="background: linear-gradient(135deg, #1a73e8, #34a853); color: white;">📉 Rapport GA4</a>
                     <a href="/security" class="{'active' if page == 'security' else ''}">🛡️ Sécurité</a>
                     <a href="/trash" class="{'active' if page == 'trash' else ''}">🗑️ Corbeille</a>
                     <a href="/test" class="{'active' if page == 'test' else ''}">🔧 Test</a>
@@ -12421,6 +12473,273 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_error_response(502, f"Échec publication Instagram: {body}")
         except Exception as e:
             print(f"❌ Erreur publish social post: {e}")
+            self.send_error_response(500, f'Erreur: {str(e)}')
+
+    def send_story_audio_page(self):
+        """Page de génération d'audio des contes (TTS ElevenLabs + habillage).
+        Filtres pays/tour/recherche, regroupement dynamique, sélection par groupe."""
+        import re as _re
+        from html import escape
+        import json as _json
+        import story_audio_gen as sag
+
+        stories = self.firebase_manager.get_stories()
+        def has_audio(s):
+            return bool((s.get('audioUrl') or '').strip())
+        def chars(s):
+            c = s.get('content') or {}
+            return len((c.get('fr') or c.get('en') or ''))
+        def tour_of(sid):
+            m = _re.match(r'^story_[a-z]{2}_(\d+)$', sid or '', _re.I)
+            return int(m.group(1)) if m else 0
+
+        without = [s for s in stories if not has_audio(s)]
+        withaud = sorted([s for s in stories if has_audio(s)], key=lambda s: s.get('id', ''))
+        total_chars = sum(chars(s) for s in without)
+
+        data = sorted([
+            {
+                'id': s.get('id', ''),
+                'title': s.get('title', '') or '',
+                'cc': s.get('countryCode', '') or '',
+                'country': s.get('country', '') or '',
+                'tour': tour_of(s.get('id', '')),
+                'chars': chars(s),
+            }
+            for s in without
+        ], key=lambda x: x['id'])
+        data_json = _json.dumps(data, ensure_ascii=False).replace('</', '<\\/')
+
+        can_edit, _msg = self.security_manager.can_perform_action('edit')
+        readonly_banner = '' if can_edit else (
+            '<div class="alert" style="background:#fff3cd;border:1px solid #f59e0b;color:#7a5b00;padding:12px;border-radius:8px;margin:10px 0">'
+            '🔒 <strong>Mode lecture seule</strong> — la génération est désactivée. '
+            'Va sur <a href="/security" style="color:#b45309;font-weight:700">🔒 Sécurité</a>, entre ton PIN pour passer en <strong>mode Admin</strong>, puis reviens ici.'
+            '</div>')
+
+        voice_opts = ''.join(
+            f'<option value="{k}">{escape(v["label"])}</option>' for k, v in sag.VOICES.items())
+        with_rows = ''.join(
+            f'<tr><td><code>{escape(s.get("id",""))}</code></td><td>{escape(s.get("title","") or "")}</td>'
+            f'<td>{escape(s.get("countryCode","") or "")}</td>'
+            f'<td>{int(s.get("estimatedAudioDuration") or 0)}s</td>'
+            f'<td>{escape(s.get("audioSource","") or "")}</td></tr>'
+            for s in withaud)
+        dis = ' disabled' if not can_edit else ''
+
+        content = f"""
+        <h2>🎙️ Génération audio des contes</h2>
+        {readonly_banner}
+        <div class="alert alert-info" style="background:#e0f2fe;border:1px solid #38bdf8;color:#075985;padding:12px;border-radius:8px;margin:10px 0">
+            Voix ElevenLabs clonées + intro (son du splash) + lit d'ambiance savane, normalisé −16 LUFS.
+            L'audio s'attache directement au conte dans Firestore (aucune release nécessaire).
+            <br><strong>Coût :</strong> ~1 crédit ElevenLabs / caractère (≈ {total_chars:,} crédits pour les {len(without)} contes sans audio).
+            Si le quota est épuisé, la génération renverra une erreur explicite.
+        </div>
+        <div class="actions-bar" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:12px 0">
+            <label>Voix : <select id="voice-select">{voice_opts}</select></label>
+            <label>Grouper par :
+                <select id="group-by">
+                    <option value="country" selected>Pays</option>
+                    <option value="tour">Tour</option>
+                    <option value="none">Aucun</option>
+                </select>
+            </label>
+            <select id="filter-country"></select>
+            <select id="filter-tour"></select>
+            <input id="search" type="text" placeholder="🔎 id ou titre" style="padding:4px 8px">
+            <button id="btn-select-all">Tout sélectionner</button>
+            <button id="btn-clear">Vider</button>
+            <button id="btn-gen-selected" style="background:#14B8A6;color:#fff;font-weight:700">▶️ Générer la sélection</button>
+            <span id="batch-progress" style="font-weight:600"></span>
+        </div>
+        <p style="color:#475569"><strong id="count-shown">{len(without)}</strong> / {len(without)} contes sans audio affichés</p>
+        <div id="sa-container"></div>
+
+        <details style="margin-top:20px">
+            <summary style="cursor:pointer;font-weight:700">✅ Avec audio — {len(withaud)}</summary>
+            <table class="data-table" style="width:100%;border-collapse:collapse;margin-top:8px">
+                <thead><tr><th>ID</th><th>Titre</th><th>Pays</th><th>Durée</th><th>Source</th></tr></thead>
+                <tbody>{with_rows}</tbody>
+            </table>
+        </details>
+
+        {self._story_audio_script(data_json, can_edit)}
+        """
+        self.send_html_response(self.get_base_html('story-audio', content))
+
+    def _story_audio_script(self, data_json, can_edit):
+        """JS : filtres, regroupement, sélection par groupe, génération séquentielle."""
+        head = ("<script>\n"
+                f"const STORIES = {data_json};\n"
+                f"const CAN_EDIT = {'true' if can_edit else 'false'};\n")
+        body = r"""
+        const RESULTS = {};
+        const $ = id => document.getElementById(id);
+        function esc(s){ return (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+        function fillFilters(){
+            const countries = [...new Set(STORIES.map(s=>s.cc))].sort();
+            const tours = [...new Set(STORIES.map(s=>s.tour))].sort((a,b)=>a-b);
+            $('filter-country').innerHTML = '<option value="">Tous les pays</option>' +
+                countries.map(c=>`<option value="${c}">${c}</option>`).join('');
+            $('filter-tour').innerHTML = '<option value="">Tous les tours</option>' +
+                tours.map(t=>`<option value="${t}">Tour ${t}</option>`).join('');
+        }
+        function filtered(){
+            const c = $('filter-country').value, t = $('filter-tour').value;
+            const q = ($('search').value||'').trim().toLowerCase();
+            return STORIES.filter(x =>
+                (!c || x.cc===c) &&
+                (t==='' || String(x.tour)===t) &&
+                (!q || x.id.toLowerCase().includes(q) || (x.title||'').toLowerCase().includes(q)));
+        }
+        function keyOf(x){
+            const g = $('group-by').value;
+            if (g==='country') return x.country ? (x.cc+' — '+x.country) : x.cc;
+            if (g==='tour') return 'Tour '+x.tour;
+            return 'Tous les contes';
+        }
+        function render(){
+            const list = filtered();
+            const map = new Map();
+            for (const x of list){ const k = keyOf(x); if(!map.has(k)) map.set(k, []); map.get(k).push(x); }
+            const groups = [...map.entries()].sort((a,b)=>a[0].localeCompare(b[0],'fr',{numeric:true}));
+            const dis = '';  // sélection/filtres toujours actifs ; seule la génération est gated (mode Admin)
+            let html = '';
+            groups.forEach((entry, gi) => {
+                const name = entry[0], rows = entry[1];
+                const chars = rows.reduce((n,r)=>n+r.chars,0);
+                html += '<div style="margin:14px 0;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden">';
+                html += '<div style="display:flex;align-items:center;gap:12px;background:#f1f5f9;padding:8px 12px">';
+                html += '<strong>'+esc(name)+'</strong><span style="color:#64748b">'+rows.length+' contes · '+chars.toLocaleString('fr')+' car.</span>';
+                html += '<button class="selgroup" data-group="g'+gi+'"'+dis+' style="margin-left:auto">Sélectionner le groupe</button>';
+                html += '</div>';
+                html += '<table class="data-table" style="width:100%;border-collapse:collapse"><thead><tr>'
+                     + '<th></th><th>ID</th><th>Titre</th><th>Pays</th><th>Tour</th><th>Car.</th><th>Statut</th><th>Action</th>'
+                     + '</tr></thead><tbody>';
+                for (const r of rows){
+                    const st = RESULTS[r.id] || '—';
+                    html += '<tr data-group="g'+gi+'">'
+                        + '<td><input type="checkbox" class="sel" value="'+r.id+'"'+dis+'></td>'
+                        + '<td><code>'+r.id+'</code></td>'
+                        + '<td>'+esc(r.title)+'</td>'
+                        + '<td>'+esc(r.cc)+'</td>'
+                        + '<td>'+r.tour+'</td>'
+                        + '<td>'+r.chars+'</td>'
+                        + '<td class="status" id="st-'+r.id+'">'+st+'</td>'
+                        + '<td><button class="btn-gen" data-id="'+r.id+'"'+dis+'>Générer</button></td>'
+                        + '</tr>';
+                }
+                html += '</tbody></table></div>';
+            });
+            $('sa-container').innerHTML = html || '<p>Aucun conte ne correspond au filtre.</p>';
+            $('count-shown').textContent = list.length;
+        }
+        async function genOne(id){
+            if (!CAN_EDIT){
+                RESULTS[id] = '🔒 Mode Admin requis';
+                const c0 = $('st-'+id); if (c0) c0.innerHTML = RESULTS[id];
+                return false;
+            }
+            RESULTS[id] = '⏳ génération…';
+            const cell = $('st-'+id); if (cell) cell.innerHTML = RESULTS[id];
+            try {
+                const res = await fetch('/api/story-audio/generate', {
+                    method:'POST', headers:{'Content-Type':'application/json'},
+                    body: JSON.stringify({storyId:id, voice: $('voice-select').value})
+                });
+                const data = await res.json();
+                RESULTS[id] = (res.ok && data.success) ? ('✅ '+data.duration+'s')
+                    : ('❌ '+(data.error || ('HTTP '+res.status)));
+            } catch(e){ RESULTS[id] = '❌ '+e.message; }
+            const c2 = $('st-'+id); if (c2) c2.innerHTML = RESULTS[id];
+            return RESULTS[id].startsWith('✅');
+        }
+
+        $('sa-container').addEventListener('click', e => {
+            const gen = e.target.closest('.btn-gen');
+            if (gen){ genOne(gen.dataset.id); return; }
+            const sg = e.target.closest('.selgroup');
+            if (sg){ document.querySelectorAll('tr[data-group="'+sg.dataset.group+'"] .sel:not(:disabled)').forEach(c=>c.checked=true); }
+        });
+        ['group-by','filter-country','filter-tour'].forEach(id=>$(id).addEventListener('change', render));
+        $('search').addEventListener('input', render);
+        $('btn-select-all').addEventListener('click', ()=>document.querySelectorAll('#sa-container .sel:not(:disabled)').forEach(c=>c.checked=true));
+        $('btn-clear').addEventListener('click', ()=>document.querySelectorAll('#sa-container .sel').forEach(c=>c.checked=false));
+        $('btn-gen-selected').addEventListener('click', async ()=>{
+            const ids = Array.from(document.querySelectorAll('#sa-container .sel:checked')).map(c=>c.value);
+            if (!ids.length){ alert('Sélectionne au moins un conte.'); return; }
+            if (!CAN_EDIT){ alert('Passe en mode Admin (page 🔒 Sécurité → ton PIN) pour lancer la génération.'); return; }
+            const prog = $('batch-progress'), btn = $('btn-gen-selected');
+            btn.disabled = true; let ok=0, ko=0;
+            for (let i=0;i<ids.length;i++){
+                prog.textContent = 'Génération '+(i+1)+'/'+ids.length+'…';
+                const success = await genOne(ids[i]);
+                success ? ok++ : ko++;
+                if (!success && (RESULTS[ids[i]]||'').includes('Quota')){
+                    prog.textContent = '⛔ Quota ElevenLabs épuisé — arrêt ('+ok+' faits).';
+                    btn.disabled = false; return;
+                }
+            }
+            prog.textContent = 'Terminé : '+ok+' ✅ / '+ko+' ❌';
+            btn.disabled = false;
+        });
+
+        fillFilters();
+        render();
+        </script>
+        """
+        return head + body
+
+    def handle_generate_story_audio(self, post_data):
+        """Génère et publie l'audio d'un conte (TTS ElevenLabs + mix + Firestore)."""
+        import story_audio_gen as sag
+        try:
+            can_edit, message = self.security_manager.can_perform_action('edit')
+            if not can_edit:
+                self.send_error_response(403, message)
+                return
+            self.security_manager.update_activity()
+
+            try:
+                payload = json.loads(post_data)
+            except (ValueError, TypeError):
+                form = urllib.parse.parse_qs(post_data)
+                payload = {k: v[0] for k, v in form.items()}
+            story_id = (payload.get('storyId') or '').strip()
+            voice = (payload.get('voice') or 'A').strip()
+            if not story_id:
+                self.send_error_response(400, 'storyId manquant')
+                return
+
+            story = self.firebase_manager.get_story_by_id(story_id)
+            if not story:
+                self.send_error_response(404, f'Conte introuvable: {story_id}')
+                return
+            content = story.get('content') or {}
+            text = content.get('fr') or content.get('en') or ''
+
+            audio_bytes, duration, n_chunks = sag.generate_story_audio(text, voice)
+            obj = sag.object_name(story_id)
+            url, err = self.firebase_manager.upload_story_audio(obj, audio_bytes)
+            if err:
+                self.send_error_response(500, f'Upload échoué: {err}')
+                return
+            ok, err = self.firebase_manager.set_story_audio(story_id, url, duration)
+            if not ok:
+                self.send_error_response(500, f'Firestore échoué: {err}')
+                return
+            self.send_json_response({
+                'success': True, 'storyId': story_id, 'audioUrl': url,
+                'duration': duration, 'chunks': n_chunks, 'voice': voice,
+            })
+        except sag.QuotaExceeded:
+            self.send_error_response(402, 'Quota ElevenLabs épuisé — recharge des crédits nécessaire.')
+        except sag.GenerationError as e:
+            self.send_error_response(500, f'Génération: {str(e)}')
+        except Exception as e:
+            print(f"❌ Erreur génération audio conte: {e}")
             self.send_error_response(500, f'Erreur: {str(e)}')
 
     def send_html_response(self, html):
@@ -14165,6 +14484,187 @@ Un avis nous aide enormement a faire decouvrir Kuma a d'autres familles !<br><br
             </script>
         """)
         self.send_html_response(html)
+
+    def handle_get_analytics_report(self):
+        """API: Rapport GA4 (top-line, funnel onboarding, retention) + evolution."""
+        try:
+            query = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            days = int(query.get('days', [28])[0])
+
+            if not GA4_AVAILABLE:
+                self.send_json_response({
+                    'success': True,
+                    'report': {'available': False,
+                               'reason': "Module GA4 non chargé (google-analytics-data manquant)"},
+                    'evolution': []
+                })
+                return
+
+            # Reuse a single manager across requests (client init is not free).
+            mgr = getattr(KumaFirebaseHTTPHandler, '_ga4_mgr', None)
+            if mgr is None:
+                mgr = GA4AnalyticsManager()
+                KumaFirebaseHTTPHandler._ga4_mgr = mgr
+
+            report = mgr.get_report(days)
+
+            db = self.firebase_manager.db if self.firebase_manager.initialized else None
+            if report.get('available') and db is not None:
+                mgr.save_snapshot(db, report)
+            evolution = mgr.get_evolution(db) if db is not None else []
+
+            self.send_json_response({
+                'success': True,
+                'report': report,
+                'evolution': evolution
+            })
+        except Exception as e:
+            import traceback
+            self.send_json_response({'success': False, 'error': str(e),
+                                     'traceback': traceback.format_exc()})
+
+    def send_analytics_report_page(self):
+        """Page Rapport GA4 + Evolution (source: GA4 Data API)."""
+        content = """
+            <h2>📉 Rapport GA4 &amp; Évolution</h2>
+            <p style="color:#666;margin-top:-8px;">Source : API GA4 (propriété kumafire-7864b). Un instantané daté est enregistré à chaque chargement → l'évolution se construit dans le temps.</p>
+
+            <div style="margin:15px 0;">
+                <label>Période :
+                    <select id="ar-days" onchange="loadAnalyticsReport()">
+                        <option value="7">7 jours</option>
+                        <option value="28" selected>28 jours</option>
+                        <option value="90">90 jours</option>
+                    </select>
+                </label>
+                <button onclick="loadAnalyticsReport()" style="margin-left:10px;padding:6px 14px;background:#1a73e8;color:#fff;border:none;border-radius:5px;cursor:pointer;">↻ Rafraîchir</button>
+                <span id="ar-generated" style="color:#999;margin-left:10px;font-size:0.85em;"></span>
+            </div>
+
+            <div id="ar-loading" style="text-align:center;padding:40px;">Chargement du rapport GA4…</div>
+            <div id="ar-setup" style="display:none;"></div>
+            <div id="ar-content" style="display:none;">
+                <div class="section"><h3>Top-line</h3>
+                    <div id="ar-topline" style="display:grid;grid-template-columns:repeat(4,1fr);gap:20px;margin-bottom:30px;"></div>
+                </div>
+                <div class="section"><h3>Funnel d'onboarding</h3>
+                    <div id="ar-funnel"></div>
+                </div>
+                <div class="section"><h3>Rétention (cohortes quotidiennes cumulées)</h3>
+                    <div id="ar-retention" style="display:grid;grid-template-columns:repeat(4,1fr);gap:20px;"></div>
+                </div>
+                <div class="section"><h3>Événements clés</h3>
+                    <div id="ar-events"></div>
+                </div>
+                <div class="section"><h3>Évolution</h3>
+                    <p style="color:#666;font-size:0.85em;">Un point par jour d'exécution du rapport (snapshots Firestore <code>analytics_snapshots</code>).</p>
+                    <div id="ar-evolution"></div>
+                </div>
+            </div>
+
+            <script>
+            function pctColor(v, good){ return v >= good ? '#28a745' : (v >= good*0.6 ? '#ffc107' : '#dc3545'); }
+            function card(icon, value, label, sub){
+                return '<div style="background:#fff;border:1px solid #e0e0e0;border-radius:10px;padding:18px;text-align:center;">'+
+                    '<div style="font-size:1.6em;">'+icon+'</div>'+
+                    '<div style="font-size:1.9em;font-weight:bold;">'+value+'</div>'+
+                    '<div style="color:#555;">'+label+'</div>'+
+                    (sub?'<div style="color:#999;font-size:0.82em;margin-top:4px;">'+sub+'</div>':'')+'</div>';
+            }
+            function delta(cur, prev){
+                if(!prev) return '';
+                var d = Math.round((cur-prev)/prev*100);
+                var c = d>=0?'#28a745':'#dc3545';
+                return '<span style="color:'+c+';">'+(d>=0?'▲':'▼')+' '+Math.abs(d)+'%</span>';
+            }
+            function funnelBar(label, users, base, rate){
+                var w = base? Math.max(2, Math.round(users/base*100)) : 0;
+                return '<div style="margin-bottom:12px;">'+
+                    '<div style="display:flex;justify-content:space-between;"><span>'+label+'</span>'+
+                    '<span><b>'+users+'</b> '+(rate!=null?'<span style="color:#666;">('+rate+'%)</span>':'')+'</span></div>'+
+                    '<div style="background:#e9ecef;border-radius:5px;height:22px;overflow:hidden;"><div style="background:#1a73e8;height:100%;width:'+w+'%;"></div></div></div>';
+            }
+            function lineChart(points, key, color, label){
+                if(!points.length) return '';
+                var vals = points.map(function(p){return +(p[key]||0);});
+                var max = Math.max.apply(null, vals.concat([1]));
+                var W=560,H=140,pad=24;
+                var step = points.length>1 ? (W-2*pad)/(points.length-1) : 0;
+                var d = vals.map(function(v,i){ var x=pad+i*step; var y=H-pad-(v/max)*(H-2*pad); return (i?'L':'M')+x.toFixed(1)+','+y.toFixed(1);}).join(' ');
+                var dots = vals.map(function(v,i){var x=pad+i*step;var y=H-pad-(v/max)*(H-2*pad);return '<circle cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="2.5" fill="'+color+'"><title>'+points[i].date+': '+v+'</title></circle>';}).join('');
+                return '<div style="margin:10px 0;"><div style="font-size:0.9em;color:#333;margin-bottom:4px;">'+label+' <span style="color:#999;">(max '+max+')</span></div>'+
+                    '<svg width="'+W+'" height="'+H+'" style="max-width:100%;border:1px solid #eee;border-radius:6px;background:#fafafa;">'+
+                    '<path d="'+d+'" fill="none" stroke="'+color+'" stroke-width="2"/>'+dots+'</svg></div>';
+            }
+            function loadAnalyticsReport(){
+                var days = document.getElementById('ar-days').value;
+                document.getElementById('ar-loading').style.display='block';
+                document.getElementById('ar-content').style.display='none';
+                document.getElementById('ar-setup').style.display='none';
+                fetch('/api/analytics-report?days='+days).then(function(r){return r.json();}).then(function(res){
+                    document.getElementById('ar-loading').style.display='none';
+                    var rep = res.report||{};
+                    if(!res.success){ document.getElementById('ar-setup').style.display='block';
+                        document.getElementById('ar-setup').innerHTML='<div class="alert alert-warning">Erreur: '+(res.error||'inconnue')+'</div>'; return; }
+                    if(!rep.available){
+                        var sa = rep.service_account||'firebase-adminsdk-fbsvc@kumafire-7864b.iam.gserviceaccount.com';
+                        document.getElementById('ar-setup').style.display='block';
+                        document.getElementById('ar-setup').innerHTML =
+                          '<div class="alert alert-warning"><b>GA4 pas encore accessible.</b><br>Raison: '+(rep.reason||'?')+
+                          '<br><br><b>À faire une fois :</b><ol>'+
+                          '<li>GA4 → Admin → <i>Gestion de l\\'accès à la propriété</i> → ajouter <code>'+sa+'</code> en rôle <b>Lecteur</b>.</li>'+
+                          '<li>Console GCP (projet kumafire-7864b) → activer l\\'API <b>Google Analytics Data</b>.</li>'+
+                          '<li>Vérifier que <code>google-analytics-data</code> est déployé (requirements.txt).</li>'+
+                          '</ol>Propriété visée: '+(rep.property_id||'473654868')+'</div>';
+                        return;
+                    }
+                    document.getElementById('ar-content').style.display='block';
+                    document.getElementById('ar-generated').textContent = 'généré '+(rep.generated_at||'');
+                    var cur=(rep.topline&&rep.topline.current)||{}, prev=(rep.topline&&rep.topline.previous)||{};
+                    document.getElementById('ar-topline').innerHTML =
+                        card('👥', cur.activeUsers||0, 'Utilisateurs actifs', delta(cur.activeUsers,prev.activeUsers))+
+                        card('📲', cur.newUsers||0, 'Nouveaux utilisateurs', delta(cur.newUsers,prev.newUsers))+
+                        card('⚡', cur.eventCount||0, 'Événements', delta(cur.eventCount,prev.eventCount))+
+                        card('🗓️', rep.period_days+'j', 'Période', 'vs période précédente');
+                    var f=rep.funnel||{}, r=f.rates||{};
+                    document.getElementById('ar-funnel').innerHTML =
+                        funnelBar('first_open', f.first_open||0, f.first_open||1, 100)+
+                        funnelBar('onboarding_step', f.onboarding_step||0, f.first_open||1, r.open_to_onboarding)+
+                        funnelBar('onboarding_completed', f.onboarding_completed||0, f.first_open||1, r.onboarding_completion)+
+                        '<div style="margin:14px 0 6px;color:#666;font-size:0.85em;">Reach sur la période (non séquentiel — inclut des utilisateurs onboardés avant) :</div>'+
+                        funnelBar('engagement conte (reach)', f.story_engagement||0, f.first_open||1, r.story_reach)+
+                        funnelBar('paywall_shown (reach)', f.paywall_shown||0, f.first_open||1, r.paywall_reach);
+                    var ret=rep.retention||{};
+                    if(ret.error){ document.getElementById('ar-retention').innerHTML='<div class="alert alert-info">Rétention indisponible: '+ret.error+'</div>'; }
+                    else{ document.getElementById('ar-retention').innerHTML =
+                        card('①', (ret.d1||0)+'%', 'D1 rétention', (ret.d0_users||0)+' users J0')+
+                        card('③', (ret.d3||0)+'%', 'D3 rétention','')+
+                        card('⑦', (ret.d7||0)+'%', 'D7 rétention','')+
+                        card('📊', ret.d0_users||0, 'Cohorte J0','28j glissants'); }
+                    var ke=rep.key_events||{};
+                    var rows = Object.keys(ke).map(function(k){ return '<tr><td>'+k+'</td><td style="text-align:right;">'+(ke[k].users||0)+'</td><td style="text-align:right;">'+(ke[k].count||0)+'</td></tr>'; }).join('');
+                    document.getElementById('ar-events').innerHTML =
+                        '<table style="width:100%;border-collapse:collapse;"><thead><tr style="border-bottom:2px solid #ddd;"><th style="text-align:left;">Événement</th><th style="text-align:right;">Utilisateurs</th><th style="text-align:right;">Occurrences</th></tr></thead><tbody>'+rows+'</tbody></table>';
+                    var ev=res.evolution||[];
+                    if(ev.length<2){ document.getElementById('ar-evolution').innerHTML='<div class="alert alert-info">Pas encore assez d\\'historique — l\\'évolution apparaîtra après quelques jours de snapshots (1 point/jour). Snapshots enregistrés: '+ev.length+'.</div>'; }
+                    else{ document.getElementById('ar-evolution').innerHTML =
+                        lineChart(ev,'d1','#764ba2','D1 rétention (%)')+
+                        lineChart(ev,'open_to_onboarding_rate','#1a73e8','first_open → onboarding_step (%)')+
+                        lineChart(ev,'new_users','#11998e','Nouveaux utilisateurs')+
+                        lineChart(ev,'paywall_shown_users','#f5576c','paywall_shown (utilisateurs)')+
+                        lineChart(ev,'app_exception_count','#dc3545','app_exception (occurrences)'); }
+                }).catch(function(e){ document.getElementById('ar-loading').style.display='none';
+                    document.getElementById('ar-setup').style.display='block';
+                    document.getElementById('ar-setup').innerHTML='<div class="alert alert-warning">Erreur réseau: '+e+'</div>'; });
+            }
+            loadAnalyticsReport();
+            </script>
+        """
+        html = self.get_base_html('analytics-report', content)
+        self.send_response(200)
+        self.send_header('Content-type', 'text/html; charset=utf-8')
+        self.end_headers()
+        self.wfile.write(html.encode('utf-8'))
 
     def handle_funnel_overview(self):
         """API: Retourne les donnees du funnel"""

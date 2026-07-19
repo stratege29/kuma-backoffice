@@ -1,5 +1,15 @@
 firebase-admin>=6.2.0
 google-cloud-firestore>=2.0.0
 google-cloud-storage>=2.0.0
+google-api-python-client>=2.100.0
+google-auth>=2.23.0
+google-analytics-data>=0.18.0
 Pillow>=10.0.0
 requests>=2.31.0
+Flask>=3.0.0
+pytz>=2024.1
+streamlit>=1.30.0
+plotly>=5.18.0
+pandas>=2.0.0
+PyJWT>=2.8.0
+cryptography>=41.0.0
