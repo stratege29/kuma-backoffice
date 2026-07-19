@@ -14564,6 +14564,17 @@ Un avis nous aide enormement a faire decouvrir Kuma a d'autres familles !<br><br
 
             <script>
             function pctColor(v, good){ return v >= good ? '#28a745' : (v >= good*0.6 ? '#ffc107' : '#dc3545'); }
+            function arBtn(seg, title, body, label, color){
+                var u = '/notifications-v2?source=analytics&segment='+encodeURIComponent(seg)+'&title='+encodeURIComponent(title)+'&body='+encodeURIComponent(body);
+                return '<a href="'+u+'" style="display:inline-block;margin:6px 8px 0 0;padding:8px 14px;background:'+(color||'#1a73e8')+';color:#fff;border-radius:6px;text-decoration:none;font-size:0.9em;">'+label+'</a>';
+            }
+            function linkBtn(url, label, color){
+                return '<a href="'+url+'" target="_blank" rel="noopener" style="display:inline-block;margin:6px 8px 0 0;padding:8px 14px;background:'+(color||'#5f6368')+';color:#fff;border-radius:6px;text-decoration:none;font-size:0.9em;">'+label+'</a>';
+            }
+            function arActions(inner){
+                return '<div style="margin-top:14px;padding-top:12px;border-top:1px dashed #ddd;">'+
+                    '<div style="color:#666;font-size:0.82em;margin-bottom:4px;">Action → ouvre une campagne pré-remplie (tu valides les destinataires &amp; le texte, puis tu envoies) :</div>'+inner+'</div>';
+            }
             function card(icon, value, label, sub){
                 return '<div style="background:#fff;border:1px solid #e0e0e0;border-radius:10px;padding:18px;text-align:center;">'+
                     '<div style="font-size:1.6em;">'+icon+'</div>'+
@@ -14633,7 +14644,10 @@ Un avis nous aide enormement a faire decouvrir Kuma a d'autres familles !<br><br
                         funnelBar('onboarding_completed', f.onboarding_completed||0, f.first_open||1, r.onboarding_completion)+
                         '<div style="margin:14px 0 6px;color:#666;font-size:0.85em;">Reach sur la période (non séquentiel — inclut des utilisateurs onboardés avant) :</div>'+
                         funnelBar('engagement conte (reach)', f.story_engagement||0, f.first_open||1, r.story_reach)+
-                        funnelBar('paywall_shown (reach)', f.paywall_shown||0, f.first_open||1, r.paywall_reach);
+                        funnelBar('paywall_shown (reach)', f.paywall_shown||0, f.first_open||1, r.paywall_reach)+
+                        arActions(
+                            arBtn('onboarding_incomplete', "🚪 Reprends ton aventure", "Ton premier conte t'attend — reviens vite le découvrir 🎧", 'Relancer onboarding abandonné')
+                        );
                     var ret=rep.retention||{};
                     if(ret.error){ document.getElementById('ar-retention').innerHTML='<div class="alert alert-info">Rétention indisponible: '+ret.error+'</div>'; }
                     else{ document.getElementById('ar-retention').innerHTML =
@@ -14641,10 +14655,21 @@ Un avis nous aide enormement a faire decouvrir Kuma a d'autres familles !<br><br
                         card('③', (ret.d3||0)+'%', 'D3 rétention','')+
                         card('⑦', (ret.d7||0)+'%', 'D7 rétention','')+
                         card('📊', ret.d0_users||0, 'Cohorte J0','28j glissants'); }
+                    var arDom = document.getElementById('ar-retention');
+                    if(arDom){ arDom.insertAdjacentHTML('afterend', arActions(
+                        arBtn('new_yesterday', "🌍 Un nouveau conte t'attend", "Le prochain conte est débloqué ! Viens écouter l'histoire du jour 🎧", 'Relancer les inscrits d\\'hier (J1)', '#11998e')+
+                        arBtn('inactive_7d', "🔥 Ta flamme t'attend", "Ça fait un moment ! Reviens écouter un nouveau conte africain 🎧", 'Win-back inactifs 7-14j', '#764ba2')+
+                        arBtn('churn_risk', "💛 Tu nous manques", "Un nouveau conte t'attend pour reprendre ton voyage 🎧", 'Réactiver risque de churn', '#f5576c')
+                    )); }
                     var ke=rep.key_events||{};
                     var rows = Object.keys(ke).map(function(k){ return '<tr><td>'+k+'</td><td style="text-align:right;">'+(ke[k].users||0)+'</td><td style="text-align:right;">'+(ke[k].count||0)+'</td></tr>'; }).join('');
+                    var crashUrl = 'https://console.firebase.google.com/project/kumafire-7864b/crashlytics/app/android:com.kumacodex.kumacodex/issues';
                     document.getElementById('ar-events').innerHTML =
-                        '<table style="width:100%;border-collapse:collapse;"><thead><tr style="border-bottom:2px solid #ddd;"><th style="text-align:left;">Événement</th><th style="text-align:right;">Utilisateurs</th><th style="text-align:right;">Occurrences</th></tr></thead><tbody>'+rows+'</tbody></table>';
+                        '<table style="width:100%;border-collapse:collapse;"><thead><tr style="border-bottom:2px solid #ddd;"><th style="text-align:left;">Événement</th><th style="text-align:right;">Utilisateurs</th><th style="text-align:right;">Occurrences</th></tr></thead><tbody>'+rows+'</tbody></table>'+
+                        arActions(
+                            arBtn('convertible', "🎁 Accès illimité à tous les contes", "Débloque tous les contes d'Afrique, hors-ligne et sans limite ✨", 'Campagne convertibles (paywall)', '#ffc107')+
+                            linkBtn(crashUrl, '🐞 Ouvrir Crashlytics ('+((ke.app_exception||{}).count||0)+' app_exception)', '#dc3545')
+                        );
                     var ev=res.evolution||[];
                     if(ev.length<2){ document.getElementById('ar-evolution').innerHTML='<div class="alert alert-info">Pas encore assez d\\'historique — l\\'évolution apparaîtra après quelques jours de snapshots (1 point/jour). Snapshots enregistrés: '+ev.length+'.</div>'; }
                     else{ document.getElementById('ar-evolution').innerHTML =
