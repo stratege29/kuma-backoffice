@@ -1346,7 +1346,7 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
             self.handle_funnel_overview()
         elif self.path.startswith('/api/funnel/'):
             self.handle_funnel_api()
-        elif self.path == '/notifications-v2':
+        elif self.path == '/notifications-v2' or self.path.startswith('/notifications-v2?'):
             self.send_notifications_v2_page()
         elif self.path == '/api/notifications-v2/templates':
             self.handle_get_templates_v2()
