@@ -1281,6 +1281,213 @@ class FirebaseManager:
             print(f"❌ Erreur delete_social_post {post_id}: {e}")
             return False
 
+MAP_ELEMENTS_PAGE_HTML = r'''
+<style>
+  .me-wrap{display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap}
+  .me-left{flex:1 1 420px;min-width:320px}
+  .me-hint{font-size:13px;color:#555;margin-bottom:8px}
+  .me-canvas{position:relative;display:inline-block;border-radius:10px;overflow:hidden;border:1px solid #cbd5e1;background:#bfe4f7;width:100%}
+  .me-canvas img{display:block;width:100%;height:auto;user-select:none;-webkit-user-drag:none}
+  #meMarkers{position:absolute;inset:0}
+  .me-marker{position:absolute;transform:translate(-50%,-50%);font-size:26px;cursor:grab;line-height:1;
+    filter:drop-shadow(0 1px 2px rgba(0,0,0,.4));touch-action:none}
+  .me-marker.sel{outline:3px solid #ff8a00;outline-offset:2px;border-radius:50%;background:rgba(255,255,255,.5)}
+  .me-marker.pending{opacity:.85}
+  .me-props{flex:1 1 300px;min-width:280px;background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px}
+  .me-props h3{margin:0 0 10px;font-size:15px}
+  .me-props label{display:block;font-size:11px;font-weight:600;color:#64748b;margin:10px 0 4px;text-transform:uppercase}
+  .me-props input,.me-props select,.me-props textarea{width:100%;box-sizing:border-box;padding:7px 9px;border:1px solid #d1d5db;border-radius:7px;font-size:13px}
+  .me-row{display:flex;gap:8px}.me-row>div{flex:1}
+  .me-emojis{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
+  .me-emojis button{font-size:18px;padding:2px 6px;border:1px solid #e2e8f0;border-radius:6px;background:#f8fafc;cursor:pointer}
+  .me-check{display:flex;align-items:center;gap:8px;margin-top:12px;font-size:13px}
+  .me-check input{width:auto}
+  .me-actions{display:flex;gap:8px;margin-top:14px}
+  .me-btn{border:none;border-radius:8px;padding:9px 12px;font-size:13px;font-weight:600;cursor:pointer;color:#fff}
+  .me-save{background:#ff8a00;flex:1}.me-del{background:#dc2626}.me-new{background:#0ea5e9}
+  .me-note{font-size:11px;color:#94a3b8;margin-top:10px}
+  .me-empty{color:#94a3b8;font-size:13px;padding:20px 0;text-align:center}
+</style>
+<div class="me-wrap">
+  <div class="me-left">
+    <div class="me-hint">👉 Clique sur la carte pour placer un élément • glisse un marqueur pour le déplacer • clique un marqueur pour l'éditer.
+      <button class="me-btn me-new" style="color:#fff;padding:5px 10px" onclick="meNew()">＋ Nouvel élément</button></div>
+    <div class="me-canvas" id="meCanvas">
+      <img id="meImg" src="/assets/map-base.png" alt="Carte Afrique" draggable="false">
+      <svg id="mePath" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible"></svg>
+      <div id="meMarkers"></div>
+    </div>
+    <div class="me-note">Position enregistrée en coordonnées normalisées (0–1), comme les pays. Écrit dans Firestore <code>map_elements</code>, lu par l'app.</div>
+  </div>
+  <div class="me-props" id="meProps">
+    <h3 id="meTitle">Aucun élément sélectionné</h3>
+    <div id="meForm" style="display:none">
+      <label>Nom (admin)</label>
+      <input id="f_label" placeholder="Ex : Lion de la savane">
+      <label>Type</label>
+      <select id="f_type" onchange="meTypeChanged()">
+        <option value="decor">🌴 Décor</option>
+        <option value="fish">🐟 Poisson</option>
+        <option value="bird">🐦 Oiseau</option>
+        <option value="car">🚗 Voiture</option>
+        <option value="animal">🦁 Animal</option>
+        <option value="boat">⛵ Bateau</option>
+      </select>
+      <label>Emoji</label>
+      <input id="f_emoji" value="🌴" maxlength="4">
+      <div class="me-emojis" id="meEmojis"></div>
+      <div class="me-row">
+        <div><label>x</label><input id="f_x" type="number" step="0.001" min="0" max="1" oninput="meFormToSel()"></div>
+        <div><label>y</label><input id="f_y" type="number" step="0.001" min="0" max="1" oninput="meFormToSel()"></div>
+        <div><label>Taille</label><input id="f_scale" type="number" step="0.1" min="0.2" max="5" value="1"></div>
+      </div>
+      <label>Animation (mode run)</label>
+      <select id="f_anim" onchange="meAnimChanged()">
+        <option value="bob">bob — statique animé</option>
+        <option value="jump">jump — saute (eau)</option>
+        <option value="fly">fly — traverse</option>
+        <option value="drive">drive — suit une route</option>
+        <option value="wander">wander — déambule</option>
+      </select>
+      <div class="me-row" style="margin-top:6px">
+        <div><label>Vitesse</label><input id="f_speed" type="number" step="0.1" min="0.1" max="10" value="1"></div>
+        <div><label>Amplitude</label><input id="f_amp" type="number" step="0.1" min="0" max="10" value="1"></div>
+        <div><label>Période (s)</label><input id="f_period" type="number" step="1" min="1" max="120" value="24"></div>
+      </div>
+      <div id="meRouteBox" style="display:none;margin-top:8px;background:#f0f9ff;border:1px dashed #7dd3fc;border-radius:8px;padding:8px">
+        <div style="font-size:12px;color:#0369a1;margin-bottom:6px">Route <span id="meRouteCount">(0 point)</span> — pour drive/fly. Active le tracé puis clique sur la carte.</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button type="button" class="me-btn me-new" id="meRouteToggle" style="padding:5px 9px" onclick="meRouteToggleFn()">✏️ Tracer</button>
+          <button type="button" class="me-btn" style="background:#64748b;padding:5px 9px" onclick="meRouteUndo()">↩︎ Annuler</button>
+          <button type="button" class="me-btn me-del" style="padding:5px 9px" onclick="meRouteClear()">🗑 Effacer</button>
+        </div>
+      </div>
+      <div class="me-check"><input type="checkbox" id="f_water"><label style="margin:0">Sur l'eau (poisson/bateau)</label></div>
+      <div class="me-check"><input type="checkbox" id="f_interactive" checked onchange="meTogglePopup()"><label style="margin:0">Interactif (popup au toucher)</label></div>
+      <div id="mePopup">
+        <label>Popup — Titre</label>
+        <input id="f_ptitle" placeholder="Ex : Le lion">
+        <label>Popup — Texte</label>
+        <textarea id="f_pbody" rows="3" placeholder="Petit texte enfant…"></textarea>
+      </div>
+      <div class="me-check"><input type="checkbox" id="f_enabled" checked><label style="margin:0">Activé (visible dans l'app)</label></div>
+      <div class="me-actions">
+        <button class="me-btn me-del" id="meDelBtn" onclick="meDelete()">Supprimer</button>
+        <button class="me-btn me-save" onclick="meSave()">💾 Enregistrer</button>
+      </div>
+    </div>
+    <div class="me-empty" id="meEmpty">Clique sur la carte ou « Nouvel élément » pour commencer.</div>
+  </div>
+</div>
+<script>
+const ME_EMOJIS=['🌴','🐟','🐠','🐦','🦅','🚗','🚙','🦁','🐘','🦒','🦓','🐊','⛵','🛶','🐫','🏝️','🌋','⭐','🔥','🌺'];
+let meElements=[]; let meSel=null; let meDragging=false; let meRouteMode=false;
+const meImg=document.getElementById('meImg');
+const meMarkers=document.getElementById('meMarkers');
+
+function meEmojiPalette(){const c=document.getElementById('meEmojis');c.innerHTML='';ME_EMOJIS.forEach(e=>{const b=document.createElement('button');b.textContent=e;b.onclick=()=>{document.getElementById('f_emoji').value=e;meFormToSel();};c.appendChild(b);});}
+function meFetch(){fetch('/api/map-elements').then(r=>r.json()).then(d=>{meElements=d.elements||[];meRender();}).catch(()=>{});}
+function meNorm(ev){const r=meImg.getBoundingClientRect();return {x:Math.min(1,Math.max(0,(ev.clientX-r.left)/r.width)),y:Math.min(1,Math.max(0,(ev.clientY-r.top)/r.height))};}
+
+function meRender(){
+  meMarkers.innerHTML='';
+  const all=meElements.slice();
+  if(meSel && !meSel.id) all.push(meSel);
+  all.forEach(el=>{
+    const m=document.createElement('div');
+    const isSel=meSel && ((el.id && el.id===meSel.id) || (!el.id && !meSel.id));
+    m.className='me-marker'+(isSel?' sel':'')+(!el.id?' pending':'');
+    m.style.left=((el.position?el.position.x:0.5)*100)+'%';
+    m.style.top=((el.position?el.position.y:0.5)*100)+'%';
+    m.textContent=(el.asset&&el.asset.value)||'❓';
+    m.addEventListener('pointerdown',ev=>{ev.stopPropagation();meSelect(el);meDragging=true;m.setPointerCapture(ev.pointerId);});
+    m.addEventListener('pointermove',ev=>{if(meDragging&&meSel){const p=meNorm(ev);meSel.position={x:p.x,y:p.y};document.getElementById('f_x').value=p.x.toFixed(3);document.getElementById('f_y').value=p.y.toFixed(3);m.style.left=(p.x*100)+'%';m.style.top=(p.y*100)+'%';}});
+    m.addEventListener('pointerup',ev=>{meDragging=false;});
+    meMarkers.appendChild(m);
+  });
+}
+
+meImg.addEventListener('click',ev=>{const p=meNorm(ev);
+  if(meRouteMode&&meSel){meSel.animation.path=meSel.animation.path||[];meSel.animation.path.push({x:+p.x.toFixed(3),y:+p.y.toFixed(3)});meRenderPath();meUpdateRouteCount();return;}
+  meNew(p);});
+
+function meNew(pos){
+  meSel={id:null,type:'decor',label:'',asset:{kind:'emoji',value:'🌴'},position:pos||{x:0.5,y:0.5},scale:1,water:false,
+    animation:{kind:'bob',speed:1,amplitude:1,period:24,loop:true,path:[]},interactive:true,popup:{title:'',body:''},enabled:true,z:0};
+  meFill();meRender();
+}
+function meSelect(el){meSel=JSON.parse(JSON.stringify(el));meFill();meRender();}
+
+function meFill(){
+  document.getElementById('meForm').style.display='block';
+  document.getElementById('meEmpty').style.display='none';
+  document.getElementById('meTitle').textContent=meSel.id?('Éditer : '+(meSel.label||meSel.type)):'Nouvel élément';
+  document.getElementById('meDelBtn').style.display=meSel.id?'block':'none';
+  document.getElementById('f_label').value=meSel.label||'';
+  document.getElementById('f_type').value=meSel.type||'decor';
+  document.getElementById('f_emoji').value=(meSel.asset&&meSel.asset.value)||'🌴';
+  document.getElementById('f_x').value=(meSel.position.x||0).toFixed(3);
+  document.getElementById('f_y').value=(meSel.position.y||0).toFixed(3);
+  document.getElementById('f_scale').value=meSel.scale||1;
+  document.getElementById('f_anim').value=(meSel.animation&&meSel.animation.kind)||'bob';
+  document.getElementById('f_speed').value=(meSel.animation&&meSel.animation.speed)||1;
+  document.getElementById('f_amp').value=(meSel.animation&&meSel.animation.amplitude)||1;
+  document.getElementById('f_period').value=(meSel.animation&&meSel.animation.period)||24;
+  if(!meSel.animation)meSel.animation={kind:'bob',path:[]};
+  if(!meSel.animation.path)meSel.animation.path=[];
+  meRouteMode=false;document.getElementById('meRouteToggle').textContent='✏️ Tracer';document.getElementById('meRouteToggle').style.background='#0ea5e9';
+  meAnimChanged();
+  document.getElementById('f_water').checked=!!meSel.water;
+  document.getElementById('f_interactive').checked=meSel.interactive!==false;
+  document.getElementById('f_ptitle').value=(meSel.popup&&meSel.popup.title)||'';
+  document.getElementById('f_pbody').value=(meSel.popup&&meSel.popup.body)||'';
+  document.getElementById('f_enabled').checked=meSel.enabled!==false;
+  meTogglePopup();
+}
+function meTogglePopup(){document.getElementById('mePopup').style.display=document.getElementById('f_interactive').checked?'block':'none';}
+function meTypeChanged(){const t=document.getElementById('f_type').value;const map={fish:'🐟',bird:'🐦',car:'🚗',animal:'🦁',boat:'⛵',decor:'🌴'};if(map[t])document.getElementById('f_emoji').value=map[t];if(t==='fish'||t==='boat')document.getElementById('f_water').checked=true;meFormToSel();}
+function meFormToSel(){if(!meSel)return;meSel.position={x:parseFloat(document.getElementById('f_x').value)||0,y:parseFloat(document.getElementById('f_y').value)||0};meSel.asset={kind:'emoji',value:document.getElementById('f_emoji').value||'❓'};meRender();}
+
+function meRead(){
+  return {
+    type:document.getElementById('f_type').value,
+    label:document.getElementById('f_label').value.trim(),
+    asset:{kind:'emoji',value:document.getElementById('f_emoji').value||'❓'},
+    position:{x:parseFloat(document.getElementById('f_x').value)||0,y:parseFloat(document.getElementById('f_y').value)||0},
+    scale:parseFloat(document.getElementById('f_scale').value)||1,
+    water:document.getElementById('f_water').checked,
+    animation:{kind:document.getElementById('f_anim').value,speed:parseFloat(document.getElementById('f_speed').value)||1,amplitude:parseFloat(document.getElementById('f_amp').value)||1,period:parseFloat(document.getElementById('f_period').value)||24,loop:true,path:(meSel&&meSel.animation&&meSel.animation.path)||[]},
+    interactive:document.getElementById('f_interactive').checked,
+    popup:{title:document.getElementById('f_ptitle').value.trim(),body:document.getElementById('f_pbody').value.trim()},
+    enabled:document.getElementById('f_enabled').checked,
+    z:0
+  };
+}
+function meSave(){
+  const data=meRead();
+  const url=(meSel&&meSel.id)?('/api/map-elements/'+meSel.id+'/update'):'/api/map-elements';
+  fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)})
+    .then(r=>r.json()).then(res=>{if(res.success){meSel=null;meFetch();document.getElementById('meForm').style.display='none';document.getElementById('meEmpty').style.display='block';document.getElementById('meTitle').textContent='Enregistré ✅';}else{alert('Erreur : '+(res.error||'inconnue'));}})
+    .catch(e=>alert('Erreur réseau : '+e));
+}
+function meDelete(){
+  if(!meSel||!meSel.id)return;
+  if(!confirm('Supprimer cet élément ?'))return;
+  fetch('/api/map-elements/'+meSel.id+'/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})
+    .then(r=>r.json()).then(res=>{if(res.success){meSel=null;meFetch();document.getElementById('meForm').style.display='none';document.getElementById('meEmpty').style.display='block';document.getElementById('meTitle').textContent='Supprimé';}else{alert('Erreur : '+(res.error||'inconnue'));}});
+}
+function meAnimChanged(){const k=document.getElementById('f_anim').value;const show=(k==='drive'||k==='fly');document.getElementById('meRouteBox').style.display=show?'block':'none';meRenderPath();meUpdateRouteCount();}
+function meRouteToggleFn(){meRouteMode=!meRouteMode;const b=document.getElementById('meRouteToggle');b.textContent=meRouteMode?'✅ Tracé actif — clique la carte':'✏️ Tracer';b.style.background=meRouteMode?'#22c55e':'#0ea5e9';}
+function meRouteUndo(){if(meSel&&meSel.animation.path&&meSel.animation.path.length){meSel.animation.path.pop();meRenderPath();meUpdateRouteCount();}}
+function meRouteClear(){if(meSel){meSel.animation.path=[];meRenderPath();meUpdateRouteCount();}}
+function meUpdateRouteCount(){const n=(meSel&&meSel.animation&&meSel.animation.path)?meSel.animation.path.length:0;const el=document.getElementById('meRouteCount');if(el)el.textContent='('+n+' point'+(n>1?'s':'')+')';}
+function meRenderPath(){const svg=document.getElementById('mePath');const path=(meSel&&meSel.animation&&meSel.animation.path)||[];const af=document.getElementById('f_anim');const k=af?af.value:'';if((k!=='drive'&&k!=='fly')||path.length===0){svg.innerHTML='';return;}svg.setAttribute('viewBox','0 0 100 100');svg.setAttribute('preserveAspectRatio','none');const pts=path.map(p=>(p.x*100)+','+(p.y*100)).join(' ');let s='<polyline points="'+pts+'" fill="none" stroke="#ff8a00" stroke-width="1.5" stroke-dasharray="3 3" vector-effect="non-scaling-stroke"/>';path.forEach(p=>{s+='<circle cx="'+(p.x*100)+'" cy="'+(p.y*100)+'" r="1.3" fill="#ff8a00" vector-effect="non-scaling-stroke"/>';});svg.innerHTML=s;}
+meEmojiPalette();
+if(meImg.complete)meFetch();else meImg.addEventListener('load',meFetch);
+</script>
+'''
+
+
 class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
     """Handler HTTP avec intégration Firebase et sécurité"""
     
@@ -1314,6 +1521,12 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
             self.send_story_view(story_id)
         elif self.path == '/countries':
             self.send_countries_page()
+        elif self.path == '/map-elements':
+            self.send_map_elements_page()
+        elif self.path == '/api/map-elements':
+            self.handle_get_map_elements()
+        elif self.path == '/assets/map-base.png':
+            self.serve_map_base_image()
         elif self.path == '/souvenirs':
             self.send_souvenirs_page()
         elif self.path == '/badges':
@@ -1667,6 +1880,14 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
         elif self.path.startswith('/api/countries/') and '/toggle' in self.path:
             country_code = self.path.split('/')[-2]
             self.handle_toggle_country(country_code)
+        elif self.path == '/api/map-elements':
+            self.handle_create_map_element(post_data)
+        elif self.path.startswith('/api/map-elements/') and '/update' in self.path:
+            element_id = self.path.split('/')[-2]
+            self.handle_update_map_element(element_id, post_data)
+        elif self.path.startswith('/api/map-elements/') and '/delete' in self.path:
+            element_id = self.path.split('/')[-2]
+            self.handle_delete_map_element(element_id)
         elif self.path == '/api/mailing/send':
             self.handle_send_campaign(post_data)
         elif self.path == '/api/mailing/send-test':
@@ -11615,6 +11836,7 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                     <a href="/" class="{'active' if page == 'home' else ''}">🏠 Accueil</a>
                     <a href="/stories" class="{'active' if page == 'stories' else ''}">📚 Histoires</a>
                     <a href="/countries" class="{'active' if page == 'countries' else ''}">🌍 Pays</a>
+                    <a href="/map-elements" class="{'active' if page == 'map-elements' else ''}" style="background: linear-gradient(135deg, #0ea5e9, #22c55e); color: white;">🗺️ Éléments carte</a>
                     <a href="/souvenirs" class="{'active' if page == 'souvenirs' else ''}">🎁 Souvenirs</a>
                     <a href="/badges" class="{'active' if page == 'badges' else ''}">🏅 Badges</a>
                     <a href="/users" class="{'active' if page == 'users' else ''}">👥 Utilisateurs</a>
@@ -12741,6 +12963,95 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
         except Exception as e:
             print(f"❌ Erreur génération audio conte: {e}")
             self.send_error_response(500, f'Erreur: {str(e)}')
+
+    # ==================== ÉLÉMENTS DE CARTE ====================
+
+    def serve_map_base_image(self):
+        """Sert l'image de fond de la carte (africa_base) pour l'éditeur."""
+        import os
+        try:
+            path = os.path.join(os.path.dirname(__file__), 'assets', 'map_base.png')
+            with open(path, 'rb') as f:
+                data = f.read()
+            self.send_response(200)
+            self.send_header('Content-type', 'image/png')
+            self.send_header('Cache-Control', 'public, max-age=86400')
+            self.send_header('Content-Length', str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+        except Exception as e:
+            self.send_error_response(404, f"Image de carte introuvable: {e}")
+
+    def handle_get_map_elements(self):
+        """Liste les éléments de carte (collection map_elements)."""
+        try:
+            db = getattr(self.firebase_manager, 'db', None)
+            if db is None:
+                self.send_json_response({'elements': []})
+                return
+            elements = []
+            for d in db.collection('map_elements').stream():
+                data = d.to_dict() or {}
+                data['id'] = d.id
+                elements.append(data)
+            self.send_json_response({'elements': elements})
+        except Exception as e:
+            print(f"❌ map_elements get: {e}")
+            self.send_error_response(500, f"Erreur serveur: {e}")
+
+    def handle_create_map_element(self, post_data):
+        """Crée un élément de carte."""
+        try:
+            can_edit, message = self.security_manager.can_perform_action('edit')
+            if not can_edit:
+                self.send_error_response(403, message)
+                return
+            import json
+            data = json.loads(post_data)
+            data.pop('id', None)
+            ref = self.firebase_manager.db.collection('map_elements').document()
+            ref.set(data)
+            self.send_json_response({'success': True, 'id': ref.id})
+        except Exception as e:
+            print(f"❌ map_elements create: {e}")
+            self.send_error_response(500, f"Erreur serveur: {e}")
+
+    def handle_update_map_element(self, element_id, post_data):
+        """Met à jour un élément de carte."""
+        try:
+            can_edit, message = self.security_manager.can_perform_action('edit')
+            if not can_edit:
+                self.send_error_response(403, message)
+                return
+            import json
+            data = json.loads(post_data)
+            data.pop('id', None)
+            self.firebase_manager.db.collection('map_elements').document(element_id).set(data)
+            self.send_json_response({'success': True})
+        except Exception as e:
+            print(f"❌ map_elements update: {e}")
+            self.send_error_response(500, f"Erreur serveur: {e}")
+
+    def handle_delete_map_element(self, element_id):
+        """Supprime un élément de carte."""
+        try:
+            can_edit, message = self.security_manager.can_perform_action('edit')
+            if not can_edit:
+                self.send_error_response(403, message)
+                return
+            self.firebase_manager.db.collection('map_elements').document(element_id).delete()
+            self.send_json_response({'success': True})
+        except Exception as e:
+            print(f"❌ map_elements delete: {e}")
+            self.send_error_response(500, f"Erreur serveur: {e}")
+
+    def send_map_elements_page(self):
+        """Éditeur d'éléments de carte : place/glisse des éléments sur la carte,
+        définit leurs caractéristiques et un popup. Écrit dans Firestore
+        `map_elements`, lu par l'app en mode run."""
+        content = MAP_ELEMENTS_PAGE_HTML
+        html = self.get_base_html('map-elements', content)
+        self.send_html_response(html)
 
     def send_html_response(self, html):
         """Envoie une réponse HTML"""
