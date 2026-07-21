@@ -1290,7 +1290,7 @@ MAP_ELEMENTS_PAGE_HTML = r'''
   .me-canvas img{display:block;width:100%;height:auto;user-select:none;-webkit-user-drag:none}
   #meMarkers{position:absolute;inset:0}
   .me-marker{position:absolute;transform:translate(-50%,-50%);font-size:26px;cursor:grab;line-height:1;
-    filter:drop-shadow(0 1px 2px rgba(0,0,0,.4));touch-action:none}
+    padding:8px;filter:drop-shadow(0 1px 2px rgba(0,0,0,.4));touch-action:none}
   .me-marker.sel{outline:3px solid #ff8a00;outline-offset:2px;border-radius:50%;background:rgba(255,255,255,.5)}
   .me-marker.multi{outline:3px solid #dc2626;outline-offset:2px;border-radius:50%;background:rgba(254,226,226,.6)}
   .me-marker.pending{opacity:.85}
@@ -1389,7 +1389,7 @@ MAP_ELEMENTS_PAGE_HTML = r'''
 <script>
 const ME_EMOJIS=['🌴','🐟','🐠','🐦','🦅','🚗','🚙','🦁','🐘','🦒','🦓','🐊','⛵','🛶','🐫','🏝️','🌋','⭐','🔥','🌺'];
 let meElements=[]; let meSel=null; let meRouteMode=false;
-let meSelectedIds=new Set(); let meDrag=null; let meSuppressClick=false;
+let meSelectedIds=new Set(); let meDrag=null; let meBgDown=null;
 const meImg=document.getElementById('meImg');
 const meMarkers=document.getElementById('meMarkers');
 
@@ -1420,9 +1420,9 @@ function meRender(){
 function meMarkerDown(ev,el){
   ev.stopPropagation(); ev.preventDefault();
   // Cmd/Ctrl/Maj-clic = (dé)sélectionner pour la suppression multiple.
+  meBgDown=null; // un geste marqueur ne doit jamais compter comme tap sur le fond
   if((ev.metaKey||ev.ctrlKey||ev.shiftKey) && el.id){
     if(meSelectedIds.has(el.id)) meSelectedIds.delete(el.id); else meSelectedIds.add(el.id);
-    meSuppressClick=true; setTimeout(function(){meSuppressClick=false;},0);
     meUpdateMultiUI(); meRender(); return;
   }
   // Mémoriser si l'élément était DÉJÀ sélectionné : un simple clic (sans drag)
@@ -1467,9 +1467,6 @@ document.addEventListener('pointermove',function(ev){
 });
 function meEndDrag(){
   if(!meDrag)return;
-  // Le « click » qui suit ce geste vise le fond (retargeting après capture) :
-  // le supprimer pour ne pas désélectionner juste après un select/drag.
-  meSuppressClick=true; setTimeout(function(){meSuppressClick=false;},0);
   // Clic simple (sans drag) sur l'élément déjà sélectionné → désélection.
   if(!meDrag.moved && meDrag.wasSel){ meDeselect(); return; }
   const moved=meDrag.moved;
@@ -1509,18 +1506,25 @@ function meDeleteSelection(){
       document.getElementById('meTitle').textContent='Supprimé(s) ✅'; meFetch(); });
 }
 
-// Écouteur sur le CONTENEUR (pas sur l'image : le calque #meMarkers recouvre
-// toute l'image, les clics « fond » n'atteignaient donc JAMAIS meImg).
-document.getElementById('meCanvas').addEventListener('click',ev=>{
-  if(meSuppressClick){meSuppressClick=false;return;}
-  if(ev.target.closest && ev.target.closest('.me-marker'))return;
+// Tap sur le FOND : détecté par pointerdown+pointerup sur le conteneur, PAS
+// par « click » (après capture + reconstruction des marqueurs, le click
+// synthétique est reciblé de façon imprévisible → il pouvait créer un élément
+// en cliquant un marqueur). Les gestes marqueurs ne peuvent JAMAIS arriver ici
+// en tant que tap-fond : leur pointerdown fait stopPropagation, donc meBgDown
+// reste null et le pointerup (qui bulle depuis la capture) est ignoré.
+const meCanvasEl=document.getElementById('meCanvas');
+meCanvasEl.addEventListener('pointerdown',ev=>{ meBgDown={x:ev.clientX,y:ev.clientY}; });
+meCanvasEl.addEventListener('pointerup',ev=>{
+  const d=meBgDown; meBgDown=null;
+  if(!d)return; // geste commencé sur un marqueur → pas un tap sur le fond
+  if(Math.abs(ev.clientX-d.x)+Math.abs(ev.clientY-d.y)>5)return; // drag du fond, pas un tap
   const p=meNorm(ev);
   if(meRouteMode&&meSel){meSel.animation.path=meSel.animation.path||[];meSel.animation.path.push({x:+p.x.toFixed(3),y:+p.y.toFixed(3)});meRenderPath();meUpdateRouteCount();return;}
-  // Un élément est sélectionné → le clic sur le fond DÉSÉLECTIONNE (au lieu de
-  // créer un nouvel élément par surprise). Créer = clic sur fond sans
-  // sélection, ou bouton « Nouvel élément ».
+  // Un élément est sélectionné → le tap sur le fond DÉSÉLECTIONNE. Créer =
+  // tap sur fond sans sélection, ou bouton « Nouvel élément ».
   if(meSel){meDeselect();return;}
-  meNew(p);});
+  meNew(p);
+});
 
 function meNew(pos){
   meSel={id:null,type:'decor',label:'',asset:{kind:'emoji',value:'🌴'},position:pos||{x:0.5,y:0.5},scale:1,water:false,
