@@ -1311,7 +1311,7 @@ MAP_ELEMENTS_PAGE_HTML = r'''
 </style>
 <div class="me-wrap">
   <div class="me-left">
-    <div class="me-hint">👉 Clique sur la carte pour placer • glisse un marqueur pour le déplacer • clique pour l'éditer • re-clique (ou clique le fond) pour désélectionner • <b>Cmd/Ctrl/Maj-clic</b> pour en sélectionner plusieurs.
+    <div class="me-hint">👉 Clique sur la carte pour placer • glisse un marqueur pour le déplacer • clique pour l'éditer • désélection : re-clic, clic sur le fond, <b>Échap</b> ou bouton ✖ • <b>Échap</b> annule aussi un drag • <b>Cmd/Ctrl/Maj-clic</b> pour en sélectionner plusieurs.
       <button class="me-btn me-new" style="color:#fff;padding:5px 10px" onclick="meNew()">＋ Nouvel élément</button></div>
     <div id="meMultiBar" style="display:none;margin-bottom:8px;padding:6px 10px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;font-size:12px;color:#991b1b">
       <span id="meMultiCount">0 sélectionné</span>
@@ -1378,6 +1378,7 @@ MAP_ELEMENTS_PAGE_HTML = r'''
       </div>
       <div class="me-check"><input type="checkbox" id="f_enabled" checked><label style="margin:0">Activé (visible dans l'app)</label></div>
       <div class="me-actions">
+        <button class="me-btn" style="background:#64748b" onclick="meDeselect()">✖ Désélectionner</button>
         <button class="me-btn me-del" id="meDelBtn" onclick="meDelete()">Supprimer</button>
         <button class="me-btn me-save" onclick="meSave()">💾 Enregistrer</button>
       </div>
@@ -1388,7 +1389,7 @@ MAP_ELEMENTS_PAGE_HTML = r'''
 <script>
 const ME_EMOJIS=['🌴','🐟','🐠','🐦','🦅','🚗','🚙','🦁','🐘','🦒','🦓','🐊','⛵','🛶','🐫','🏝️','🌋','⭐','🔥','🌺'];
 let meElements=[]; let meSel=null; let meRouteMode=false;
-let meSelectedIds=new Set(); let meDrag=null;
+let meSelectedIds=new Set(); let meDrag=null; let meSuppressClick=false;
 const meImg=document.getElementById('meImg');
 const meMarkers=document.getElementById('meMarkers');
 
@@ -1421,6 +1422,7 @@ function meMarkerDown(ev,el){
   // Cmd/Ctrl/Maj-clic = (dé)sélectionner pour la suppression multiple.
   if((ev.metaKey||ev.ctrlKey||ev.shiftKey) && el.id){
     if(meSelectedIds.has(el.id)) meSelectedIds.delete(el.id); else meSelectedIds.add(el.id);
+    meSuppressClick=true; setTimeout(function(){meSuppressClick=false;},0);
     meUpdateMultiUI(); meRender(); return;
   }
   // Mémoriser si l'élément était DÉJÀ sélectionné : un simple clic (sans drag)
@@ -1429,7 +1431,9 @@ function meMarkerDown(ev,el){
   meSelect(el);
   // meSelect → meRender a reconstruit les marqueurs : retrouver le nœud du
   // marqueur sélectionné pour le déplacer EN DIRECT pendant le drag.
+  // orig = position de départ, restaurée si le drag est annulé (Échap).
   meDrag={x0:ev.clientX,y0:ev.clientY,moved:false,wasSel:wasSel,
+          orig:{x:meSel.position.x,y:meSel.position.y},
           node:meMarkers.querySelector('.me-marker.sel')};
   // Capturer le pointeur sur le CONTENEUR (stable, jamais détruit par les
   // re-render) : pointermove/pointerup lui sont routés même si la souris est
@@ -1463,6 +1467,9 @@ document.addEventListener('pointermove',function(ev){
 });
 function meEndDrag(){
   if(!meDrag)return;
+  // Le « click » qui suit ce geste vise le fond (retargeting après capture) :
+  // le supprimer pour ne pas désélectionner juste après un select/drag.
+  meSuppressClick=true; setTimeout(function(){meSuppressClick=false;},0);
   // Clic simple (sans drag) sur l'élément déjà sélectionné → désélection.
   if(!meDrag.moved && meDrag.wasSel){ meDeselect(); return; }
   const moved=meDrag.moved;
@@ -1472,6 +1479,19 @@ function meEndDrag(){
 document.addEventListener('pointerup',meEndDrag);
 document.addEventListener('pointercancel',meEndDrag);
 window.addEventListener('blur',function(){ meDrag=null; });
+
+// Échap : annule le drag en cours (l'élément REVIENT à sa position d'origine),
+// sinon désélectionne. Filet fiable notamment avec le « glissement à trois
+// doigts / verrouillage du glissement » de macOS, où le navigateur ne reçoit
+// pas de pointerup tant que l'OS maintient le drag.
+document.addEventListener('keydown',function(ev){
+  if(ev.key!=='Escape')return;
+  if(meDrag){
+    if(meDrag.orig&&meSel){meSel.position={x:meDrag.orig.x,y:meDrag.orig.y};}
+    meDrag=null; meRender(); return;
+  }
+  if(meSel) meDeselect();
+});
 
 function meUpdateMultiUI(){
   const n=meSelectedIds.size, bar=document.getElementById('meMultiBar');
@@ -1489,7 +1509,12 @@ function meDeleteSelection(){
       document.getElementById('meTitle').textContent='Supprimé(s) ✅'; meFetch(); });
 }
 
-meImg.addEventListener('click',ev=>{const p=meNorm(ev);
+// Écouteur sur le CONTENEUR (pas sur l'image : le calque #meMarkers recouvre
+// toute l'image, les clics « fond » n'atteignaient donc JAMAIS meImg).
+document.getElementById('meCanvas').addEventListener('click',ev=>{
+  if(meSuppressClick){meSuppressClick=false;return;}
+  if(ev.target.closest && ev.target.closest('.me-marker'))return;
+  const p=meNorm(ev);
   if(meRouteMode&&meSel){meSel.animation.path=meSel.animation.path||[];meSel.animation.path.push({x:+p.x.toFixed(3),y:+p.y.toFixed(3)});meRenderPath();meUpdateRouteCount();return;}
   // Un élément est sélectionné → le clic sur le fond DÉSÉLECTIONNE (au lieu de
   // créer un nouvel élément par surprise). Créer = clic sur fond sans
