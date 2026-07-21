@@ -1311,7 +1311,7 @@ MAP_ELEMENTS_PAGE_HTML = r'''
 </style>
 <div class="me-wrap">
   <div class="me-left">
-    <div class="me-hint">👉 Clique sur la carte pour placer • glisse un marqueur pour le déplacer • clique pour l'éditer • désélection : re-clic, clic sur le fond, <b>Échap</b> ou bouton ✖ • <b>Échap</b> annule aussi un drag • <b>Cmd/Ctrl/Maj-clic</b> pour en sélectionner plusieurs.
+    <div class="me-hint">👉 Clique sur la carte pour placer • clique un objet pour le <b>sélectionner</b>, puis <b>glisse-le</b> pour le déplacer • désélection : re-clic, clic sur le fond, <b>Échap</b> ou bouton ✖ • <b>Cmd/Ctrl/Maj-clic</b> pour en sélectionner plusieurs.
       <button class="me-btn me-new" style="color:#fff;padding:5px 10px" onclick="meNew()">＋ Nouvel élément</button></div>
     <div id="meMultiBar" style="display:none;margin-bottom:8px;padding:6px 10px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;font-size:12px;color:#991b1b">
       <span id="meMultiCount">0 sélectionné</span>
@@ -1429,6 +1429,12 @@ function meMarkerDown(ev,el){
   // sur l'élément sélectionné le désélectionne (toggle, géré au pointerup).
   const wasSel = !!(meSel && el.id && meSel.id===el.id);
   meSelect(el);
+  // SÉLECTIONNER puis GLISSER : seul un élément DÉJÀ sélectionné (ou un
+  // nouvel élément pas encore enregistré) peut être déplacé. Le clic de
+  // sélection n'arme donc JAMAIS de drag → même si l'OS « verrouille » le
+  // glissement (trackpad macOS : glissement à trois doigts / drag lock),
+  // l'objet ne peut pas suivre la souris ni se déposer au clic suivant.
+  if(!wasSel && el.id) return;
   // meSelect → meRender a reconstruit les marqueurs : retrouver le nœud du
   // marqueur sélectionné pour le déplacer EN DIRECT pendant le drag.
   // orig = position de départ, restaurée si le drag est annulé (Échap).
@@ -1456,6 +1462,7 @@ function meDeselect(){
 // direct (pas de re-render par frame) et on re-render une fois au lâcher.
 document.addEventListener('pointermove',function(ev){
   if(!meDrag||!meSel)return;
+  if(ev.buttons===0){meDrag=null;return;} // aucun bouton enfoncé → drag périmé
   if(!meDrag.moved && Math.abs(ev.clientX-meDrag.x0)+Math.abs(ev.clientY-meDrag.y0)>3) meDrag.moved=true;
   if(!meDrag.moved)return;
   const p=meNorm(ev);
