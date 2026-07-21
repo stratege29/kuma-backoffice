@@ -1311,7 +1311,7 @@ MAP_ELEMENTS_PAGE_HTML = r'''
 </style>
 <div class="me-wrap">
   <div class="me-left">
-    <div class="me-hint">👉 Clique sur la carte pour placer • clique un objet pour le <b>sélectionner</b> puis déplace-le avec les <b>flèches du clavier</b> (Maj = grand pas) ou les boutons ▲▼◀▶ • désélection : re-clic, clic sur le fond, <b>Échap</b> ou ✖ • <b>Cmd/Ctrl/Maj-clic</b> : sélection multiple
+    <div class="me-hint">👉 Clique un objet pour le <b>sélectionner</b>, puis déplace-le avec les <b>flèches du clavier</b> (Maj = grand pas) ou les boutons ▲▼◀▶ • clique le <b>fond</b> pour désélectionner (ou créer si rien n'est sélectionné) • <b>Échap</b> ou ✖ pour désélectionner • <b>Cmd/Ctrl/Maj-clic</b> : sélection multiple
       <label style="white-space:nowrap;font-size:11px;color:#64748b"><input type="checkbox" id="meDragToggle" onchange="meDragToggleFn()" style="vertical-align:middle"> glisser à la souris</label>
       <button class="me-btn me-new" style="color:#fff;padding:5px 10px" onclick="meNew()">＋ Nouvel élément</button></div>
     <div id="meMultiBar" style="display:none;margin-bottom:8px;padding:6px 10px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;font-size:12px;color:#991b1b">
@@ -1509,19 +1509,35 @@ function meFindEl(id){
 }
 meCanvasEl.addEventListener('pointerdown',function(ev){
   const mk=ev.target.closest?ev.target.closest('.me-marker'):null;
-  meDown={x:ev.clientX,y:ev.clientY,id:mk?mk.dataset.id:null,isMarker:!!mk,node:mk,dragging:false,orig:null};
-  if(mk)ev.preventDefault(); // évite la sélection du texte de l'emoji
+  if(mk){
+    ev.preventDefault();
+    const el=meFindEl(mk.dataset.id); if(!el)return;
+    if((ev.metaKey||ev.ctrlKey||ev.shiftKey) && el.id){                 // multi-sélection
+      if(meSelectedIds.has(el.id)) meSelectedIds.delete(el.id); else meSelectedIds.add(el.id);
+      meUpdateMultiUI(); meRender(); return;
+    }
+    // SÉLECTION À L'APPUI : aucun seuil de mouvement, aucun test de bouton →
+    // ne peut PAS être déjouée par un micro-mouvement de trackpad, le
+    // tap-to-click (buttons=0) ou le drag-lock macOS.
+    const already=meSel && ((el.id&&meSel.id===el.id)||(!el.id&&!meSel.id));
+    if(!already) meSelect(el);
+    if(meDragEnabled){ meDown={x:ev.clientX,y:ev.clientY,dragging:false,node:null,orig:{x:meSel.position.x,y:meSel.position.y}}; }
+    return;
+  }
+  // FOND : mode route → ajoute un point ; sinon désélectionne (si sélection),
+  // sinon crée un élément.
+  const p=meNorm(ev);
+  if(meRouteMode&&meSel){meSel.animation.path=meSel.animation.path||[];meSel.animation.path.push({x:+p.x.toFixed(3),y:+p.y.toFixed(3)});meRenderPath();meUpdateRouteCount();return;}
+  if(meSel){meDeselect();return;}
+  meNew(p);
 });
+// Glisser-souris = OPT-IN uniquement (case « glisser à la souris »). Déplace
+// l'élément déjà sélectionné. En mode par défaut, meDown reste null → rien.
 meCanvasEl.addEventListener('pointermove',function(ev){
-  if(!meDown)return;
-  if(ev.buttons===0){meDown=null;return;}               // relâché ailleurs → geste périmé
-  if(!meDragEnabled||!meDown.isMarker)return;           // glisser-souris = opt-in, depuis un marqueur
+  if(!meDown||!meSel||!meDragEnabled)return;
   if(!meDown.dragging){
     if(Math.abs(ev.clientX-meDown.x)+Math.abs(ev.clientY-meDown.y)<=3)return;
-    const el=meFindEl(meDown.id); if(!el){meDown=null;return;}
-    if(!(meSel && ((meSel.id&&meSel.id===el.id)||(!meSel.id&&!el.id)))) meSelect(el);
-    meDown.dragging=true; meDown.orig={x:meSel.position.x,y:meSel.position.y};
-    meDown.node=meMarkers.querySelector('.me-marker.sel');
+    meDown.dragging=true; meDown.node=meMarkers.querySelector('.me-marker.sel');
   }
   const p=meNorm(ev);
   meSel.position={x:p.x,y:p.y};
@@ -1529,27 +1545,9 @@ meCanvasEl.addEventListener('pointermove',function(ev){
   if(fx)fx.value=p.x.toFixed(3); if(fy)fy.value=p.y.toFixed(3);
   if(meDown.node){meDown.node.style.left=(p.x*100)+'%';meDown.node.style.top=(p.y*100)+'%';}
 });
-meCanvasEl.addEventListener('pointerup',function(ev){
-  const d=meDown; meDown=null;
-  if(!d)return;
-  if(d.dragging){ meRender(); return; }                                   // fin d'un glisser-souris
-  if(Math.abs(ev.clientX-d.x)+Math.abs(ev.clientY-d.y)>6) return;         // pas un tap net
-  if(d.isMarker){
-    const el=meFindEl(d.id); if(!el)return;
-    if((ev.metaKey||ev.ctrlKey||ev.shiftKey) && el.id){                   // multi-sélection
-      if(meSelectedIds.has(el.id)) meSelectedIds.delete(el.id); else meSelectedIds.add(el.id);
-      meUpdateMultiUI(); meRender(); return;
-    }
-    const already = meSel && ((el.id&&meSel.id===el.id)||(!el.id&&!meSel.id));
-    if(already) meDeselect(); else meSelect(el);                          // toggle sélection
-    return;
-  }
-  const p=meNorm(ev);                                                     // tap sur le fond
-  if(meRouteMode&&meSel){meSel.animation.path=meSel.animation.path||[];meSel.animation.path.push({x:+p.x.toFixed(3),y:+p.y.toFixed(3)});meRenderPath();meUpdateRouteCount();return;}
-  if(meSel){meDeselect();return;}
-  meNew(p);
-});
-document.addEventListener('pointercancel',function(){meDown=null;});
+function meEndPointer(){ if(meDown&&meDown.dragging)meRender(); meDown=null; }
+meCanvasEl.addEventListener('pointerup',meEndPointer);
+document.addEventListener('pointercancel',meEndPointer);
 window.addEventListener('blur',function(){meDown=null;});
 
 function meNew(pos){
