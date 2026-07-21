@@ -1427,7 +1427,15 @@ function meMarkerDown(ev,el){
   // sur l'élément sélectionné le désélectionne (toggle, géré au pointerup).
   const wasSel = !!(meSel && el.id && meSel.id===el.id);
   meSelect(el);
-  meDrag={x0:ev.clientX,y0:ev.clientY,moved:false,wasSel:wasSel};
+  // meSelect → meRender a reconstruit les marqueurs : retrouver le nœud du
+  // marqueur sélectionné pour le déplacer EN DIRECT pendant le drag.
+  meDrag={x0:ev.clientX,y0:ev.clientY,moved:false,wasSel:wasSel,
+          node:meMarkers.querySelector('.me-marker.sel')};
+  // Capturer le pointeur sur le CONTENEUR (stable, jamais détruit par les
+  // re-render) : pointermove/pointerup lui sont routés même si la souris est
+  // relâchée HORS de la fenêtre — sinon le pointerup est perdu et l'élément
+  // « suit la souris » indéfiniment.
+  try{meMarkers.setPointerCapture(ev.pointerId);}catch(e){}
 }
 
 function meDeselect(){
@@ -1439,9 +1447,9 @@ function meDeselect(){
   meRender();
 }
 
-// Drag & relâchement au niveau DOCUMENT : chaque meRender reconstruit les
-// marqueurs (innerHTML=''), donc on ne peut pas capturer le pointeur sur un
-// marqueur (il serait détruit → cycle d'événements cassé, sélection bloquée).
+// Drag & relâchement au niveau DOCUMENT (les événements capturés par
+// #meMarkers y remontent par bubbling). On déplace le nœud du marqueur en
+// direct (pas de re-render par frame) et on re-render une fois au lâcher.
 document.addEventListener('pointermove',function(ev){
   if(!meDrag||!meSel)return;
   if(!meDrag.moved && Math.abs(ev.clientX-meDrag.x0)+Math.abs(ev.clientY-meDrag.y0)>3) meDrag.moved=true;
@@ -1450,13 +1458,20 @@ document.addEventListener('pointermove',function(ev){
   meSel.position={x:p.x,y:p.y};
   const fx=document.getElementById('f_x'),fy=document.getElementById('f_y');
   if(fx)fx.value=p.x.toFixed(3); if(fy)fy.value=p.y.toFixed(3);
-  meRender();
+  if(meDrag.node){meDrag.node.style.left=(p.x*100)+'%';meDrag.node.style.top=(p.y*100)+'%';}
+  else meRender();
 });
-document.addEventListener('pointerup',function(){
+function meEndDrag(){
+  if(!meDrag)return;
   // Clic simple (sans drag) sur l'élément déjà sélectionné → désélection.
-  if(meDrag && !meDrag.moved && meDrag.wasSel){ meDeselect(); return; }
+  if(!meDrag.moved && meDrag.wasSel){ meDeselect(); return; }
+  const moved=meDrag.moved;
   meDrag=null;
-});
+  if(moved) meRender();
+}
+document.addEventListener('pointerup',meEndDrag);
+document.addEventListener('pointercancel',meEndDrag);
+window.addEventListener('blur',function(){ meDrag=null; });
 
 function meUpdateMultiUI(){
   const n=meSelectedIds.size, bar=document.getElementById('meMultiBar');
