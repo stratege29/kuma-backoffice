@@ -1311,7 +1311,7 @@ MAP_ELEMENTS_PAGE_HTML = r'''
 </style>
 <div class="me-wrap">
   <div class="me-left">
-    <div class="me-hint">👉 Clique sur la carte pour placer • glisse un marqueur pour le déplacer • clique pour l'éditer • <b>Cmd/Ctrl/Maj-clic</b> pour (dé)sélectionner plusieurs éléments.
+    <div class="me-hint">👉 Clique sur la carte pour placer • glisse un marqueur pour le déplacer • clique pour l'éditer • re-clique (ou clique le fond) pour désélectionner • <b>Cmd/Ctrl/Maj-clic</b> pour en sélectionner plusieurs.
       <button class="me-btn me-new" style="color:#fff;padding:5px 10px" onclick="meNew()">＋ Nouvel élément</button></div>
     <div id="meMultiBar" style="display:none;margin-bottom:8px;padding:6px 10px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;font-size:12px;color:#991b1b">
       <span id="meMultiCount">0 sélectionné</span>
@@ -1398,7 +1398,10 @@ function meNorm(ev){const r=meImg.getBoundingClientRect();return {x:Math.min(1,M
 
 function meRender(){
   meMarkers.innerHTML='';
-  const all=meElements.slice();
+  // L'élément en cours d'édition est rendu depuis meSel (copie live) et non
+  // depuis meElements (état serveur) → le marqueur suit le drag et les
+  // modifs du formulaire avant même l'enregistrement.
+  const all=meElements.map(e=>(meSel&&meSel.id&&e.id===meSel.id)?meSel:e);
   if(meSel && !meSel.id) all.push(meSel);
   all.forEach(el=>{
     const m=document.createElement('div');
@@ -1420,8 +1423,20 @@ function meMarkerDown(ev,el){
     if(meSelectedIds.has(el.id)) meSelectedIds.delete(el.id); else meSelectedIds.add(el.id);
     meUpdateMultiUI(); meRender(); return;
   }
+  // Mémoriser si l'élément était DÉJÀ sélectionné : un simple clic (sans drag)
+  // sur l'élément sélectionné le désélectionne (toggle, géré au pointerup).
+  const wasSel = !!(meSel && el.id && meSel.id===el.id);
   meSelect(el);
-  meDrag={x0:ev.clientX,y0:ev.clientY,moved:false};
+  meDrag={x0:ev.clientX,y0:ev.clientY,moved:false,wasSel:wasSel};
+}
+
+function meDeselect(){
+  meSel=null; meDrag=null;
+  document.getElementById('meForm').style.display='none';
+  document.getElementById('meEmpty').style.display='block';
+  document.getElementById('meTitle').textContent='Aucun élément sélectionné';
+  const svg=document.getElementById('mePath'); if(svg)svg.innerHTML='';
+  meRender();
 }
 
 // Drag & relâchement au niveau DOCUMENT : chaque meRender reconstruit les
@@ -1437,7 +1452,11 @@ document.addEventListener('pointermove',function(ev){
   if(fx)fx.value=p.x.toFixed(3); if(fy)fy.value=p.y.toFixed(3);
   meRender();
 });
-document.addEventListener('pointerup',function(){ meDrag=null; });
+document.addEventListener('pointerup',function(){
+  // Clic simple (sans drag) sur l'élément déjà sélectionné → désélection.
+  if(meDrag && !meDrag.moved && meDrag.wasSel){ meDeselect(); return; }
+  meDrag=null;
+});
 
 function meUpdateMultiUI(){
   const n=meSelectedIds.size, bar=document.getElementById('meMultiBar');
@@ -1457,6 +1476,10 @@ function meDeleteSelection(){
 
 meImg.addEventListener('click',ev=>{const p=meNorm(ev);
   if(meRouteMode&&meSel){meSel.animation.path=meSel.animation.path||[];meSel.animation.path.push({x:+p.x.toFixed(3),y:+p.y.toFixed(3)});meRenderPath();meUpdateRouteCount();return;}
+  // Un élément est sélectionné → le clic sur le fond DÉSÉLECTIONNE (au lieu de
+  // créer un nouvel élément par surprise). Créer = clic sur fond sans
+  // sélection, ou bouton « Nouvel élément ».
+  if(meSel){meDeselect();return;}
   meNew(p);});
 
 function meNew(pos){
