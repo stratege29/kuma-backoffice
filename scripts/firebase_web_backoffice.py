@@ -1292,6 +1292,7 @@ MAP_ELEMENTS_PAGE_HTML = r'''
   .me-marker{position:absolute;transform:translate(-50%,-50%);font-size:26px;cursor:grab;line-height:1;
     filter:drop-shadow(0 1px 2px rgba(0,0,0,.4));touch-action:none}
   .me-marker.sel{outline:3px solid #ff8a00;outline-offset:2px;border-radius:50%;background:rgba(255,255,255,.5)}
+  .me-marker.multi{outline:3px solid #dc2626;outline-offset:2px;border-radius:50%;background:rgba(254,226,226,.6)}
   .me-marker.pending{opacity:.85}
   .me-props{flex:1 1 300px;min-width:280px;background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px}
   .me-props h3{margin:0 0 10px;font-size:15px}
@@ -1310,8 +1311,13 @@ MAP_ELEMENTS_PAGE_HTML = r'''
 </style>
 <div class="me-wrap">
   <div class="me-left">
-    <div class="me-hint">👉 Clique sur la carte pour placer un élément • glisse un marqueur pour le déplacer • clique un marqueur pour l'éditer.
+    <div class="me-hint">👉 Clique sur la carte pour placer • glisse un marqueur pour le déplacer • clique pour l'éditer • <b>Cmd/Ctrl/Maj-clic</b> pour (dé)sélectionner plusieurs éléments.
       <button class="me-btn me-new" style="color:#fff;padding:5px 10px" onclick="meNew()">＋ Nouvel élément</button></div>
+    <div id="meMultiBar" style="display:none;margin-bottom:8px;padding:6px 10px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;font-size:12px;color:#991b1b">
+      <span id="meMultiCount">0 sélectionné</span>
+      <button class="me-btn me-del" style="padding:4px 8px;margin-left:8px" onclick="meDeleteSelection()">🗑 Supprimer la sélection</button>
+      <button class="me-btn" style="background:#64748b;padding:4px 8px" onclick="meClearSelection()">Annuler</button>
+    </div>
     <div class="me-canvas" id="meCanvas">
       <img id="meImg" src="/assets/map-base.png" alt="Carte Afrique" draggable="false">
       <svg id="mePath" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible"></svg>
@@ -1381,12 +1387,13 @@ MAP_ELEMENTS_PAGE_HTML = r'''
 </div>
 <script>
 const ME_EMOJIS=['🌴','🐟','🐠','🐦','🦅','🚗','🚙','🦁','🐘','🦒','🦓','🐊','⛵','🛶','🐫','🏝️','🌋','⭐','🔥','🌺'];
-let meElements=[]; let meSel=null; let meDragging=false; let meRouteMode=false;
+let meElements=[]; let meSel=null; let meRouteMode=false;
+let meSelectedIds=new Set(); let meDrag=null;
 const meImg=document.getElementById('meImg');
 const meMarkers=document.getElementById('meMarkers');
 
 function meEmojiPalette(){const c=document.getElementById('meEmojis');c.innerHTML='';ME_EMOJIS.forEach(e=>{const b=document.createElement('button');b.textContent=e;b.onclick=()=>{document.getElementById('f_emoji').value=e;meFormToSel();};c.appendChild(b);});}
-function meFetch(){fetch('/api/map-elements').then(r=>r.json()).then(d=>{meElements=d.elements||[];meRender();}).catch(()=>{});}
+function meFetch(){fetch('/api/map-elements').then(r=>r.json()).then(d=>{meElements=d.elements||[];const ids=new Set(meElements.map(e=>e.id));[...meSelectedIds].forEach(id=>{if(!ids.has(id))meSelectedIds.delete(id);});meUpdateMultiUI();meRender();}).catch(()=>{});}
 function meNorm(ev){const r=meImg.getBoundingClientRect();return {x:Math.min(1,Math.max(0,(ev.clientX-r.left)/r.width)),y:Math.min(1,Math.max(0,(ev.clientY-r.top)/r.height))};}
 
 function meRender(){
@@ -1395,16 +1402,57 @@ function meRender(){
   if(meSel && !meSel.id) all.push(meSel);
   all.forEach(el=>{
     const m=document.createElement('div');
-    const isSel=meSel && ((el.id && el.id===meSel.id) || (!el.id && !meSel.id));
-    m.className='me-marker'+(isSel?' sel':'')+(!el.id?' pending':'');
+    const isEditing=meSel && ((el.id && el.id===meSel.id) || (!el.id && !meSel.id));
+    const isMulti=el.id && meSelectedIds.has(el.id);
+    m.className='me-marker'+(isEditing?' sel':'')+(isMulti?' multi':'')+(!el.id?' pending':'');
     m.style.left=((el.position?el.position.x:0.5)*100)+'%';
     m.style.top=((el.position?el.position.y:0.5)*100)+'%';
     m.textContent=(el.asset&&el.asset.value)||'❓';
-    m.addEventListener('pointerdown',ev=>{ev.stopPropagation();meSelect(el);meDragging=true;m.setPointerCapture(ev.pointerId);});
-    m.addEventListener('pointermove',ev=>{if(meDragging&&meSel){const p=meNorm(ev);meSel.position={x:p.x,y:p.y};document.getElementById('f_x').value=p.x.toFixed(3);document.getElementById('f_y').value=p.y.toFixed(3);m.style.left=(p.x*100)+'%';m.style.top=(p.y*100)+'%';}});
-    m.addEventListener('pointerup',ev=>{meDragging=false;});
+    m.addEventListener('pointerdown',ev=>meMarkerDown(ev,el));
     meMarkers.appendChild(m);
   });
+}
+
+function meMarkerDown(ev,el){
+  ev.stopPropagation(); ev.preventDefault();
+  // Cmd/Ctrl/Maj-clic = (dé)sélectionner pour la suppression multiple.
+  if((ev.metaKey||ev.ctrlKey||ev.shiftKey) && el.id){
+    if(meSelectedIds.has(el.id)) meSelectedIds.delete(el.id); else meSelectedIds.add(el.id);
+    meUpdateMultiUI(); meRender(); return;
+  }
+  meSelect(el);
+  meDrag={x0:ev.clientX,y0:ev.clientY,moved:false};
+}
+
+// Drag & relâchement au niveau DOCUMENT : chaque meRender reconstruit les
+// marqueurs (innerHTML=''), donc on ne peut pas capturer le pointeur sur un
+// marqueur (il serait détruit → cycle d'événements cassé, sélection bloquée).
+document.addEventListener('pointermove',function(ev){
+  if(!meDrag||!meSel)return;
+  if(!meDrag.moved && Math.abs(ev.clientX-meDrag.x0)+Math.abs(ev.clientY-meDrag.y0)>3) meDrag.moved=true;
+  if(!meDrag.moved)return;
+  const p=meNorm(ev);
+  meSel.position={x:p.x,y:p.y};
+  const fx=document.getElementById('f_x'),fy=document.getElementById('f_y');
+  if(fx)fx.value=p.x.toFixed(3); if(fy)fy.value=p.y.toFixed(3);
+  meRender();
+});
+document.addEventListener('pointerup',function(){ meDrag=null; });
+
+function meUpdateMultiUI(){
+  const n=meSelectedIds.size, bar=document.getElementById('meMultiBar');
+  if(!bar)return; bar.style.display=n>0?'block':'none';
+  const c=document.getElementById('meMultiCount'); if(c)c.textContent=n+' sélectionné'+(n>1?'s':'');
+}
+function meClearSelection(){ meSelectedIds.clear(); meUpdateMultiUI(); meRender(); }
+function meDeleteSelection(){
+  const ids=[...meSelectedIds]; if(!ids.length)return;
+  if(!confirm('Supprimer '+ids.length+' élément'+(ids.length>1?'s':'')+' ?'))return;
+  Promise.all(ids.map(id=>fetch('/api/map-elements/'+id+'/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}).then(r=>r.json()).catch(()=>({}))))
+    .then(()=>{ meSelectedIds.clear(); meSel=null; meUpdateMultiUI();
+      document.getElementById('meForm').style.display='none';
+      document.getElementById('meEmpty').style.display='block';
+      document.getElementById('meTitle').textContent='Supprimé(s) ✅'; meFetch(); });
 }
 
 meImg.addEventListener('click',ev=>{const p=meNorm(ev);
