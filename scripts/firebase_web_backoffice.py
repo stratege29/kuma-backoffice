@@ -1311,7 +1311,8 @@ MAP_ELEMENTS_PAGE_HTML = r'''
 </style>
 <div class="me-wrap">
   <div class="me-left">
-    <div class="me-hint">👉 Clique sur la carte pour placer • clique un objet pour le <b>sélectionner</b>, puis <b>glisse-le</b> pour le déplacer • désélection : re-clic, clic sur le fond, <b>Échap</b> ou bouton ✖ • <b>Cmd/Ctrl/Maj-clic</b> pour en sélectionner plusieurs.
+    <div class="me-hint">👉 Clique sur la carte pour placer • clique un objet pour le <b>sélectionner</b> puis déplace-le avec les <b>flèches du clavier</b> (Maj = grand pas) ou les boutons ▲▼◀▶ • désélection : re-clic, clic sur le fond, <b>Échap</b> ou ✖ • <b>Cmd/Ctrl/Maj-clic</b> : sélection multiple
+      <label style="white-space:nowrap;font-size:11px;color:#64748b"><input type="checkbox" id="meDragToggle" onchange="meDragToggleFn()" style="vertical-align:middle"> glisser à la souris</label>
       <button class="me-btn me-new" style="color:#fff;padding:5px 10px" onclick="meNew()">＋ Nouvel élément</button></div>
     <div id="meMultiBar" style="display:none;margin-bottom:8px;padding:6px 10px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;font-size:12px;color:#991b1b">
       <span id="meMultiCount">0 sélectionné</span>
@@ -1346,6 +1347,14 @@ MAP_ELEMENTS_PAGE_HTML = r'''
         <div><label>x</label><input id="f_x" type="number" step="0.001" min="0" max="1" oninput="meFormToSel()"></div>
         <div><label>y</label><input id="f_y" type="number" step="0.001" min="0" max="1" oninput="meFormToSel()"></div>
         <div><label>Taille</label><input id="f_scale" type="number" step="0.1" min="0.2" max="5" value="1"></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:5px;margin-top:6px;flex-wrap:wrap">
+        <span style="font-size:11px;color:#64748b;font-weight:600">DÉPLACER :</span>
+        <button type="button" class="me-btn me-new" style="padding:5px 10px" onclick="meNudge(0,-0.003)">▲</button>
+        <button type="button" class="me-btn me-new" style="padding:5px 10px" onclick="meNudge(0,0.003)">▼</button>
+        <button type="button" class="me-btn me-new" style="padding:5px 10px" onclick="meNudge(-0.003,0)">◀</button>
+        <button type="button" class="me-btn me-new" style="padding:5px 10px" onclick="meNudge(0.003,0)">▶</button>
+        <span style="font-size:10px;color:#94a3b8">ou flèches clavier (Maj = grand pas)</span>
       </div>
       <label>Animation (mode run)</label>
       <select id="f_anim" onchange="meAnimChanged()">
@@ -1390,6 +1399,11 @@ MAP_ELEMENTS_PAGE_HTML = r'''
 const ME_EMOJIS=['🌴','🐟','🐠','🐦','🦅','🚗','🚙','🦁','🐘','🦒','🦓','🐊','⛵','🛶','🐫','🏝️','🌋','⭐','🔥','🌺'];
 let meElements=[]; let meSel=null; let meRouteMode=false;
 let meSelectedIds=new Set(); let meDrag=null; let meBgDown=null;
+// Glisser à la souris DÉSACTIVÉ par défaut : sur les trackpads macOS avec
+// « verrouillage du glissement » (Accessibilité), l'OS maintient le bouton
+// virtuellement enfoncé → l'objet « suit la souris » et se dépose au tap
+// suivant. Déplacement fiable = flèches clavier / boutons ▲▼◀▶.
+let meDragEnabled=false; try{meDragEnabled=localStorage.getItem('meDragEnabled')==='1';}catch(e){}
 const meImg=document.getElementById('meImg');
 const meMarkers=document.getElementById('meMarkers');
 
@@ -1426,8 +1440,15 @@ function meMarkerDown(ev,el){
     meUpdateMultiUI(); meRender(); return;
   }
   // Mémoriser si l'élément était DÉJÀ sélectionné : un simple clic (sans drag)
-  // sur l'élément sélectionné le désélectionne (toggle, géré au pointerup).
+  // sur l'élément sélectionné le désélectionne (toggle).
   const wasSel = !!(meSel && el.id && meSel.id===el.id);
+  // Mode par défaut SANS glisser-souris : clic = sélection, re-clic =
+  // désélection, déplacement UNIQUEMENT au clavier/boutons → aucune capture,
+  // aucun drag armé : totalement insensible au drag-lock du trackpad.
+  if(!meDragEnabled){
+    if(wasSel){ meDeselect(); } else { meSelect(el); }
+    return;
+  }
   meSelect(el);
   // SÉLECTIONNER puis GLISSER : seul un élément DÉJÀ sélectionné (ou un
   // nouvel élément pas encore enregistré) peut être déplacé. Le clic de
@@ -1496,6 +1517,37 @@ document.addEventListener('keydown',function(ev){
   }
   if(meSel) meDeselect();
 });
+
+// Déplacement au CLAVIER : flèches = petit pas, Maj+flèches = grand pas.
+// Fiable quel que soit le trackpad/la souris (aucun drag impliqué).
+function meNudge(dx,dy){
+  if(!meSel)return;
+  meSel.position={
+    x:Math.min(1,Math.max(0,(meSel.position.x||0)+dx)),
+    y:Math.min(1,Math.max(0,(meSel.position.y||0)+dy))};
+  const fx=document.getElementById('f_x'),fy=document.getElementById('f_y');
+  if(fx)fx.value=meSel.position.x.toFixed(3);
+  if(fy)fy.value=meSel.position.y.toFixed(3);
+  meRender();
+}
+document.addEventListener('keydown',function(ev){
+  if(!meSel)return;
+  const k=ev.key;
+  if(k!=='ArrowUp'&&k!=='ArrowDown'&&k!=='ArrowLeft'&&k!=='ArrowRight')return;
+  // Ne pas voler les flèches quand on tape dans un champ du formulaire.
+  const t=document.activeElement;
+  if(t&&(t.tagName==='INPUT'||t.tagName==='TEXTAREA'||t.tagName==='SELECT'))return;
+  ev.preventDefault();
+  const s=ev.shiftKey?0.015:0.003;
+  meNudge(k==='ArrowLeft'?-s:k==='ArrowRight'?s:0,
+          k==='ArrowUp'?-s:k==='ArrowDown'?s:0);
+});
+
+function meDragToggleFn(){
+  const cb=document.getElementById('meDragToggle');
+  meDragEnabled=!!(cb&&cb.checked);
+  try{localStorage.setItem('meDragEnabled',meDragEnabled?'1':'0');}catch(e){}
+}
 
 function meUpdateMultiUI(){
   const n=meSelectedIds.size, bar=document.getElementById('meMultiBar');
@@ -1605,6 +1657,7 @@ function meRouteClear(){if(meSel){meSel.animation.path=[];meRenderPath();meUpdat
 function meUpdateRouteCount(){const n=(meSel&&meSel.animation&&meSel.animation.path)?meSel.animation.path.length:0;const el=document.getElementById('meRouteCount');if(el)el.textContent='('+n+' point'+(n>1?'s':'')+')';}
 function meRenderPath(){const svg=document.getElementById('mePath');const path=(meSel&&meSel.animation&&meSel.animation.path)||[];const af=document.getElementById('f_anim');const k=af?af.value:'';if((k!=='drive'&&k!=='fly')||path.length===0){svg.innerHTML='';return;}svg.setAttribute('viewBox','0 0 100 100');svg.setAttribute('preserveAspectRatio','none');const pts=path.map(p=>(p.x*100)+','+(p.y*100)).join(' ');let s='<polyline points="'+pts+'" fill="none" stroke="#ff8a00" stroke-width="1.5" stroke-dasharray="3 3" vector-effect="non-scaling-stroke"/>';path.forEach(p=>{s+='<circle cx="'+(p.x*100)+'" cy="'+(p.y*100)+'" r="1.3" fill="#ff8a00" vector-effect="non-scaling-stroke"/>';});svg.innerHTML=s;}
 meEmojiPalette();
+(function(){var cb=document.getElementById('meDragToggle');if(cb)cb.checked=meDragEnabled;})();
 if(meImg.complete)meFetch();else meImg.addEventListener('load',meFetch);
 </script>
 '''
