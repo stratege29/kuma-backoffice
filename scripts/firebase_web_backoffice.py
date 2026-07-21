@@ -1398,7 +1398,7 @@ MAP_ELEMENTS_PAGE_HTML = r'''
 <script>
 const ME_EMOJIS=['🌴','🐟','🐠','🐦','🦅','🚗','🚙','🦁','🐘','🦒','🦓','🐊','⛵','🛶','🐫','🏝️','🌋','⭐','🔥','🌺'];
 let meElements=[]; let meSel=null; let meRouteMode=false;
-let meSelectedIds=new Set(); let meDrag=null; let meBgDown=null;
+let meSelectedIds=new Set(); let meDown=null;
 // Glisser à la souris DÉSACTIVÉ par défaut : sur les trackpads macOS avec
 // « verrouillage du glissement » (Accessibilité), l'OS maintient le bouton
 // virtuellement enfoncé → l'objet « suit la souris » et se dépose au tap
@@ -1426,51 +1426,13 @@ function meRender(){
     m.style.left=((el.position?el.position.x:0.5)*100)+'%';
     m.style.top=((el.position?el.position.y:0.5)*100)+'%';
     m.textContent=(el.asset&&el.asset.value)||'❓';
-    m.addEventListener('pointerdown',ev=>meMarkerDown(ev,el));
+    m.dataset.id=el.id||''; // '' = élément nouveau (pending). Sélection = délégation.
     meMarkers.appendChild(m);
   });
 }
 
-function meMarkerDown(ev,el){
-  ev.stopPropagation(); ev.preventDefault();
-  // Cmd/Ctrl/Maj-clic = (dé)sélectionner pour la suppression multiple.
-  meBgDown=null; // un geste marqueur ne doit jamais compter comme tap sur le fond
-  if((ev.metaKey||ev.ctrlKey||ev.shiftKey) && el.id){
-    if(meSelectedIds.has(el.id)) meSelectedIds.delete(el.id); else meSelectedIds.add(el.id);
-    meUpdateMultiUI(); meRender(); return;
-  }
-  // Mémoriser si l'élément était DÉJÀ sélectionné : un simple clic (sans drag)
-  // sur l'élément sélectionné le désélectionne (toggle).
-  const wasSel = !!(meSel && el.id && meSel.id===el.id);
-  // Mode par défaut SANS glisser-souris : clic = sélection, re-clic =
-  // désélection, déplacement UNIQUEMENT au clavier/boutons → aucune capture,
-  // aucun drag armé : totalement insensible au drag-lock du trackpad.
-  if(!meDragEnabled){
-    if(wasSel){ meDeselect(); } else { meSelect(el); }
-    return;
-  }
-  meSelect(el);
-  // SÉLECTIONNER puis GLISSER : seul un élément DÉJÀ sélectionné (ou un
-  // nouvel élément pas encore enregistré) peut être déplacé. Le clic de
-  // sélection n'arme donc JAMAIS de drag → même si l'OS « verrouille » le
-  // glissement (trackpad macOS : glissement à trois doigts / drag lock),
-  // l'objet ne peut pas suivre la souris ni se déposer au clic suivant.
-  if(!wasSel && el.id) return;
-  // meSelect → meRender a reconstruit les marqueurs : retrouver le nœud du
-  // marqueur sélectionné pour le déplacer EN DIRECT pendant le drag.
-  // orig = position de départ, restaurée si le drag est annulé (Échap).
-  meDrag={x0:ev.clientX,y0:ev.clientY,moved:false,wasSel:wasSel,
-          orig:{x:meSel.position.x,y:meSel.position.y},
-          node:meMarkers.querySelector('.me-marker.sel')};
-  // Capturer le pointeur sur le CONTENEUR (stable, jamais détruit par les
-  // re-render) : pointermove/pointerup lui sont routés même si la souris est
-  // relâchée HORS de la fenêtre — sinon le pointerup est perdu et l'élément
-  // « suit la souris » indéfiniment.
-  try{meMarkers.setPointerCapture(ev.pointerId);}catch(e){}
-}
-
 function meDeselect(){
-  meSel=null; meDrag=null;
+  meSel=null; meDown=null;
   document.getElementById('meForm').style.display='none';
   document.getElementById('meEmpty').style.display='block';
   document.getElementById('meTitle').textContent='Aucun élément sélectionné';
@@ -1478,42 +1440,13 @@ function meDeselect(){
   meRender();
 }
 
-// Drag & relâchement au niveau DOCUMENT (les événements capturés par
-// #meMarkers y remontent par bubbling). On déplace le nœud du marqueur en
-// direct (pas de re-render par frame) et on re-render une fois au lâcher.
-document.addEventListener('pointermove',function(ev){
-  if(!meDrag||!meSel)return;
-  if(ev.buttons===0){meDrag=null;return;} // aucun bouton enfoncé → drag périmé
-  if(!meDrag.moved && Math.abs(ev.clientX-meDrag.x0)+Math.abs(ev.clientY-meDrag.y0)>3) meDrag.moved=true;
-  if(!meDrag.moved)return;
-  const p=meNorm(ev);
-  meSel.position={x:p.x,y:p.y};
-  const fx=document.getElementById('f_x'),fy=document.getElementById('f_y');
-  if(fx)fx.value=p.x.toFixed(3); if(fy)fy.value=p.y.toFixed(3);
-  if(meDrag.node){meDrag.node.style.left=(p.x*100)+'%';meDrag.node.style.top=(p.y*100)+'%';}
-  else meRender();
-});
-function meEndDrag(){
-  if(!meDrag)return;
-  // Clic simple (sans drag) sur l'élément déjà sélectionné → désélection.
-  if(!meDrag.moved && meDrag.wasSel){ meDeselect(); return; }
-  const moved=meDrag.moved;
-  meDrag=null;
-  if(moved) meRender();
-}
-document.addEventListener('pointerup',meEndDrag);
-document.addEventListener('pointercancel',meEndDrag);
-window.addEventListener('blur',function(){ meDrag=null; });
-
-// Échap : annule le drag en cours (l'élément REVIENT à sa position d'origine),
-// sinon désélectionne. Filet fiable notamment avec le « glissement à trois
-// doigts / verrouillage du glissement » de macOS, où le navigateur ne reçoit
-// pas de pointerup tant que l'OS maintient le drag.
+// Échap : annule un glisser-souris en cours (retour à la position d'origine),
+// sinon désélectionne.
 document.addEventListener('keydown',function(ev){
   if(ev.key!=='Escape')return;
-  if(meDrag){
-    if(meDrag.orig&&meSel){meSel.position={x:meDrag.orig.x,y:meDrag.orig.y};}
-    meDrag=null; meRender(); return;
+  if(meDown&&meDown.dragging){
+    if(meDown.orig&&meSel){meSel.position={x:meDown.orig.x,y:meDown.orig.y};}
+    meDown=null; meRender(); return;
   }
   if(meSel) meDeselect();
 });
@@ -1565,25 +1498,59 @@ function meDeleteSelection(){
       document.getElementById('meTitle').textContent='Supprimé(s) ✅'; meFetch(); });
 }
 
-// Tap sur le FOND : détecté par pointerdown+pointerup sur le conteneur, PAS
-// par « click » (après capture + reconstruction des marqueurs, le click
-// synthétique est reciblé de façon imprévisible → il pouvait créer un élément
-// en cliquant un marqueur). Les gestes marqueurs ne peuvent JAMAIS arriver ici
-// en tant que tap-fond : leur pointerdown fait stopPropagation, donc meBgDown
-// reste null et le pointerup (qui bulle depuis la capture) est ignoré.
+// INTERACTION unifiée par DÉLÉGATION sur le conteneur : un seul point d'entrée,
+// aucun listener par marqueur, aucune capture de pointeur. Robuste même si
+// meRender reconstruit les marqueurs pendant le geste (on retrouve l'élément
+// par son data-id au relâchement).
 const meCanvasEl=document.getElementById('meCanvas');
-meCanvasEl.addEventListener('pointerdown',ev=>{ meBgDown={x:ev.clientX,y:ev.clientY}; });
-meCanvasEl.addEventListener('pointerup',ev=>{
-  const d=meBgDown; meBgDown=null;
-  if(!d)return; // geste commencé sur un marqueur → pas un tap sur le fond
-  if(Math.abs(ev.clientX-d.x)+Math.abs(ev.clientY-d.y)>5)return; // drag du fond, pas un tap
+function meFindEl(id){
+  if(id==='') return (meSel && !meSel.id) ? meSel : null;            // élément « nouveau » (pending)
+  return meElements.find(e=>e.id===id) || ((meSel&&meSel.id===id)?meSel:null);
+}
+meCanvasEl.addEventListener('pointerdown',function(ev){
+  const mk=ev.target.closest?ev.target.closest('.me-marker'):null;
+  meDown={x:ev.clientX,y:ev.clientY,id:mk?mk.dataset.id:null,isMarker:!!mk,node:mk,dragging:false,orig:null};
+  if(mk)ev.preventDefault(); // évite la sélection du texte de l'emoji
+});
+meCanvasEl.addEventListener('pointermove',function(ev){
+  if(!meDown)return;
+  if(ev.buttons===0){meDown=null;return;}               // relâché ailleurs → geste périmé
+  if(!meDragEnabled||!meDown.isMarker)return;           // glisser-souris = opt-in, depuis un marqueur
+  if(!meDown.dragging){
+    if(Math.abs(ev.clientX-meDown.x)+Math.abs(ev.clientY-meDown.y)<=3)return;
+    const el=meFindEl(meDown.id); if(!el){meDown=null;return;}
+    if(!(meSel && ((meSel.id&&meSel.id===el.id)||(!meSel.id&&!el.id)))) meSelect(el);
+    meDown.dragging=true; meDown.orig={x:meSel.position.x,y:meSel.position.y};
+    meDown.node=meMarkers.querySelector('.me-marker.sel');
+  }
   const p=meNorm(ev);
+  meSel.position={x:p.x,y:p.y};
+  const fx=document.getElementById('f_x'),fy=document.getElementById('f_y');
+  if(fx)fx.value=p.x.toFixed(3); if(fy)fy.value=p.y.toFixed(3);
+  if(meDown.node){meDown.node.style.left=(p.x*100)+'%';meDown.node.style.top=(p.y*100)+'%';}
+});
+meCanvasEl.addEventListener('pointerup',function(ev){
+  const d=meDown; meDown=null;
+  if(!d)return;
+  if(d.dragging){ meRender(); return; }                                   // fin d'un glisser-souris
+  if(Math.abs(ev.clientX-d.x)+Math.abs(ev.clientY-d.y)>6) return;         // pas un tap net
+  if(d.isMarker){
+    const el=meFindEl(d.id); if(!el)return;
+    if((ev.metaKey||ev.ctrlKey||ev.shiftKey) && el.id){                   // multi-sélection
+      if(meSelectedIds.has(el.id)) meSelectedIds.delete(el.id); else meSelectedIds.add(el.id);
+      meUpdateMultiUI(); meRender(); return;
+    }
+    const already = meSel && ((el.id&&meSel.id===el.id)||(!el.id&&!meSel.id));
+    if(already) meDeselect(); else meSelect(el);                          // toggle sélection
+    return;
+  }
+  const p=meNorm(ev);                                                     // tap sur le fond
   if(meRouteMode&&meSel){meSel.animation.path=meSel.animation.path||[];meSel.animation.path.push({x:+p.x.toFixed(3),y:+p.y.toFixed(3)});meRenderPath();meUpdateRouteCount();return;}
-  // Un élément est sélectionné → le tap sur le fond DÉSÉLECTIONNE. Créer =
-  // tap sur fond sans sélection, ou bouton « Nouvel élément ».
   if(meSel){meDeselect();return;}
   meNew(p);
 });
+document.addEventListener('pointercancel',function(){meDown=null;});
+window.addEventListener('blur',function(){meDown=null;});
 
 function meNew(pos){
   meSel={id:null,type:'decor',label:'',asset:{kind:'emoji',value:'🌴'},position:pos||{x:0.5,y:0.5},scale:1,water:false,
