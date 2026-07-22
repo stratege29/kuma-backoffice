@@ -231,7 +231,10 @@ class FirebaseManager:
 
                 firebase_admin.initialize_app(cred, {
                     'projectId': 'kumafire-7864b',
-                    'storageBucket': 'kumafire-7864b.appspot.com'
+                    # Nom réel du bucket Firebase Storage. L'ancien
+                    # `kumafire-7864b.appspot.com` N'EXISTE PAS → cassait tous les
+                    # `storage.bucket()` sans arg (upload fichier + souvenir).
+                    'storageBucket': 'kumafire-7864b.firebasestorage.app'
                 })
 
                 print(f"✅ Firebase initialisé avec: {credentials_source}")
@@ -1308,6 +1311,15 @@ MAP_ELEMENTS_PAGE_HTML = r'''
   .me-save{background:#ff8a00;flex:1}.me-del{background:#dc2626}.me-new{background:#0ea5e9}
   .me-note{font-size:11px;color:#94a3b8;margin-top:10px}
   .me-empty{color:#94a3b8;font-size:13px;padding:20px 0;text-align:center}
+  .me-table{width:100%;border-collapse:collapse;margin-top:8px;font-size:12px}
+  .me-table th{text-align:left;color:#64748b;font-weight:600;padding:6px 8px;border-bottom:2px solid #e2e8f0;text-transform:uppercase;font-size:10px}
+  .me-table td{padding:5px 8px;border-bottom:1px solid #f1f5f9;vertical-align:middle}
+  .me-table tr.sel{background:#fff7ed}
+  .me-table tbody tr:hover{background:#f8fafc;cursor:pointer}
+  .me-table tr.me-off td{opacity:.45}
+  .me-app{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;font-size:18px}
+  .me-app img{width:22px;height:22px;object-fit:contain}
+  .me-zbtn{border:1px solid #cbd5e1;background:#f8fafc;border-radius:5px;cursor:pointer;font-size:11px;padding:1px 6px;line-height:1.5}
 </style>
 <div class="me-wrap">
   <div class="me-left">
@@ -1325,6 +1337,16 @@ MAP_ELEMENTS_PAGE_HTML = r'''
       <div id="meMarkers"></div>
     </div>
     <div class="me-note">Position enregistrée en coordonnées normalisées (0–1), comme les pays. Écrit dans Firestore <code>map_elements</code>, lu par l'app.</div>
+    <div class="me-list" id="meListWrap">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px">
+        <h3 style="margin:0;font-size:14px">📋 Éléments (<span id="meCount">0</span>) — <span style="font-weight:400;color:#94a3b8;font-size:12px">le 1ᵉʳ de la liste est au premier plan</span></h3>
+        <button class="me-btn me-new" style="padding:5px 10px" onclick="meFetch()">↻ Rafraîchir</button>
+      </div>
+      <table class="me-table"><thead><tr>
+        <th>Vue</th><th>Nom</th><th>Type</th><th>z</th><th>Calque</th><th>Visible</th><th></th>
+      </tr></thead><tbody id="meTableBody"></tbody></table>
+      <div class="me-empty" id="meListEmpty" style="display:none">Aucun élément. Clique la carte pour en créer un.</div>
+    </div>
   </div>
   <div class="me-props" id="meProps">
     <h3 id="meTitle">Aucun élément sélectionné</h3>
@@ -1340,13 +1362,31 @@ MAP_ELEMENTS_PAGE_HTML = r'''
         <option value="animal">🦁 Animal</option>
         <option value="boat">⛵ Bateau</option>
       </select>
-      <label>Emoji</label>
-      <input id="f_emoji" value="🌴" maxlength="4">
-      <div class="me-emojis" id="meEmojis"></div>
+      <label>Apparence</label>
+      <select id="f_assetkind" onchange="meAssetKindChanged()">
+        <option value="emoji">😀 Emoji</option>
+        <option value="image">🖼️ Image (sprite)</option>
+      </select>
+      <div id="meEmojiBlock">
+        <label>Emoji</label>
+        <input id="f_emoji" value="🌴" maxlength="4">
+        <div class="me-emojis" id="meEmojis"></div>
+      </div>
+      <div id="meImageBlock" style="display:none">
+        <label>Image (PNG transparent conseillé, ≤ 512 px)</label>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <img id="f_imgpreview" src="" alt="" style="display:none;width:48px;height:48px;object-fit:contain;border:1px solid #e2e8f0;border-radius:6px;background:#f8fafc">
+          <input type="file" id="f_imgfile" accept="image/*" style="font-size:12px">
+          <button type="button" class="me-btn me-new" id="meUploadBtn" style="padding:5px 10px" onclick="meUploadImage()">⬆️ Uploader</button>
+        </div>
+        <div id="meUploadStatus" style="font-size:11px;color:#64748b;margin-top:4px"></div>
+        <input type="hidden" id="f_imgurl" value="">
+      </div>
       <div class="me-row">
         <div><label>x</label><input id="f_x" type="number" step="0.001" min="0" max="1" oninput="meFormToSel()"></div>
         <div><label>y</label><input id="f_y" type="number" step="0.001" min="0" max="1" oninput="meFormToSel()"></div>
         <div><label>Taille</label><input id="f_scale" type="number" step="0.1" min="0.2" max="5" value="1"></div>
+        <div><label title="Calque : plus grand = au-dessus">Calque (z)</label><input id="f_z" type="number" step="1" min="0" value="0"></div>
       </div>
       <div style="display:flex;align-items:center;gap:5px;margin-top:6px;flex-wrap:wrap">
         <span style="font-size:11px;color:#64748b;font-weight:600">DÉPLACER :</span>
@@ -1385,6 +1425,14 @@ MAP_ELEMENTS_PAGE_HTML = r'''
         <label>Popup — Texte</label>
         <textarea id="f_pbody" rows="3" placeholder="Petit texte enfant…"></textarea>
       </div>
+      <div class="me-check"><input type="checkbox" id="f_sched" onchange="meSchedToggle()"><label style="margin:0">Planning horaire (visible seulement à certaines heures)</label></div>
+      <div id="meSchedBox" style="display:none;margin-top:6px">
+        <div class="me-row">
+          <div><label>De (heure)</label><input id="f_sched_start" type="number" min="0" max="23" step="1" value="7"></div>
+          <div><label>À (heure)</label><input id="f_sched_end" type="number" min="0" max="23" step="1" value="19"></div>
+        </div>
+        <div class="me-note" style="margin-top:4px">Heures locales 0–23. « De 20 à 6 » = la nuit (passe minuit). Décoché = toujours visible.</div>
+      </div>
       <div class="me-check"><input type="checkbox" id="f_enabled" checked><label style="margin:0">Activé (visible dans l'app)</label></div>
       <div class="me-actions">
         <button class="me-btn" style="background:#64748b" onclick="meDeselect()">✖ Désélectionner</button>
@@ -1408,7 +1456,45 @@ const meImg=document.getElementById('meImg');
 const meMarkers=document.getElementById('meMarkers');
 
 function meEmojiPalette(){const c=document.getElementById('meEmojis');c.innerHTML='';ME_EMOJIS.forEach(e=>{const b=document.createElement('button');b.textContent=e;b.onclick=()=>{document.getElementById('f_emoji').value=e;meFormToSel();};c.appendChild(b);});}
-function meFetch(){fetch('/api/map-elements').then(r=>r.json()).then(d=>{meElements=d.elements||[];const ids=new Set(meElements.map(e=>e.id));[...meSelectedIds].forEach(id=>{if(!ids.has(id))meSelectedIds.delete(id);});meUpdateMultiUI();meRender();}).catch(()=>{});}
+function meFetch(){fetch('/api/map-elements').then(r=>r.json()).then(d=>{meElements=d.elements||[];const ids=new Set(meElements.map(e=>e.id));[...meSelectedIds].forEach(id=>{if(!ids.has(id))meSelectedIds.delete(id);});meUpdateMultiUI();meRender();meRenderTable();}).catch(()=>{});}
+function meEsc(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+function meByZdesc(a,b){const za=a.z||0,zb=b.z||0;if(za!==zb)return zb-za;return (a.id||'').localeCompare(b.id||'');}
+function meUpdateElement(el){const body=JSON.parse(JSON.stringify(el));delete body.id;return fetch('/api/map-elements/'+el.id+'/update',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json());}
+function meToggleEnabled(id,val){const el=meElements.find(e=>e.id===id);if(!el)return;el.enabled=val;meRenderTable();meRender();meUpdateElement(el).then(()=>meFetch());}
+function meReorder(id,dir){ // dir=-1 vers le premier plan (haut liste), +1 vers l'arrière
+  const arr=meElements.filter(e=>e.id).sort(meByZdesc);
+  const i=arr.findIndex(e=>e.id===id);const j=i+dir;
+  if(i<0||j<0||j>=arr.length)return;
+  const t=arr[i];arr[i]=arr[j];arr[j]=t;
+  const n=arr.length;const ups=[];
+  arr.forEach((e,idx)=>{const nz=n-1-idx;if((e.z||0)!==nz){e.z=nz;ups.push(e);}});
+  if(!ups.length){meFetch();return;}
+  Promise.all(ups.map(meUpdateElement)).then(()=>meFetch());
+}
+function meAppCell(el){if(el.asset&&el.asset.kind==='image'&&el.asset.value){return '<span class="me-app"><img src="'+meEsc(el.asset.value)+'"></span>';}return '<span class="me-app">'+meEsc((el.asset&&el.asset.value)||'❓')+'</span>';}
+function meRenderTable(){
+  const body=document.getElementById('meTableBody');if(!body)return;
+  const arr=meElements.filter(e=>e.id).sort(meByZdesc);
+  const cnt=document.getElementById('meCount');if(cnt)cnt.textContent=arr.length;
+  const empty=document.getElementById('meListEmpty');if(empty)empty.style.display=arr.length?'none':'block';
+  body.innerHTML='';
+  arr.forEach((el,idx)=>{
+    const tr=document.createElement('tr');
+    const isSel=meSel&&meSel.id===el.id;
+    tr.className=(isSel?'sel ':'')+(el.enabled===false?'me-off':'');
+    tr.onclick=(ev)=>{if(ev.target.closest('button')||ev.target.closest('input'))return;meSelect(el);};
+    const up=idx>0?'<button class="me-zbtn" title="Vers le premier plan" onclick="event.stopPropagation();meReorder(\''+el.id+'\',-1)">▲</button>':'<span style="display:inline-block;width:24px"></span>';
+    const dn=idx<arr.length-1?'<button class="me-zbtn" title="Vers l\'arrière" onclick="event.stopPropagation();meReorder(\''+el.id+'\',1)">▼</button>':'';
+    tr.innerHTML='<td>'+meAppCell(el)+'</td>'+
+      '<td>'+(meEsc(el.label)||'<i style=\"color:#94a3b8\">(sans nom)</i>')+(el.schedule?(' <span title="Planning '+((el.schedule.startHour!=null?el.schedule.startHour:'?'))+'h–'+((el.schedule.endHour!=null?el.schedule.endHour:'?'))+'h" style="color:#0ea5e9">⏰</span>'):'')+'</td>'+
+      '<td>'+meEsc(el.type||'')+'</td>'+
+      '<td>'+(el.z||0)+'</td>'+
+      '<td style="white-space:nowrap">'+up+' '+dn+'</td>'+
+      '<td style="text-align:center"><input type="checkbox" '+(el.enabled!==false?'checked':'')+' onclick="event.stopPropagation();meToggleEnabled(\''+el.id+'\',this.checked)"></td>'+
+      '<td><button class="me-zbtn" title="Éditer" onclick="event.stopPropagation();var e=meFindEl(\''+el.id+'\');if(e)meSelect(e)">✏️</button></td>';
+    body.appendChild(tr);
+  });
+}
 function meNorm(ev){const r=meImg.getBoundingClientRect();return {x:Math.min(1,Math.max(0,(ev.clientX-r.left)/r.width)),y:Math.min(1,Math.max(0,(ev.clientY-r.top)/r.height))};}
 
 function meRender(){
@@ -1425,7 +1511,14 @@ function meRender(){
     m.className='me-marker'+(isEditing?' sel':'')+(isMulti?' multi':'')+(!el.id?' pending':'');
     m.style.left=((el.position?el.position.x:0.5)*100)+'%';
     m.style.top=((el.position?el.position.y:0.5)*100)+'%';
-    m.textContent=(el.asset&&el.asset.value)||'❓';
+    if(el.asset&&el.asset.kind==='image'&&el.asset.value){
+      const im=document.createElement('img');
+      im.src=el.asset.value; im.draggable=false;
+      im.style.cssText='width:30px;height:30px;object-fit:contain;display:block;pointer-events:none';
+      m.appendChild(im);
+    }else{
+      m.textContent=(el.asset&&el.asset.value)||'❓';
+    }
     m.dataset.id=el.id||''; // '' = élément nouveau (pending). Sélection = délégation.
     meMarkers.appendChild(m);
   });
@@ -1437,7 +1530,7 @@ function meDeselect(){
   document.getElementById('meEmpty').style.display='block';
   document.getElementById('meTitle').textContent='Aucun élément sélectionné';
   const svg=document.getElementById('mePath'); if(svg)svg.innerHTML='';
-  meRender();
+  meRender();meRenderTable();
 }
 
 // Échap : annule un glisser-souris en cours (retour à la position d'origine),
@@ -1555,7 +1648,7 @@ function meNew(pos){
     animation:{kind:'bob',speed:1,amplitude:1,period:24,loop:true,path:[]},interactive:true,popup:{title:'',body:''},enabled:true,z:0};
   meFill();meRender();
 }
-function meSelect(el){meSel=JSON.parse(JSON.stringify(el));meFill();meRender();}
+function meSelect(el){meSel=JSON.parse(JSON.stringify(el));meFill();meRender();meRenderTable();}
 
 function meFill(){
   document.getElementById('meForm').style.display='block';
@@ -1564,10 +1657,20 @@ function meFill(){
   document.getElementById('meDelBtn').style.display=meSel.id?'block':'none';
   document.getElementById('f_label').value=meSel.label||'';
   document.getElementById('f_type').value=meSel.type||'decor';
-  document.getElementById('f_emoji').value=(meSel.asset&&meSel.asset.value)||'🌴';
+  const _ak=(meSel.asset&&meSel.asset.kind)||'emoji';
+  document.getElementById('f_assetkind').value=_ak;
+  if(_ak==='image'){
+    document.getElementById('f_imgurl').value=(meSel.asset&&meSel.asset.value)||'';
+    document.getElementById('f_emoji').value='🌴';
+  }else{
+    document.getElementById('f_emoji').value=(meSel.asset&&meSel.asset.value)||'🌴';
+    document.getElementById('f_imgurl').value='';
+  }
+  meAssetKindChanged(true);
   document.getElementById('f_x').value=(meSel.position.x||0).toFixed(3);
   document.getElementById('f_y').value=(meSel.position.y||0).toFixed(3);
   document.getElementById('f_scale').value=meSel.scale||1;
+  document.getElementById('f_z').value=meSel.z||0;
   document.getElementById('f_anim').value=(meSel.animation&&meSel.animation.kind)||'bob';
   document.getElementById('f_speed').value=(meSel.animation&&meSel.animation.speed)||1;
   document.getElementById('f_amp').value=(meSel.animation&&meSel.animation.amplitude)||1;
@@ -1581,17 +1684,56 @@ function meFill(){
   document.getElementById('f_ptitle').value=(meSel.popup&&meSel.popup.title)||'';
   document.getElementById('f_pbody').value=(meSel.popup&&meSel.popup.body)||'';
   document.getElementById('f_enabled').checked=meSel.enabled!==false;
+  const sch=meSel.schedule;
+  document.getElementById('f_sched').checked=!!sch;
+  if(sch){document.getElementById('f_sched_start').value=(sch.startHour!=null?sch.startHour:7);document.getElementById('f_sched_end').value=(sch.endHour!=null?sch.endHour:19);}
+  meSchedToggle();
   meTogglePopup();
 }
 function meTogglePopup(){document.getElementById('mePopup').style.display=document.getElementById('f_interactive').checked?'block':'none';}
 function meTypeChanged(){const t=document.getElementById('f_type').value;const map={fish:'🐟',bird:'🐦',car:'🚗',animal:'🦁',boat:'⛵',decor:'🌴'};if(map[t])document.getElementById('f_emoji').value=map[t];if(t==='fish'||t==='boat')document.getElementById('f_water').checked=true;meFormToSel();}
-function meFormToSel(){if(!meSel)return;meSel.position={x:parseFloat(document.getElementById('f_x').value)||0,y:parseFloat(document.getElementById('f_y').value)||0};meSel.asset={kind:'emoji',value:document.getElementById('f_emoji').value||'❓'};meRender();}
+function meAssetFromForm(){
+  const kind=document.getElementById('f_assetkind').value;
+  if(kind==='image'){return {kind:'image',value:(document.getElementById('f_imgurl').value||'').trim()};}
+  return {kind:'emoji',value:document.getElementById('f_emoji').value||'❓'};
+}
+function meAssetKindChanged(silent){
+  const kind=document.getElementById('f_assetkind').value;
+  document.getElementById('meEmojiBlock').style.display=(kind==='image')?'none':'block';
+  document.getElementById('meImageBlock').style.display=(kind==='image')?'block':'none';
+  const url=(document.getElementById('f_imgurl').value||'').trim();
+  const prev=document.getElementById('f_imgpreview');
+  if(kind==='image'&&url){prev.src=url;prev.style.display='inline-block';}else{prev.style.display='none';}
+  if(!silent)meFormToSel();
+}
+function meUploadImage(){
+  const inp=document.getElementById('f_imgfile');
+  const st=document.getElementById('meUploadStatus');
+  if(!inp.files||!inp.files[0]){st.textContent='Choisis un fichier image.';return;}
+  if(!meSel){st.textContent='Sélectionne d\'abord un élément.';return;}
+  const fd=new FormData();
+  fd.append('image',inp.files[0]);
+  fd.append('elementId',(meSel&&meSel.id)||'');
+  const btn=document.getElementById('meUploadBtn');
+  btn.disabled=true;st.textContent='Upload en cours…';
+  fetch('/api/map-elements/upload-image',{method:'POST',body:fd})
+    .then(r=>r.json()).then(res=>{
+      btn.disabled=false;
+      if(res.success&&res.url){
+        document.getElementById('f_imgurl').value=res.url;
+        const prev=document.getElementById('f_imgpreview');prev.src=res.url;prev.style.display='inline-block';
+        st.textContent='✅ '+(res.optimizedSize||'')+' ('+(res.width||'?')+'×'+(res.height||'?')+')';
+        meFormToSel();
+      }else{st.textContent='❌ '+(res.error||'échec upload');}
+    }).catch(e=>{btn.disabled=false;st.textContent='❌ '+e;});
+}
+function meFormToSel(){if(!meSel)return;meSel.position={x:parseFloat(document.getElementById('f_x').value)||0,y:parseFloat(document.getElementById('f_y').value)||0};meSel.asset=meAssetFromForm();meRender();}
 
 function meRead(){
   return {
     type:document.getElementById('f_type').value,
     label:document.getElementById('f_label').value.trim(),
-    asset:{kind:'emoji',value:document.getElementById('f_emoji').value||'❓'},
+    asset:meAssetFromForm(),
     position:{x:parseFloat(document.getElementById('f_x').value)||0,y:parseFloat(document.getElementById('f_y').value)||0},
     scale:parseFloat(document.getElementById('f_scale').value)||1,
     water:document.getElementById('f_water').checked,
@@ -1599,8 +1741,17 @@ function meRead(){
     interactive:document.getElementById('f_interactive').checked,
     popup:{title:document.getElementById('f_ptitle').value.trim(),body:document.getElementById('f_pbody').value.trim()},
     enabled:document.getElementById('f_enabled').checked,
-    z:0
+    z:parseInt(document.getElementById('f_z').value)||0,
+    schedule:meSchedRead()
   };
+}
+function meSchedToggle(){const on=document.getElementById('f_sched').checked;document.getElementById('meSchedBox').style.display=on?'block':'none';}
+function meSchedRead(){
+  if(!document.getElementById('f_sched').checked)return null;
+  let s=parseInt(document.getElementById('f_sched_start').value);let e=parseInt(document.getElementById('f_sched_end').value);
+  if(isNaN(s))s=0;if(isNaN(e))e=0;
+  s=((s%24)+24)%24;e=((e%24)+24)%24;
+  return {startHour:s,endHour:e};
 }
 function meSave(){
   const data=meRead();
@@ -1990,6 +2141,9 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
             return
         elif self.path == '/api/souvenirs/upload-image':
             self.handle_souvenir_image_upload(raw_data)
+            return
+        elif self.path == '/api/map-elements/upload-image':
+            self.handle_map_element_image_upload(raw_data)
             return
 
         # Routes texte : décoder en UTF-8
@@ -3820,6 +3974,121 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
 
         except Exception as e:
             print(f"❌ Erreur upload image souvenir: {e}")
+            import traceback
+            traceback.print_exc()
+            self.send_json_response({'success': False, 'error': str(e)})
+
+    def handle_map_element_image_upload(self, raw_data):
+        """Upload d'un sprite/image pour un élément de carte.
+
+        Contrairement au souvenir (crop carré + fond blanc), on PRÉSERVE la
+        transparence (RGBA→WebP alpha) et le ratio d'origine : un sprite de
+        poisson/voiture/animal se pose par-dessus la carte. Sortie ≤ 512 px sur
+        le grand côté. Stocke dans Storage `map_elements/<id>/asset.webp` et
+        renvoie une URL publique → à mettre dans `asset.kind='image'/value=<url>`.
+        """
+        try:
+            import io
+            from PIL import Image
+
+            content_type = self.headers.get('Content-Type', '')
+            if 'multipart/form-data' not in content_type:
+                self.send_json_response({'success': False, 'error': 'Content-Type doit etre multipart/form-data'})
+                return
+
+            boundary = content_type.split('boundary=')[-1].encode()
+            parts = raw_data.split(b'--' + boundary)
+            image_data = None
+            element_id = None
+
+            for part in parts:
+                if b'Content-Disposition' not in part:
+                    continue
+                if b'name="image"' in part:
+                    header_end = part.find(b'\r\n\r\n')
+                    if header_end > 0:
+                        image_data = part[header_end + 4:]
+                        if image_data.endswith(b'\r\n'):
+                            image_data = image_data[:-2]
+                        if image_data.endswith(b'--'):
+                            image_data = image_data[:-2]
+                        if image_data.endswith(b'\r\n'):
+                            image_data = image_data[:-2]
+                elif b'name="elementId"' in part:
+                    header_end = part.find(b'\r\n\r\n')
+                    if header_end > 0:
+                        element_id = part[header_end + 4:].strip().decode('utf-8')
+                        for suf in ('\r\n', '--', '\r\n'):
+                            if element_id.endswith(suf):
+                                element_id = element_id[:-len(suf)]
+                        element_id = element_id.strip()
+
+            if not image_data:
+                self.send_json_response({'success': False, 'error': 'Aucune image trouvee'})
+                return
+
+            if not element_id:
+                element_id = f"upload_{int(datetime.now().timestamp() * 1000)}"
+
+            # Sanitize l'id pour un chemin de blob sûr
+            import re as _re
+            element_id = _re.sub(r'[^A-Za-z0-9_-]', '_', element_id)[:64] or 'upload'
+
+            print(f"📤 Upload sprite élément carte: {element_id}")
+
+            try:
+                img = Image.open(io.BytesIO(image_data))
+                # Préserve l'alpha si présent, sinon RGB
+                img = img.convert('RGBA') if img.mode in ('RGBA', 'LA', 'P') else img.convert('RGB')
+
+                # Resize proportionnel : grand côté ≤ 512
+                MAX_SIDE = 512
+                w, h = img.size
+                if max(w, h) > MAX_SIDE:
+                    if w >= h:
+                        nw, nh = MAX_SIDE, max(1, round(h * MAX_SIDE / w))
+                    else:
+                        nw, nh = max(1, round(w * MAX_SIDE / h)), MAX_SIDE
+                    img = img.resize((nw, nh), Image.LANCZOS)
+
+                output = io.BytesIO()
+                img.save(output, format='WEBP', quality=90, method=6)
+                optimized_data = output.getvalue()
+
+                original_size = len(image_data) / 1024
+                optimized_size = len(optimized_data) / 1024
+                print(f"✅ Sprite optimisé: {original_size:.1f}KB -> {optimized_size:.1f}KB ({img.size[0]}x{img.size[1]})")
+            except Exception as e:
+                print(f"❌ Erreur optimisation sprite: {e}")
+                self.send_json_response({'success': False, 'error': f'Erreur optimisation: {str(e)}'})
+                return
+
+            try:
+                from firebase_admin import storage
+                # Bucket explicite : l'app est initialisée sur l'ancien nom
+                # `.appspot.com` (inexistant) → `storage.bucket()` par défaut
+                # échoue. Les handlers badges utilisent déjà ce bucket-ci.
+                bucket = storage.bucket('kumafire-7864b.firebasestorage.app')
+                blob_path = f"map_elements/{element_id}/asset.webp"
+                blob = bucket.blob(blob_path)
+                blob.upload_from_string(optimized_data, content_type='image/webp')
+                blob.make_public()
+                public_url = blob.public_url
+                print(f"✅ Sprite uploadé: {public_url}")
+                self.send_json_response({
+                    'success': True,
+                    'url': public_url,
+                    'width': img.size[0],
+                    'height': img.size[1],
+                    'originalSize': f"{original_size:.1f}KB",
+                    'optimizedSize': f"{optimized_size:.1f}KB",
+                })
+            except Exception as e:
+                print(f"❌ Erreur upload Firebase (sprite): {e}")
+                self.send_json_response({'success': False, 'error': f'Erreur upload: {str(e)}'})
+
+        except Exception as e:
+            print(f"❌ Erreur upload sprite élément carte: {e}")
             import traceback
             traceback.print_exc()
             self.send_json_response({'success': False, 'error': str(e)})
