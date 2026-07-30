@@ -11,12 +11,17 @@ import os
 import firebase_admin
 from firebase_admin import credentials, firestore
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from PIL import Image
 import requests
 from io import BytesIO
 import base64
 import time
+import plotly.express as px
+import plotly.graph_objects as go
+
+# Import du gestionnaire de funnel analytics
+from funnel_analytics_manager import FunnelAnalyticsManager
 
 # Configuration
 FIREBASE_CONFIG = {
@@ -26,10 +31,10 @@ FIREBASE_CONFIG = {
 
 # Chemins alternatifs pour les credentials Firebase
 FIREBASE_CREDENTIALS_PATHS = [
-    '/Users/arnaudkossea/development/kuma_upload/firebase-credentials.json',  # Trouvé !
-    '/Users/arnaudkossea/development/kumacodex/kumacodex-firebase-adminsdk-4i31d-0d61a17b94.json',
+    '/Users/arnaudkossea/development/kuma_upload/certificats/kumafire-7864b-firebase-adminsdk-fbsvc-804968a2c1.json',
+    '/Users/arnaudkossea/development/kumafire-7864b-firebase-adminsdk-fbsvc-16fcc356e0.json',
+    '/Users/arnaudkossea/development/kuma_upload/firebase-credentials.json',
     '/Users/arnaudkossea/development/kumacodex/firebase-credentials.json',
-    '/Users/arnaudkossea/development/kuma_upload/scripts/firebase-credentials.json',
     os.path.expanduser('~/firebase-credentials.json')
 ]
 
@@ -37,7 +42,7 @@ class KumaBackoffice:
     def __init__(self):
         self.init_firebase()
         self.db = firestore.client()
-        
+
     def init_firebase(self):
         """Initialise Firebase Admin SDK"""
         try:
@@ -48,14 +53,14 @@ class KumaBackoffice:
                     if os.path.exists(path):
                         credentials_path = path
                         break
-                
+
                 if not credentials_path:
                     st.error("❌ Aucun fichier de credentials Firebase trouvé")
                     st.error("📋 Veuillez placer votre fichier de credentials dans l'un de ces emplacements :")
                     for path in FIREBASE_CREDENTIALS_PATHS:
                         st.code(path)
                     return False
-                
+
                 cred = credentials.Certificate(credentials_path)
                 firebase_admin.initialize_app(cred, {
                     'projectId': FIREBASE_CONFIG['project_id']
@@ -141,6 +146,66 @@ class KumaBackoffice:
         except Exception as e:
             return False, f"Erreur lors de la sauvegarde: {e}"
 
+    # ===== GESTION DES SOUVENIRS =====
+
+    def get_souvenirs_collection(self):
+        """Récupère tous les souvenirs"""
+        try:
+            souvenirs_ref = self.db.collection('souvenirs')
+            docs = souvenirs_ref.stream()
+            souvenirs = []
+            for doc in docs:
+                souvenir_data = doc.to_dict()
+                souvenir_data['docId'] = doc.id
+                souvenirs.append(souvenir_data)
+            return souvenirs
+        except Exception as e:
+            st.error(f"Erreur lors de la récupération des souvenirs: {e}")
+            return []
+
+    def get_souvenirs_by_country(self, country_code):
+        """Récupère les souvenirs pour un pays spécifique"""
+        try:
+            souvenirs_ref = self.db.collection('souvenirs').where('countryCode', '==', country_code.upper())
+            docs = souvenirs_ref.stream()
+            souvenirs = []
+            for doc in docs:
+                souvenir_data = doc.to_dict()
+                souvenir_data['docId'] = doc.id
+                souvenirs.append(souvenir_data)
+            return souvenirs
+        except Exception as e:
+            st.error(f"Erreur lors de la récupération des souvenirs pour {country_code}: {e}")
+            return []
+
+    def save_souvenir(self, souvenir_data):
+        """Sauvegarde un souvenir"""
+        try:
+            # Générer l'ID si nouveau souvenir
+            if not souvenir_data.get('id') or not souvenir_data.get('souvenirId'):
+                country_code = souvenir_data.get('countryCode', 'XX').upper()
+                # Trouver le prochain numéro pour ce pays
+                existing = self.get_souvenirs_by_country(country_code)
+                next_num = len(existing) + 1
+                souvenir_data['souvenirId'] = f"{country_code}_{next_num:03d}"
+                souvenir_data['id'] = souvenir_data['souvenirId']
+
+            souvenir_data['updatedAt'] = datetime.now()
+
+            doc_ref = self.db.collection('souvenirs').document(souvenir_data['souvenirId'])
+            doc_ref.set(souvenir_data)
+            return True, f"Souvenir {souvenir_data['souvenirId']} sauvegardé avec succès"
+        except Exception as e:
+            return False, f"Erreur lors de la sauvegarde: {e}"
+
+    def delete_souvenir(self, souvenir_id):
+        """Supprime un souvenir"""
+        try:
+            self.db.collection('souvenirs').document(souvenir_id).delete()
+            return True, "Souvenir supprimé avec succès"
+        except Exception as e:
+            return False, f"Erreur lors de la suppression: {e}"
+
 def init_session_state():
     """Initialise l'état de session"""
     if 'backoffice' not in st.session_state:
@@ -149,6 +214,10 @@ def init_session_state():
         st.session_state.current_story = None
     if 'current_country' not in st.session_state:
         st.session_state.current_country = None
+    if 'current_souvenir' not in st.session_state:
+        st.session_state.current_souvenir = None
+    if 'souvenir_filter_country' not in st.session_state:
+        st.session_state.souvenir_filter_country = "Tous"
 
 def story_editor():
     """Interface d'édition des histoires"""
@@ -490,6 +559,301 @@ def countries_manager():
     else:
         st.info("👈 Sélectionnez un pays dans la barre latérale ou créez-en un nouveau")
 
+
+def souvenirs_manager():
+    """Interface de gestion des souvenirs"""
+    st.header("🎁 Gestion des Souvenirs")
+
+    backoffice = st.session_state.backoffice
+
+    # Catégories et régions disponibles
+    CATEGORIES = ['mask', 'instrument', 'textile', 'sculpture', 'jewelry', 'pottery', 'basket', 'symbol']
+    CATEGORY_LABELS = {
+        'mask': '🎭 Masques',
+        'instrument': '🎵 Instruments',
+        'textile': '🧵 Textiles',
+        'sculpture': '🗿 Sculptures',
+        'jewelry': '💎 Bijoux',
+        'pottery': '🏺 Poterie',
+        'basket': '🧺 Paniers',
+        'symbol': '✨ Symboles'
+    }
+    REGIONS = ['northAfrica', 'westAfrica', 'centralAfrica', 'eastAfrica', 'southernAfrica']
+    REGION_LABELS = {
+        'northAfrica': 'Afrique du Nord',
+        'westAfrica': 'Afrique de l\'Ouest',
+        'centralAfrica': 'Afrique Centrale',
+        'eastAfrica': 'Afrique de l\'Est',
+        'southernAfrica': 'Afrique Australe'
+    }
+
+    # Récupérer tous les souvenirs
+    all_souvenirs = backoffice.get_souvenirs_collection()
+
+    # Sidebar - Statistiques et filtres
+    st.sidebar.subheader("📊 Statistiques")
+
+    # Stats globales avec actifs/inactifs
+    total_active = sum(1 for s in all_souvenirs if s.get('isActive', True))
+    total_inactive = len(all_souvenirs) - total_active
+
+    col_s1, col_s2 = st.sidebar.columns(2)
+    col_s1.metric("Total", len(all_souvenirs))
+    col_s2.metric("Actifs", total_active, delta=f"-{total_inactive} inactifs" if total_inactive > 0 else None)
+
+    # Regrouper par pays
+    by_country = {}
+    for s in all_souvenirs:
+        cc = s.get('countryCode', 'XX')
+        if cc not in by_country:
+            by_country[cc] = []
+        by_country[cc].append(s)
+
+    st.sidebar.metric("Pays couverts", len(by_country))
+
+    # Filtre par pays
+    st.sidebar.subheader("🔍 Filtrer par pays")
+    country_options = ["Tous"] + sorted(by_country.keys())
+    selected_country = st.sidebar.selectbox(
+        "Pays",
+        country_options,
+        index=country_options.index(st.session_state.souvenir_filter_country) if st.session_state.souvenir_filter_country in country_options else 0
+    )
+    st.session_state.souvenir_filter_country = selected_country
+
+    # Bouton nouveau souvenir
+    if st.sidebar.button("➕ Nouveau Souvenir"):
+        st.session_state.current_souvenir = {
+            'id': '',
+            'souvenirId': '',
+            'countryCode': selected_country if selected_country != "Tous" else '',
+            'countryCode3': '',
+            'countryName': '',
+            'flag': '',
+            'name': '',
+            'nameEn': '',
+            'description': '',
+            'funFact': '',
+            'funFactEn': '',
+            'category': 'symbol',
+            'region': 'westAfrica',
+            'imageUrl': '',
+            'imageUrlAlt': '',
+            'isActive': True  # Actif par défaut
+        }
+
+    # Liste des souvenirs filtrés
+    st.sidebar.subheader("📋 Souvenirs")
+    filtered_souvenirs = all_souvenirs if selected_country == "Tous" else by_country.get(selected_country, [])
+
+    # Trier par ID
+    filtered_souvenirs = sorted(filtered_souvenirs, key=lambda x: x.get('souvenirId', x.get('id', '')))
+
+    # Statistiques actifs/inactifs
+    active_count = sum(1 for s in filtered_souvenirs if s.get('isActive', True))
+    inactive_count = len(filtered_souvenirs) - active_count
+    st.sidebar.caption(f"✅ {active_count} actifs | ⏸️ {inactive_count} inactifs")
+
+    for souvenir in filtered_souvenirs[:50]:  # Limiter à 50 pour performance
+        souvenir_id = souvenir.get('souvenirId', souvenir.get('id', 'Sans ID'))
+        souvenir_name = souvenir.get('name', 'Sans nom')[:20]
+        flag = souvenir.get('flag', '🎁')
+        is_active = souvenir.get('isActive', True)
+        status_icon = "✅" if is_active else "⏸️"
+        if st.sidebar.button(f"{status_icon} {flag} {souvenir_id}: {souvenir_name}", key=f"souvenir_{souvenir_id}"):
+            st.session_state.current_souvenir = souvenir
+
+    if len(filtered_souvenirs) > 50:
+        st.sidebar.info(f"... et {len(filtered_souvenirs) - 50} autres souvenirs")
+
+    # Formulaire d'édition
+    if st.session_state.current_souvenir:
+        souvenir = st.session_state.current_souvenir
+
+        # En-tête avec ID
+        if souvenir.get('souvenirId'):
+            st.subheader(f"✏️ Édition: {souvenir['souvenirId']}")
+        else:
+            st.subheader("✨ Nouveau Souvenir")
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.markdown("### 📝 Informations générales")
+
+            souvenir['countryCode'] = st.text_input(
+                "Code pays (ex: SN)",
+                value=souvenir.get('countryCode', ''),
+                max_chars=2
+            ).upper()
+
+            souvenir['countryName'] = st.text_input(
+                "Nom du pays",
+                value=souvenir.get('countryName', '')
+            )
+
+            souvenir['flag'] = st.text_input(
+                "Emoji drapeau",
+                value=souvenir.get('flag', '')
+            )
+
+            souvenir['name'] = st.text_input(
+                "Nom du souvenir (FR)",
+                value=souvenir.get('name', '')
+            )
+
+            souvenir['nameEn'] = st.text_input(
+                "Nom du souvenir (EN)",
+                value=souvenir.get('nameEn', '')
+            )
+
+            # Catégorie
+            current_cat = souvenir.get('category', 'symbol')
+            cat_index = CATEGORIES.index(current_cat) if current_cat in CATEGORIES else 7
+            souvenir['category'] = st.selectbox(
+                "Catégorie",
+                CATEGORIES,
+                index=cat_index,
+                format_func=lambda x: CATEGORY_LABELS.get(x, x)
+            )
+
+            # Région
+            current_region = souvenir.get('region', 'westAfrica')
+            region_index = REGIONS.index(current_region) if current_region in REGIONS else 1
+            souvenir['region'] = st.selectbox(
+                "Région",
+                REGIONS,
+                index=region_index,
+                format_func=lambda x: REGION_LABELS.get(x, x)
+            )
+
+            # Toggle Actif/Inactif
+            st.markdown("### ⚡ Statut")
+            souvenir['isActive'] = st.toggle(
+                "Souvenir actif",
+                value=souvenir.get('isActive', True),
+                help="Si désactivé, ce souvenir ne sera pas inclus dans le tirage aléatoire"
+            )
+            if souvenir['isActive']:
+                st.success("✅ Ce souvenir est actif et peut être obtenu par les utilisateurs")
+            else:
+                st.warning("⚠️ Ce souvenir est inactif et ne sera pas dans le tirage aléatoire")
+
+        with col2:
+            st.markdown("### 🖼️ Médias")
+
+            souvenir['imageUrl'] = st.text_input(
+                "URL de l'image principale",
+                value=souvenir.get('imageUrl', '')
+            )
+
+            if souvenir['imageUrl']:
+                try:
+                    st.image(souvenir['imageUrl'], width=200)
+                except:
+                    st.error("Impossible de charger l'image")
+
+            souvenir['imageUrlAlt'] = st.text_input(
+                "URL de l'image alternative",
+                value=souvenir.get('imageUrlAlt', '')
+            )
+
+            st.markdown("### 📖 Description")
+            souvenir['description'] = st.text_area(
+                "Description (FR)",
+                value=souvenir.get('description', ''),
+                height=100
+            )
+
+        # Fun Facts
+        st.markdown("### 🎉 Fun Facts")
+        col3, col4 = st.columns(2)
+
+        with col3:
+            souvenir['funFact'] = st.text_area(
+                "Fun Fact (FR)",
+                value=souvenir.get('funFact', ''),
+                height=150
+            )
+
+        with col4:
+            souvenir['funFactEn'] = st.text_area(
+                "Fun Fact (EN)",
+                value=souvenir.get('funFactEn', ''),
+                height=150
+            )
+
+        # Boutons d'action
+        st.markdown("---")
+        col5, col6, col7 = st.columns(3)
+
+        with col5:
+            if st.button("💾 Sauvegarder", type="primary"):
+                if not souvenir.get('countryCode'):
+                    st.error("Le code pays est obligatoire")
+                elif not souvenir.get('name'):
+                    st.error("Le nom du souvenir est obligatoire")
+                else:
+                    success, message = backoffice.save_souvenir(souvenir)
+                    if success:
+                        st.success(message)
+                        time.sleep(1)
+                        st.rerun()
+                    else:
+                        st.error(message)
+
+        with col6:
+            if souvenir.get('souvenirId') and st.button("🗑️ Supprimer", type="secondary"):
+                success, message = backoffice.delete_souvenir(souvenir['souvenirId'])
+                if success:
+                    st.success(message)
+                    st.session_state.current_souvenir = None
+                    time.sleep(1)
+                    st.rerun()
+                else:
+                    st.error(message)
+
+        with col7:
+            if st.button("🔄 Annuler"):
+                st.session_state.current_souvenir = None
+                st.rerun()
+
+    else:
+        # Vue d'ensemble quand aucun souvenir n'est sélectionné
+        st.info("👈 Sélectionnez un souvenir dans la barre latérale ou créez-en un nouveau")
+
+        # Tableau récapitulatif par pays
+        st.markdown("### 📊 Souvenirs par pays")
+
+        # Créer un DataFrame pour l'affichage
+        country_stats = []
+        for cc, souvenirs in sorted(by_country.items()):
+            if souvenirs:
+                country_stats.append({
+                    'Code': cc,
+                    'Pays': souvenirs[0].get('countryName', cc),
+                    'Drapeau': souvenirs[0].get('flag', ''),
+                    'Nombre': len(souvenirs),
+                    'Catégories': ', '.join(set(s.get('category', '') for s in souvenirs))
+                })
+
+        if country_stats:
+            df = pd.DataFrame(country_stats)
+            st.dataframe(df, use_container_width=True)
+
+        # Stats par catégorie
+        st.markdown("### 📈 Par catégorie")
+        cat_stats = {}
+        for s in all_souvenirs:
+            cat = s.get('category', 'symbol')
+            cat_stats[cat] = cat_stats.get(cat, 0) + 1
+
+        col_cats = st.columns(4)
+        for i, (cat, count) in enumerate(sorted(cat_stats.items())):
+            with col_cats[i % 4]:
+                st.metric(CATEGORY_LABELS.get(cat, cat), count)
+
+
 def analytics_dashboard():
     """Tableau de bord analytique"""
     st.header("📊 Tableau de bord")
@@ -564,6 +928,287 @@ def media_manager():
     st.write("- Gestion des audios")
     st.write("- Prévisualisation des médias")
 
+def funnel_analytics_page():
+    """Page d'analyse du funnel de conversion"""
+    st.header("📈 Funnel de Conversion")
+    st.markdown("*Analyse du parcours utilisateur: Demo → Inscription → Stories → Abonnement*")
+
+    backoffice = st.session_state.backoffice
+
+    # Initialiser le gestionnaire de funnel
+    try:
+        funnel_manager = FunnelAnalyticsManager(backoffice.db)
+    except Exception as e:
+        st.error(f"Erreur d'initialisation du gestionnaire funnel: {e}")
+        return
+
+    # Sidebar - Configuration
+    st.sidebar.subheader("⚙️ Configuration")
+    days = st.sidebar.slider("Periode (jours)", 7, 90, 30)
+
+    # === VUE D'ENSEMBLE ===
+    st.subheader("📊 Vue d'ensemble")
+
+    try:
+        overview = funnel_manager.get_funnel_overview(days)
+        step_counts = overview.get('total_users_per_step', {})
+        conversion_rates = overview.get('conversion_rates', {})
+
+        # Metriques principales en 4 colonnes
+        col1, col2, col3, col4 = st.columns(4)
+
+        with col1:
+            st.metric(
+                "🎬 Demo",
+                step_counts.get(1, 0),
+                help="Utilisateurs ayant demarre le mode demo"
+            )
+
+        with col2:
+            rate_1_2 = conversion_rates.get('step_1_to_2', 0)
+            st.metric(
+                "📝 Inscrits",
+                step_counts.get(2, 0),
+                delta=f"{rate_1_2}% depuis demo",
+                help="Utilisateurs inscrits"
+            )
+
+        with col3:
+            rate_2_3 = conversion_rates.get('step_2_to_3', 0)
+            st.metric(
+                "📚 7 Stories",
+                step_counts.get(3, 0),
+                delta=f"{rate_2_3}% depuis inscription",
+                help="Utilisateurs ayant lu 7 histoires"
+            )
+
+        with col4:
+            rate_3_4 = conversion_rates.get('step_3_to_4', 0)
+            st.metric(
+                "⭐ Abonnes",
+                step_counts.get(4, 0),
+                delta=f"{rate_3_4}% depuis 7 stories",
+                help="Utilisateurs abonnes premium"
+            )
+
+        # Taux de conversion global
+        global_rate = overview.get('global_conversion_rate', 0)
+        st.info(f"🎯 **Taux de conversion global (Demo → Abonnement):** {global_rate}%")
+
+    except Exception as e:
+        st.error(f"Erreur lors du chargement de la vue d'ensemble: {e}")
+
+    # === GRAPHIQUE FUNNEL ===
+    st.subheader("🔻 Graphique du Funnel")
+
+    try:
+        chart_data = funnel_manager.get_funnel_chart_data(days)
+
+        if chart_data:
+            # Creer le graphique Funnel avec Plotly
+            fig = go.Figure(go.Funnel(
+                y=[d['stage'] for d in chart_data],
+                x=[d['value'] for d in chart_data],
+                textinfo="value+percent initial",
+                marker=dict(
+                    color=['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4']
+                ),
+                connector=dict(line=dict(color="royalblue", dash="dot", width=3))
+            ))
+
+            fig.update_layout(
+                title=f"Funnel de conversion (derniers {days} jours)",
+                height=400
+            )
+
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Aucune donnee disponible pour le funnel")
+
+    except Exception as e:
+        st.warning(f"Impossible de charger le graphique funnel: {e}")
+
+    # === ANALYSE DES ABANDONS ===
+    st.subheader("🚪 Analyse des abandons")
+
+    try:
+        drop_off = funnel_manager.get_drop_off_analysis(days)
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.metric("Total utilisateurs", drop_off.get('total_users', 0))
+            st.metric("Ont complete le funnel", drop_off.get('completed_funnel', 0))
+
+        with col2:
+            drop_offs = drop_off.get('drop_offs', {})
+            for key, data in drop_offs.items():
+                if isinstance(data, dict):
+                    st.markdown(f"**{data.get('step_name', key)}**: {data.get('count', 0)} abandons ({data.get('rate', 0)}%)")
+
+    except Exception as e:
+        st.warning(f"Impossible de charger l'analyse des abandons: {e}")
+
+    # === TEMPS DE CONVERSION ===
+    st.subheader("⏱️ Temps moyen de conversion")
+
+    try:
+        time_data = funnel_manager.get_time_to_convert(days)
+
+        if time_data:
+            conversion_times = []
+            for key, data in time_data.items():
+                if isinstance(data, dict) and data.get('sample_size', 0) > 0:
+                    conversion_times.append({
+                        'Etape': key.replace('_', ' → ').title(),
+                        'Temps moyen (h)': data.get('avg_hours', 0),
+                        'Min (h)': data.get('min_hours', 0),
+                        'Max (h)': data.get('max_hours', 0),
+                        'Echantillon': data.get('sample_size', 0)
+                    })
+
+            if conversion_times:
+                df_times = pd.DataFrame(conversion_times)
+                st.dataframe(df_times, use_container_width=True)
+
+                # Graphique des temps de conversion
+                fig_time = px.bar(
+                    df_times,
+                    x='Etape',
+                    y='Temps moyen (h)',
+                    title="Temps moyen de conversion par etape",
+                    color='Temps moyen (h)',
+                    color_continuous_scale='Viridis'
+                )
+                st.plotly_chart(fig_time, use_container_width=True)
+            else:
+                st.info("Pas assez de donnees pour calculer les temps de conversion")
+        else:
+            st.info("Aucune donnee de temps de conversion disponible")
+
+    except Exception as e:
+        st.warning(f"Impossible de charger les temps de conversion: {e}")
+
+    # === MILESTONES HISTOIRES ===
+    st.subheader("📖 Progression des histoires (Milestones)")
+
+    try:
+        milestone_data = funnel_manager.get_story_milestone_breakdown(days)
+
+        if milestone_data:
+            milestone_counts = milestone_data.get('milestone_counts', {})
+            progressions = milestone_data.get('progressions', {})
+
+            # Graphique des milestones
+            milestones_df = pd.DataFrame([
+                {'Milestone': f"{m} histoire(s)", 'Utilisateurs': c}
+                for m, c in sorted(milestone_counts.items())
+            ])
+
+            if not milestones_df.empty:
+                fig_miles = px.bar(
+                    milestones_df,
+                    x='Milestone',
+                    y='Utilisateurs',
+                    title="Utilisateurs par milestone d'histoires",
+                    color='Utilisateurs',
+                    color_continuous_scale='Blues'
+                )
+                st.plotly_chart(fig_miles, use_container_width=True)
+
+            # Taux de progression entre milestones
+            st.markdown("**Taux de progression entre milestones:**")
+            for key, data in progressions.items():
+                if isinstance(data, dict):
+                    st.markdown(f"- {key.replace('_', ' → ')}: {data.get('progression_rate', 0)}% ({data.get('from_count', 0)} → {data.get('to_count', 0)})")
+
+    except Exception as e:
+        st.warning(f"Impossible de charger les donnees de milestones: {e}")
+
+    # === ANALYSE PAR COHORTE ===
+    st.subheader("👥 Analyse par cohorte")
+
+    cohort_type = st.selectbox("Type de cohorte", ['weekly', 'daily', 'monthly'], index=0)
+
+    try:
+        cohort_data = funnel_manager.get_cohort_analysis(cohort_type)
+
+        if cohort_data and cohort_data.get('cohorts'):
+            cohorts = cohort_data['cohorts']
+
+            # Preparer les donnees pour le heatmap
+            cohort_rows = []
+            for cohort_name, data in cohorts.items():
+                row = {'Cohorte': cohort_name, 'Total': data.get('total_users', 0)}
+                step_completion = data.get('step_completion', {})
+                for step in range(1, 5):
+                    row[f'Etape {step}'] = step_completion.get(f'step_{step}', 0)
+                row['Conversion'] = data.get('conversion_rate', 0)
+                cohort_rows.append(row)
+
+            df_cohorts = pd.DataFrame(cohort_rows)
+
+            if not df_cohorts.empty:
+                st.dataframe(df_cohorts, use_container_width=True)
+
+                # Heatmap de conversion par cohorte
+                if len(df_cohorts) > 1:
+                    fig_heatmap = px.imshow(
+                        df_cohorts[['Etape 1', 'Etape 2', 'Etape 3', 'Etape 4']].values,
+                        labels=dict(x="Etape", y="Cohorte", color="% Completion"),
+                        x=['Demo', 'Inscription', '7 Stories', 'Abonnement'],
+                        y=df_cohorts['Cohorte'].tolist(),
+                        color_continuous_scale='RdYlGn',
+                        title="Heatmap de completion par cohorte"
+                    )
+                    st.plotly_chart(fig_heatmap, use_container_width=True)
+        else:
+            st.info("Pas assez de donnees pour l'analyse par cohorte")
+
+    except Exception as e:
+        st.warning(f"Impossible de charger l'analyse par cohorte: {e}")
+
+    # === TAUX DE CONVERSION DETAILLES ===
+    st.subheader("📐 Taux de conversion detailles")
+
+    col_date1, col_date2 = st.columns(2)
+    with col_date1:
+        start_date = st.date_input("Date debut", datetime.now() - timedelta(days=days))
+    with col_date2:
+        end_date = st.date_input("Date fin", datetime.now())
+
+    if st.button("Calculer les taux de conversion"):
+        try:
+            start_dt = datetime.combine(start_date, datetime.min.time())
+            end_dt = datetime.combine(end_date, datetime.max.time())
+
+            rates = funnel_manager.get_conversion_rates(start_dt, end_dt)
+
+            if rates:
+                counts = rates.get('counts', {})
+
+                st.markdown("### Resultats")
+
+                metrics_col1, metrics_col2 = st.columns(2)
+
+                with metrics_col1:
+                    st.markdown("**Comptes par etape:**")
+                    st.markdown(f"- Demo: {counts.get('demo', 0)}")
+                    st.markdown(f"- Inscription: {counts.get('registration', 0)}")
+                    st.markdown(f"- Stories: {counts.get('stories', 0)}")
+                    st.markdown(f"- Abonnement: {counts.get('subscription', 0)}")
+
+                with metrics_col2:
+                    st.markdown("**Taux de conversion:**")
+                    st.markdown(f"- Demo → Inscription: {rates.get('demo_to_registration', 0)}%")
+                    st.markdown(f"- Inscription → Stories: {rates.get('registration_to_stories', 0)}%")
+                    st.markdown(f"- Stories → Abonnement: {rates.get('stories_to_subscription', 0)}%")
+                    st.markdown(f"- **Global (Demo → Abo):** {rates.get('demo_to_subscription', 0)}%")
+
+        except Exception as e:
+            st.error(f"Erreur lors du calcul des taux: {e}")
+
+
 def settings_page():
     """Page de paramètres"""
     st.header("⚙️ Paramètres")
@@ -603,7 +1248,9 @@ def main():
     pages = {
         "📚 Histoires": story_editor,
         "🌍 Pays": countries_manager,
+        "🎁 Souvenirs": souvenirs_manager,
         "📊 Analytics": analytics_dashboard,
+        "📈 Funnel": funnel_analytics_page,
         "🖼️ Médias": media_manager,
         "⚙️ Paramètres": settings_page
     }

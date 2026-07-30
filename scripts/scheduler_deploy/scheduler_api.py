@@ -73,6 +73,35 @@ def log_execution(service_name: str, status: str, details: dict = None):
         print(f"[SCHEDULER] Erreur log Firestore: {e}")
 
 
+def log_notification_send(notification_type: str, total_sent: int, recipients: list):
+    """Log un envoi de notifications avec les détails des destinataires"""
+    try:
+        from google.cloud import firestore as fs
+        db = fs.Client()
+
+        # Créer un log détaillé pour l'envoi de notifications
+        db.collection('scheduler_execution_logs').add({
+            'service': notification_type,
+            'rule_id': notification_type,
+            'status': 'success',
+            'success': True,
+            'results': {
+                'total_sent': total_sent,
+                'total_failed': 0
+            },
+            'notifications_sent': total_sent,
+            'total_sent': total_sent,
+            'recipients': recipients[:50],  # Au niveau racine pour l'UI
+            'recipients_count': len(recipients),
+            'executed_at': datetime.utcnow().isoformat(),
+            'source': 'send',
+            'channel': 'push'
+        })
+        print(f"[NOTIFICATION] Log créé: {notification_type} - {total_sent} envoyées")
+    except Exception as e:
+        print(f"[NOTIFICATION] Erreur log: {e}")
+
+
 # ============================================================
 # ENDPOINTS SCHEDULER
 # ============================================================
@@ -247,6 +276,12 @@ def check_inactive():
         results['inactive_7days'] = result_7d
 
         log_execution(service_name, 'success', results)
+
+        # Créer un log séparé pour les notifications envoyées (journey_reengagement)
+        total_sent = result_3d.get('notifications_sent', 0) + result_7d.get('notifications_sent', 0)
+        if total_sent > 0:
+            all_recipients = result_3d.get('recipients', []) + result_7d.get('recipients', [])
+            log_notification_send('journey_reengagement', total_sent, all_recipients)
         return jsonify({
             'status': 'success',
             'service': service_name,

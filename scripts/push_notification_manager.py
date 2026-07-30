@@ -26,9 +26,11 @@ class PushNotificationManager:
     MAX_NOTIFICATIONS_PER_BATCH = 500
     DELAY_BETWEEN_BATCHES = 1.0  # secondes
 
-    def __init__(self):
+    def __init__(self, firebase_manager=None):
         """Initialise le gestionnaire de notifications"""
         self._users = []
+        self._firebase_manager = firebase_manager
+        self._invalid_tokens_cleaned = 0
         if not FCM_AVAILABLE:
             logger.warning("Firebase Admin messaging non disponible")
 
@@ -63,6 +65,83 @@ class PushNotificationManager:
         """Filtre les utilisateurs sans token FCM"""
         users = user_list if user_list is not None else self._users
         return [u for u in users if not u.get('fcmToken')]
+
+    def set_firebase_manager(self, firebase_manager):
+        """Definit le firebase manager pour le nettoyage des tokens"""
+        self._firebase_manager = firebase_manager
+
+    def cleanup_invalid_token(self, user_id: str = None, token: str = None, email: str = None) -> bool:
+        """
+        Supprime un token FCM invalide de Firestore
+
+        Args:
+            user_id: ID de l'utilisateur (optionnel)
+            token: Token FCM invalide (optionnel)
+            email: Email de l'utilisateur (optionnel)
+
+        Returns:
+            True si le token a ete nettoye, False sinon
+        """
+        if not self._firebase_manager or not self._firebase_manager.initialized:
+            logger.warning("Firebase non disponible pour le nettoyage des tokens")
+            return False
+
+        try:
+            db = self._firebase_manager.db
+
+            # Trouver l'utilisateur par ID ou par token
+            if user_id:
+                user_ref = db.collection('users').document(user_id)
+                user_doc = user_ref.get()
+                if user_doc.exists:
+                    user_ref.update({
+                        'fcmToken': None,
+                        'fcmTokenInvalidatedAt': datetime.now().isoformat(),
+                        'fcmTokenInvalidReason': 'unregistered'
+                    })
+                    self._invalid_tokens_cleaned += 1
+                    logger.info(f"Token FCM nettoye pour user_id: {user_id}")
+                    return True
+
+            elif token:
+                # Rechercher par token
+                users_ref = db.collection('users').where('fcmToken', '==', token).limit(1)
+                docs = list(users_ref.stream())
+                if docs:
+                    docs[0].reference.update({
+                        'fcmToken': None,
+                        'fcmTokenInvalidatedAt': datetime.now().isoformat(),
+                        'fcmTokenInvalidReason': 'unregistered'
+                    })
+                    self._invalid_tokens_cleaned += 1
+                    logger.info(f"Token FCM nettoye par token: {token[:20]}...")
+                    return True
+
+            elif email:
+                # Rechercher par email
+                users_ref = db.collection('users').where('email', '==', email).limit(1)
+                docs = list(users_ref.stream())
+                if docs:
+                    docs[0].reference.update({
+                        'fcmToken': None,
+                        'fcmTokenInvalidatedAt': datetime.now().isoformat(),
+                        'fcmTokenInvalidReason': 'unregistered'
+                    })
+                    self._invalid_tokens_cleaned += 1
+                    logger.info(f"Token FCM nettoye pour email: {email}")
+                    return True
+
+            return False
+
+        except Exception as e:
+            logger.error(f"Erreur nettoyage token FCM: {e}")
+            return False
+
+    def get_cleanup_stats(self) -> Dict:
+        """Retourne les statistiques de nettoyage des tokens"""
+        return {
+            'invalid_tokens_cleaned': self._invalid_tokens_cleaned
+        }
 
     def send_notification(
         self,
@@ -113,7 +192,9 @@ class PushNotificationManager:
 
         except messaging.UnregisteredError:
             logger.warning(f"Token FCM non enregistre: {fcm_token[:20]}...")
-            return False, "Token non enregistre (app desinstallee?)"
+            # Nettoyer automatiquement le token invalide
+            self.cleanup_invalid_token(token=fcm_token)
+            return False, "Token non enregistre (app desinstallee?) - token nettoye"
         except messaging.SenderIdMismatchError:
             logger.error("Sender ID mismatch - verifier la configuration Firebase")
             return False, "Erreur configuration Firebase"
@@ -224,6 +305,11 @@ class PushNotificationManager:
                         error = send_response.exception
                         if isinstance(error, messaging.UnregisteredError):
                             results['invalid_tokens'].append(user.get('email', 'unknown'))
+                            # Nettoyer automatiquement le token invalide
+                            user_id = user.get('id') or user.get('uid')
+                            token = user.get('fcmToken')
+                            email = user.get('email')
+                            self.cleanup_invalid_token(user_id=user_id, token=token, email=email)
                         else:
                             results['errors'].append(f"{user.get('email', 'unknown')}: {str(error)}")
 
@@ -239,6 +325,7 @@ class PushNotificationManager:
                 time.sleep(self.DELAY_BETWEEN_BATCHES)
 
         results['end_time'] = datetime.now().isoformat()
+        results['tokens_cleaned'] = self._invalid_tokens_cleaned
         return results
 
     def send_multicast(
@@ -301,9 +388,11 @@ class PushNotificationManager:
 _push_manager = None
 
 
-def get_push_notification_manager() -> PushNotificationManager:
+def get_push_notification_manager(firebase_manager=None) -> PushNotificationManager:
     """Retourne l'instance singleton du gestionnaire push"""
     global _push_manager
     if _push_manager is None:
-        _push_manager = PushNotificationManager()
+        _push_manager = PushNotificationManager(firebase_manager)
+    elif firebase_manager and not _push_manager._firebase_manager:
+        _push_manager.set_firebase_manager(firebase_manager)
     return _push_manager

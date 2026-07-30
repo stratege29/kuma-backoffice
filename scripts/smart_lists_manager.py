@@ -625,6 +625,18 @@ class SmartListsManager:
         if isinstance(stories, int):
             return stories
 
+        # Format reel en base : aucun document n'a `storiesCompleted` (verifie
+        # 2026-07-30 sur 827 users) — la progression vit dans
+        # `progress.{story_id}.status == 'completed'`. Sans ce repli, tous les
+        # segments bases sur le nombre de contes (beginners, convertible,
+        # quiz_masters, high/low engagement...) voyaient 0 pour tout le monde.
+        progress = user.get('progress')
+        if isinstance(progress, dict):
+            return sum(
+                1 for entry in progress.values()
+                if isinstance(entry, dict) and entry.get('status') == 'completed'
+            )
+
         return 0
 
     # =========================================================================

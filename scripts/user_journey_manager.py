@@ -26,18 +26,23 @@ class UserJourney:
     def __init__(self, user_data: Dict[str, Any]):
         self.user_id = user_data.get('user_id')
         self.fcm_token = user_data.get('fcm_token')
+        self.email = user_data.get('email', '')
+        self.first_name = user_data.get('first_name', '')
         self.start_country = user_data.get('start_country', 'SN')
         self.current_country = user_data.get('current_country', self.start_country)
         self.day_number = user_data.get('day_number', 1)
         self.stories_completed = user_data.get('stories_completed', [])
         self.next_story_id = user_data.get('next_story_id')
         self.last_activity = user_data.get('last_activity', datetime.now())
+        self.signup_date = user_data.get('signup_date', datetime.now())
         self.preferences = user_data.get('preferences', {})
         self.timezone_manager = TimezoneManager()
-        
+
         # Convertir string datetime en objet datetime si nécessaire
         if isinstance(self.last_activity, str):
             self.last_activity = datetime.fromisoformat(self.last_activity.replace('Z', '+00:00'))
+        if isinstance(self.signup_date, str):
+            self.signup_date = datetime.fromisoformat(self.signup_date.replace('Z', '+00:00'))
     
     @property
     def is_active(self) -> bool:
@@ -93,12 +98,15 @@ class UserJourney:
         return {
             'user_id': self.user_id,
             'fcm_token': self.fcm_token,
+            'email': self.email,
+            'first_name': self.first_name,
             'start_country': self.start_country,
             'current_country': self.current_country,
             'day_number': self.day_number,
             'stories_completed': self.stories_completed,
             'next_story_id': self.next_story_id,
             'last_activity': self.last_activity.isoformat(),
+            'signup_date': self.signup_date.isoformat(),
             'preferences': self.preferences,
             'progress_percentage': self.progress_percentage,
             'journey_level': self.get_journey_level(),
@@ -131,7 +139,8 @@ class UserJourneyManager:
             'MG', 'MU', 'SC', 'KM', 'CV'
         ]
     
-    def create_user_journey(self, user_id: str, fcm_token: str, start_country: str = 'SN', 
+    def create_user_journey(self, user_id: str, fcm_token: str, start_country: str = 'SN',
+                          email: str = '', first_name: str = '',
                           preferences: Dict = None) -> UserJourney:
         """Crée un nouveau parcours pour un utilisateur"""
         if preferences is None:
@@ -140,16 +149,20 @@ class UserJourneyManager:
                 'notification_time': 'evening',
                 'language': 'fr'
             }
-        
+
+        now = datetime.now()
         user_data = {
             'user_id': user_id,
             'fcm_token': fcm_token,
+            'email': email,
+            'first_name': first_name,
             'start_country': start_country,
             'current_country': start_country,
             'day_number': 1,
             'stories_completed': [],
             'next_story_id': self._get_first_story_for_country(start_country),
-            'last_activity': datetime.now(),
+            'last_activity': now,
+            'signup_date': now,
             'preferences': preferences
         }
         

@@ -184,12 +184,34 @@ class TimezoneManager:
     def get_timezone_distribution(self) -> Dict[str, int]:
         """Retourne la distribution des pays par fuseau horaire"""
         distribution = {}
-        
+
         for group, countries in self.timezone_groups.items():
             distribution[group] = len(countries)
-        
+
         return distribution
-    
+
+    def get_timezone_groups_for_local_hour(self, target_hour: int, tolerance: int = 1) -> List[str]:
+        """Retourne les groupes timezone où l'heure locale est proche de target_hour"""
+        matching_groups = []
+        current_utc = datetime.utcnow()
+
+        for group, countries in self.timezone_groups.items():
+            if not countries:
+                continue
+
+            # Obtenir l'offset UTC du groupe
+            sample_country = countries[0]
+            utc_offset = self.get_utc_offset(sample_country)
+
+            # Calculer l'heure locale dans ce groupe
+            local_hour = (current_utc.hour + utc_offset) % 24
+
+            # Vérifier si l'heure locale est dans la plage cible
+            if abs(local_hour - target_hour) <= tolerance or abs(local_hour - target_hour) >= (24 - tolerance):
+                matching_groups.append(group)
+
+        return matching_groups
+
     def format_local_time(self, country_code: str) -> str:
         """Formate l'heure locale d'un pays de manière lisible"""
         local_time = self.get_user_local_time(country_code)

@@ -22,6 +22,7 @@ CONTE_MAPPING = {
     "Le sultan et le jardinier": "TN",  # Tunisie
     "Kwaku et le canari de la sagesse": "GH",  # Ghana
     "L'homme sans taches": "ML",  # Mali
+    "Mali": "ML",  # Mali (version simplifiée)
     "L_araignée gloutonne": "SL",  # Sierra Leone
     "La petite lépreuse": "CI",  # Côte d'Ivoire
     "L_homme aux trois filles": "GW",  # Guinée-Bissau
@@ -32,6 +33,10 @@ CONTE_MAPPING = {
     "Kimbu-l_homme-sale": "CM",  # Cameroun
     "Le chasseur errant": "BI",  # Burundi
     "La cupidité du vautour": "CG",  # Congo (Brazzaville)
+    
+    # Nouveaux fichiers avec format différent
+    "les-rayures-du-zebre": "KE",  # Kenya
+    "la-jalousie-des-soeurs": "BF",  # Burkina Faso
     
     # Fichiers "chap *"
     "diyiro et le circaete": "DJ",  # Djibouti
@@ -85,6 +90,14 @@ class AudioProcessor:
         # Traiter les fichiers "CHAP *"
         if title.startswith('CHAP '):
             title = re.sub(r'CHAP \d+ ?', '', title)
+        
+        # Traiter les nouveaux formats avec numéros au début
+        if re.match(r'^\d+-conte-n\d+-', title):
+            # Format: "1-conte-n1-les-rayures-du-zebre-v4mbxnqd_ZSol8I3c" ou "24-conte-n24-la-jalousie-des-soeurs_2goZVQOm"
+            title = re.sub(r'^\d+-conte-n\d+-', '', title)
+            # Retirer les suffixes techniques (version avec tiret ou underscore)
+            title = re.sub(r'-v[a-zA-Z0-9_]+.*$', '', title)  # Format -v4mbxnqd_ZSol8I3c
+            title = re.sub(r'_[a-zA-Z0-9]+$', '', title)      # Format _2goZVQOm
         
         # Nettoyer les suffixes
         title = title.replace('_mixage final', '')

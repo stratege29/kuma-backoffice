@@ -287,6 +287,17 @@ class MailingListsManager:
         # Ne garder que ceux avec email valide
         filtered = [u for u in filtered if u.get('email') and '@' in str(u.get('email', ''))]
 
+        # Retirer les desinscrits
+        try:
+            from unsubscribe_manager import filter_recipients
+            as_recipients = [{'email': u.get('email', '')} for u in filtered]
+            _, excluded_emails = filter_recipients(as_recipients)
+            if excluded_emails:
+                excluded_set = set(e.lower() for e in excluded_emails)
+                filtered = [u for u in filtered if u.get('email', '').strip().lower() not in excluded_set]
+        except ImportError:
+            pass
+
         # Enrichir les donnees pour les templates email
         enriched = []
         for user in filtered:

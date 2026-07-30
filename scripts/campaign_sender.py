@@ -60,6 +60,14 @@ try:
 except Exception:  # pragma: no cover
     PUSH_AVAILABLE = False
 
+try:
+    from auth_emails import enrich_users_with_auth_emails
+except Exception as e:  # pragma: no cover
+    logger.warning(f"campaign_sender: auth_emails indisponible: {e}")
+
+    def enrich_users_with_auth_emails(users):
+        return users
+
 
 class _FirebaseShim:
     """Petit objet compatible firebase_manager (attendu: attribut .db)."""
@@ -170,7 +178,10 @@ def load_all_users(db) -> List[Dict]:
             user_data['countriesCount'] = len(countries) if isinstance(countries, list) else 0
 
             users.append(user_data)
-        return users
+
+        # Les emails vivent dans Firebase Auth, pas dans les docs Firestore :
+        # sans cette jointure le filtre email de send_campaign vide la cible.
+        return enrich_users_with_auth_emails(users)
     except Exception as e:
         logger.error(f"load_all_users: erreur chargement users: {e}")
         return []
@@ -355,12 +366,14 @@ def send_campaign(
 
                 user_email = user.get('email')
                 if user_email and '@' in user_email:
-                    ok = email_manager.send_email(to_email=user_email, subject=subject, html_content=body)
+                    # send_email retourne (bool, message) — ne pas tester le tuple
+                    # (toujours vrai), et le parametre s'appelle html_body.
+                    ok, send_msg = email_manager.send_email(to_email=user_email, subject=subject, html_body=body)
                     if ok:
                         results['sent'] += 1
                     else:
                         results['failed'] += 1
-                        results['errors'].append({'user_id': user.get('uid'), 'error': 'Echec envoi email'})
+                        results['errors'].append({'user_id': user.get('uid'), 'error': send_msg or 'Echec envoi email'})
                 else:
                     results['failed'] += 1
                     results['errors'].append({'user_id': user.get('uid'), 'error': 'Email invalide'})

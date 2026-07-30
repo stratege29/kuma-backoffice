@@ -2,8 +2,9 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Installer les dépendances système
+# Installer les dépendances système (ffmpeg pour la génération audio des contes)
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 # Copier les fichiers requirements
@@ -20,5 +21,5 @@ EXPOSE 8080
 ENV PORT=8080
 ENV PYTHONUNBUFFERED=1
 
-# Démarrer le serveur
+# Démarrer le serveur HTTP Firebase Backoffice
 CMD ["python", "firebase_web_backoffice.py"]

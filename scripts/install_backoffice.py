@@ -23,8 +23,7 @@ def install_in_venv():
     for package in requirements:
         try:
             print(f"📦 Installation de {package}...")
-            subprocess.check_call([sys.executable, '-m', 'pip', 'install', package], 
-                                capture_output=True)
+            subprocess.check_call([sys.executable, '-m', 'pip', 'install', package])
             print(f"✅ {package} installé avec succès")
         except subprocess.CalledProcessError as e:
             print(f"❌ Erreur lors de l'installation de {package}")

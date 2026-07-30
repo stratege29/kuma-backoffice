@@ -553,10 +553,12 @@ class NotificationsV2APIHandlers:
 
                     user_email = user.get('email')
                     if user_email and '@' in user_email:
-                        success = self.email_manager.send_email(
+                        # send_email retourne (bool, message) — ne pas tester le
+                        # tuple (toujours vrai), et le parametre est html_body.
+                        success, _send_msg = self.email_manager.send_email(
                             to_email=user_email,
                             subject=subject,
-                            html_content=body
+                            html_body=body
                         )
                         if success:
                             results['sent'] += 1
@@ -809,6 +811,15 @@ class NotificationsV2APIHandlers:
                     user_data['currentStreak'] = jd.get('current_streak') or (journey.get('currentStreak') if isinstance(journey, dict) else None) or 0
 
                     users.append(user_data)
+
+                # Les emails vivent dans Firebase Auth, pas dans les docs
+                # Firestore : sans cette jointure, toute campagne email se
+                # resout a ~0 destinataire (filtre email de send_campaign).
+                try:
+                    from auth_emails import enrich_users_with_auth_emails
+                    users = enrich_users_with_auth_emails(users)
+                except Exception as e:
+                    logger.warning(f"Jointure emails Auth indisponible: {e}")
 
                 self._users_cache = users
                 return users

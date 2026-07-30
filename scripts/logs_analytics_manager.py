@@ -32,6 +32,7 @@ class LogsAnalyticsManager:
         self.collections = {
             'notification_metrics': 'notification_metrics',
             'notification_schedules': 'notification_schedules',
+            'scheduler_execution_logs': 'scheduler_execution_logs',
             'user_journeys': 'user_journeys',
             'stories': 'stories',
             'countries_enriched': 'countries_enriched'
@@ -57,7 +58,8 @@ class LogsAnalyticsManager:
                 'engagement': self.get_engagement_analytics(days),
                 'performance': self.get_performance_analytics(days),
                 'errors': self.get_errors_analytics(days),
-                'system': self.get_system_analytics()
+                'system': self.get_system_analytics(),
+                'scheduler_logs': self.get_scheduler_logs(days)
             }
             
             return analytics
@@ -406,11 +408,71 @@ class LogsAnalyticsManager:
             }
             
             return system_info
-            
+
         except Exception as e:
             logger.error(f"❌ Erreur analytics système: {e}")
             return {"error": str(e)}
-    
+
+    def get_scheduler_logs(self, days: int = 7, limit: int = 100) -> Dict[str, Any]:
+        """Récupère les logs du scheduler (notifications automatiques)"""
+        try:
+            start_date = datetime.now() - timedelta(days=days)
+
+            # Récupérer les logs du scheduler
+            scheduler_ref = self.db.collection('scheduler_execution_logs')
+            query = scheduler_ref.order_by('executed_at', direction=firestore.Query.DESCENDING).limit(limit)
+
+            docs = list(query.stream())
+            logs = []
+
+            for doc in docs:
+                log = doc.to_dict()
+                log['id'] = doc.id
+
+                # Normaliser les dates
+                executed_at = log.get('executed_at', '')
+                if executed_at:
+                    if hasattr(executed_at, 'isoformat'):
+                        log['executed_at'] = executed_at.isoformat()
+                    elif hasattr(executed_at, 'timestamp'):
+                        log['executed_at'] = datetime.fromtimestamp(executed_at.timestamp()).isoformat()
+
+                logs.append(log)
+
+            # Statistiques
+            total_logs = len(logs)
+            successful = len([l for l in logs if l.get('success', False)])
+            failed = total_logs - successful
+
+            # Répartition par source
+            source_distribution = Counter(l.get('source', 'unknown') for l in logs)
+
+            # Répartition par service
+            service_distribution = Counter(l.get('service', l.get('rule_id', 'unknown')) for l in logs)
+
+            # Total notifications envoyées
+            total_sent = sum(
+                l.get('total_sent', 0) or l.get('results', {}).get('total_sent', 0) or 0
+                for l in logs
+            )
+
+            return {
+                'logs': logs,
+                'summary': {
+                    'total_executions': total_logs,
+                    'successful': successful,
+                    'failed': failed,
+                    'success_rate': round(successful / total_logs * 100, 1) if total_logs > 0 else 0,
+                    'total_notifications_sent': total_sent
+                },
+                'by_source': dict(source_distribution),
+                'by_service': dict(service_distribution.most_common(10))
+            }
+
+        except Exception as e:
+            logger.error(f"❌ Erreur récupération scheduler logs: {e}")
+            return {"error": str(e), "logs": []}
+
     def _calculate_notification_trends(self, metrics: List[Dict], days: int) -> Dict[str, Any]:
         """Calcule les tendances des notifications"""
         try:
