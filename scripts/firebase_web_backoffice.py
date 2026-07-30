@@ -4,6 +4,7 @@
 Interface web avec intégration Firebase complète
 """
 
+import hmac
 import http.server
 import socketserver
 import json
@@ -1782,22 +1783,63 @@ if(meImg.complete)meFetch();else meImg.addEventListener('load',meFetch);
 class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
     """Handler HTTP avec intégration Firebase et sécurité"""
     
+    # Endpoints /api/* accessibles SANS auth : nécessaires avant le login PIN
+    # (status/login) ou appelés depuis l'extérieur (capture email landing).
+    PUBLIC_API_GET = {
+        '/api/status',
+        '/api/security/status',
+        '/api/security/mode',
+    }
+    PUBLIC_API_POST = {
+        '/api/security/login',
+        '/api/security/logout',
+        '/api/landing/subscribe',
+    }
+
     def __init__(self, *args, firebase_manager=None, **kwargs):
         self.firebase_manager = firebase_manager
         self.security_manager = SecurityManager(firebase_manager)
         super().__init__(*args, **kwargs)
+
+    def _is_api_authorized(self):
+        """Autorise un appel /api/* si session admin PIN active OU clé API valide.
+        La clé (env BACKOFFICE_API_KEY) est acceptée via le header X-API-Key
+        ou le paramètre ?api_key= (cron Cloud Scheduler)."""
+        expected = os.environ.get('BACKOFFICE_API_KEY', '')
+        if expected:
+            provided = self.headers.get('X-API-Key', '')
+            if not provided:
+                query = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                provided = query.get('api_key', [''])[0]
+            if provided and hmac.compare_digest(provided, expected):
+                return True
+        if self.security_manager.is_admin_session_active():
+            # Prolonge la session : un appel API = activité admin
+            self.security_manager.update_activity()
+            return True
+        return False
+
+    def _reject_unauthorized_api(self):
+        self.send_json_response(
+            {'error': 'Non autorisé : session admin (PIN) ou clé API requise'},
+            status=401)
 
     def do_OPTIONS(self):
         """Gere les requetes OPTIONS pour CORS preflight"""
         self.send_response(200)
         self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type, X-API-Key')
         self.send_header('Access-Control-Max-Age', '86400')
         self.end_headers()
 
     def do_GET(self):
         """Gère les requêtes GET"""
+        path_only = urllib.parse.urlparse(self.path).path
+        if path_only.startswith('/api/') and path_only not in self.PUBLIC_API_GET:
+            if not self._is_api_authorized():
+                self._reject_unauthorized_api()
+                return
         if self.path == '/' or self.path == '/index.html':
             self.send_homepage()
         elif self.path == '/stories':
@@ -1842,6 +1884,10 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
             self.send_analytics_report_page()
         elif self.path.startswith('/api/analytics-report'):
             self.handle_get_analytics_report()
+        elif self.path == '/promo-report':
+            self.send_promo_report_page()
+        elif self.path.startswith('/api/promo-report'):
+            self.handle_get_promo_report()
         elif self.path == '/social-queue':
             self.send_social_queue_page()
         elif self.path == '/story-audio':
@@ -2134,6 +2180,12 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
         """Gère les requêtes POST"""
         content_length = int(self.headers.get('Content-Length', 0))
         raw_data = self.rfile.read(content_length)
+
+        path_only = urllib.parse.urlparse(self.path).path
+        if path_only.startswith('/api/') and path_only not in self.PUBLIC_API_POST:
+            if not self._is_api_authorized():
+                self._reject_unauthorized_api()
+                return
 
         # Routes binaires : passer les bytes bruts directement
         if self.path == '/api/upload':
@@ -12257,6 +12309,7 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                     <a href="/kpis" class="{'active' if page == 'kpis' else ''}">📈 KPIs</a>
                     <a href="/funnel" class="{'active' if page == 'funnel' else ''}">📊 Funnel</a>
                     <a href="/analytics-report" class="{'active' if page == 'analytics-report' else ''}" style="background: linear-gradient(135deg, #1a73e8, #34a853); color: white;">📉 Rapport GA4</a>
+                    <a href="/promo-report" class="{'active' if page == 'promo-report' else ''}" style="background: linear-gradient(135deg, #FF9800, #E65100); color: white;">🎟️ Promos</a>
                     <a href="/security" class="{'active' if page == 'security' else ''}">🛡️ Sécurité</a>
                     <a href="/trash" class="{'active' if page == 'trash' else ''}">🗑️ Corbeille</a>
                     <a href="/test" class="{'active' if page == 'test' else ''}">🔧 Test</a>
@@ -15454,6 +15507,159 @@ Un avis nous aide enormement a faire decouvrir Kuma a d'autres familles !<br><br
             </script>
         """
         html = self.get_base_html('analytics-report', content)
+        self.send_response(200)
+        self.send_header('Content-type', 'text/html; charset=utf-8')
+        self.end_headers()
+        self.wfile.write(html.encode('utf-8'))
+
+    def handle_get_promo_report(self):
+        """API: Conversions Paystack par code promo et par campagne (web_payments)."""
+        try:
+            from datetime import datetime, timedelta, timezone
+            query = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            days = int(query.get('days', [28])[0])
+
+            if not self.firebase_manager.initialized:
+                self.send_json_response({'success': False, 'error': 'Firebase non initialise'})
+                return
+
+            db = self.firebase_manager.db
+            cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+            docs = db.collection('web_payments').where('createdAt', '>=', cutoff).stream()
+
+            def new_row():
+                return {'initiated': 0, 'completed': 0, 'pending': 0, 'failed': 0,
+                        'revenue': 0, 'discount': 0}
+
+            by_promo, by_campaign = {}, {}
+            totals = new_row()
+
+            for doc in docs:
+                p = doc.to_dict() or {}
+                status = p.get('status', 'pending')
+                amount = p.get('amount', 0) or 0
+                base = p.get('baseAmount', amount) or amount
+                promo = p.get('promoCode') or '(sans code)'
+                campaign = p.get('campaign') or '(sans campagne)'
+
+                for bucket, key in ((by_promo, promo), (by_campaign, campaign)):
+                    row = bucket.setdefault(key, new_row())
+                    row['initiated'] += 1
+                    if status == 'completed':
+                        row['completed'] += 1
+                        row['revenue'] += amount
+                        row['discount'] += max(0, base - amount)
+                    elif status == 'failed':
+                        row['failed'] += 1
+                    else:
+                        row['pending'] += 1
+
+                totals['initiated'] += 1
+                if status == 'completed':
+                    totals['completed'] += 1
+                    totals['revenue'] += amount
+                    totals['discount'] += max(0, base - amount)
+                elif status == 'failed':
+                    totals['failed'] += 1
+                else:
+                    totals['pending'] += 1
+
+            def as_rows(bucket):
+                rows = [dict(r, key=k) for k, r in bucket.items()]
+                rows.sort(key=lambda r: (-r['revenue'], -r['initiated']))
+                return rows
+
+            self.send_json_response({
+                'success': True,
+                'days': days,
+                'totals': totals,
+                'by_promo': as_rows(by_promo),
+                'by_campaign': as_rows(by_campaign),
+            })
+        except Exception as e:
+            import traceback
+            self.send_json_response({'success': False, 'error': str(e),
+                                     'traceback': traceback.format_exc()})
+
+    def send_promo_report_page(self):
+        """Page: conversions du paiement web par code promo / campagne email."""
+        content = """
+            <h2>🎟️ Promos &amp; campagnes — paiement web</h2>
+            <p style="color:#666;margin-top:-8px;">Source : collection <code>web_payments</code> (Paystack). Les codes et campagnes sont attach&eacute;s au paiement par la page /subscribe (liens emails <code>?promo=&hellip;&amp;utm_campaign=&hellip;</code>).</p>
+
+            <div style="margin:15px 0;">
+                <label>P&eacute;riode :
+                    <select id="pr-days" onchange="loadPromoReport()">
+                        <option value="7">7 jours</option>
+                        <option value="28" selected>28 jours</option>
+                        <option value="90">90 jours</option>
+                    </select>
+                </label>
+                <button onclick="loadPromoReport()" style="margin-left:10px;padding:6px 14px;background:#E65100;color:#fff;border:none;border-radius:5px;cursor:pointer;">&#8635; Rafra&icirc;chir</button>
+            </div>
+
+            <div id="pr-loading" style="text-align:center;padding:40px;">Chargement&hellip;</div>
+            <div id="pr-content" style="display:none;">
+                <div class="section"><h3>Total p&eacute;riode</h3><div id="pr-totals" style="display:grid;grid-template-columns:repeat(4,1fr);gap:20px;margin-bottom:20px;"></div></div>
+                <div class="section"><h3>Par code promo</h3><div id="pr-promo"></div></div>
+                <div class="section"><h3>Par campagne (utm_campaign)</h3><div id="pr-campaign"></div></div>
+            </div>
+            <div id="pr-error" style="display:none;"></div>
+
+            <script>
+            function fcfa(n){ return (n||0).toLocaleString('fr-FR')+' F'; }
+            function prCard(label,val){ return '<div style="background:#fff;border:1px solid #eee;border-radius:10px;padding:16px;text-align:center;">'
+                +'<div style="font-size:1.6em;font-weight:bold;color:#E65100;">'+val+'</div>'
+                +'<div style="color:#888;font-size:0.9em;">'+label+'</div></div>'; }
+            function prTable(rows,label){
+                if(!rows.length) return '<div class="alert alert-info">Aucun paiement sur la période.</div>';
+                var h='<table style="width:100%;border-collapse:collapse;">'
+                    +'<tr style="background:#FFF3E0;"><th style="text-align:left;padding:8px;">'+label+'</th>'
+                    +'<th style="padding:8px;">Initiés</th><th style="padding:8px;">Payés</th>'
+                    +'<th style="padding:8px;">En attente</th><th style="padding:8px;">Échoués</th>'
+                    +'<th style="padding:8px;">Conversion</th><th style="padding:8px;">Revenu</th>'
+                    +'<th style="padding:8px;">Remises accordées</th></tr>';
+                rows.forEach(function(r){
+                    var conv=r.initiated? Math.round(100*r.completed/r.initiated)+' %':'—';
+                    h+='<tr style="border-bottom:1px solid #f0f0f0;">'
+                        +'<td style="padding:8px;font-weight:600;">'+r.key+'</td>'
+                        +'<td style="padding:8px;text-align:center;">'+r.initiated+'</td>'
+                        +'<td style="padding:8px;text-align:center;color:#2e7d32;font-weight:600;">'+r.completed+'</td>'
+                        +'<td style="padding:8px;text-align:center;color:#b26a00;">'+r.pending+'</td>'
+                        +'<td style="padding:8px;text-align:center;color:#c62828;">'+r.failed+'</td>'
+                        +'<td style="padding:8px;text-align:center;">'+conv+'</td>'
+                        +'<td style="padding:8px;text-align:right;">'+fcfa(r.revenue)+'</td>'
+                        +'<td style="padding:8px;text-align:right;color:#888;">'+fcfa(r.discount)+'</td></tr>';
+                });
+                return h+'</table>';
+            }
+            function loadPromoReport(){
+                document.getElementById('pr-loading').style.display='block';
+                document.getElementById('pr-content').style.display='none';
+                document.getElementById('pr-error').style.display='none';
+                var days=document.getElementById('pr-days').value;
+                fetch('/api/promo-report?days='+days).then(function(r){return r.json();}).then(function(res){
+                    document.getElementById('pr-loading').style.display='none';
+                    if(!res.success){ var er=document.getElementById('pr-error'); er.style.display='block';
+                        er.innerHTML='<div class="alert alert-warning">Erreur : '+res.error+'</div>'; return; }
+                    document.getElementById('pr-content').style.display='block';
+                    var t=res.totals;
+                    var conv=t.initiated? Math.round(100*t.completed/t.initiated)+' %':'—';
+                    document.getElementById('pr-totals').innerHTML =
+                        prCard('Paiements initiés', t.initiated)
+                        +prCard('Paiements réussis', t.completed+' ('+conv+')')
+                        +prCard('Revenu encaissé', fcfa(t.revenue))
+                        +prCard('Remises accordées', fcfa(t.discount));
+                    document.getElementById('pr-promo').innerHTML=prTable(res.by_promo,'Code');
+                    document.getElementById('pr-campaign').innerHTML=prTable(res.by_campaign,'Campagne');
+                }).catch(function(e){ document.getElementById('pr-loading').style.display='none';
+                    var er=document.getElementById('pr-error'); er.style.display='block';
+                    er.innerHTML='<div class="alert alert-warning">Erreur réseau : '+e+'</div>'; });
+            }
+            loadPromoReport();
+            </script>
+        """
+        html = self.get_base_html('promo-report', content)
         self.send_response(200)
         self.send_header('Content-type', 'text/html; charset=utf-8')
         self.end_headers()
