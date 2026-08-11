@@ -550,6 +550,11 @@ class NotificationsV2APIHandlers:
                     body = body.replace('{displayName}', display_name).replace('{childName}', child_name)
                     body = body.replace('{startCountry}', start_country).replace('{progress}', progress)
                     body = body.replace('{subscription_type}', subscription).replace('{email}', user.get('email', ''))
+                    # {uid} : le compte que le lien /subscribe doit crediter.
+                    # DOIT rester aligne avec campaign_sender.py — cette
+                    # substitution y est dupliquee, et un lien parti d'ici sans
+                    # {uid} substitue ferait refuser le paiement.
+                    body = body.replace('{uid}', user.get('uid') or user.get('userId') or '')
 
                     user_email = user.get('email')
                     if user_email and '@' in user_email:

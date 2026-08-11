@@ -13825,6 +13825,8 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                             <code>{{{{childrenNames}}}}</code> Tous les enfants |
                             <code>{{{{childAge}}}}</code> Age enfant |
                             <code>{{{{childrenCount}}}}</code> Nb enfants
+                            <br>
+                            <code>{{{{uid}}}}</code> Compte — <strong>obligatoire dans tout lien vers /subscribe</strong>
                             <br><br>
                             <strong>Conditions:</strong> <code>{{% if subscription_type == 'premium' %}}...{{% endif %}}</code> |
                             <code>{{% if childName %}}Bonjour {{{{childName}}}}!{{% endif %}}</code>

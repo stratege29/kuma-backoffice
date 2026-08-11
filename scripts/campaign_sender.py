@@ -399,8 +399,16 @@ def send_campaign(
                 progress = str(user.get('progress', 0))
                 subscription = user.get('subscription_type') or 'free'
 
+                # {uid} : le compte que le lien doit crediter. La page
+                # /subscribe le compare a la session web et REFUSE de payer
+                # sous un autre compte (un vrai paiement s'est perdu ainsi le
+                # 2026-08-08). Vide si l'uid manque -> la page retombe sur son
+                # comportement d'avant, elle ne bloque personne a tort.
+                uid = user.get('uid') or user.get('userId') or ''
+
                 for var, val in (('{displayName}', display_name), ('{childName}', child_name),
-                                 ('{startCountry}', start_country), ('{progress}', progress)):
+                                 ('{startCountry}', start_country), ('{progress}', progress),
+                                 ('{uid}', uid)):
                     subject = subject.replace(var, val)
                     body = body.replace(var, val)
                 body = body.replace('{subscription_type}', subscription).replace('{email}', user.get('email', ''))
