@@ -55,3 +55,6 @@ tmp/
 
 # Application specific
 optimized_output/
+# Clés privées Apple (.p8) et certificats — jamais dans le dépôt
+*.p8
+certificats/AuthKey_*
