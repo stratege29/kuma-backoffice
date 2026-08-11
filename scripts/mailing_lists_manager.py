@@ -460,33 +460,47 @@ class MailingListsManager:
             'hasFcmToken': bool(user.get('fcmToken'))
         }
 
+    # `childrenStats` n'existe dans AUCUN document user (verifie 2026-07-30) :
+    # les profils enfants vivent dans le champ map `childrenProfiles`
+    # (`childrenProfiles.{childId}.name`), present sur 823/827 users. Ces
+    # helpers retournaient donc toujours '' et tous les emails disaient
+    # « votre enfant ». On lit les deux formats, `childrenProfiles` en premier.
+    def _child_profiles(self, user: Dict) -> List[Dict]:
+        """Retourne les profils enfants, profil actif en tete."""
+        profiles = user.get('childrenProfiles')
+        if isinstance(profiles, dict) and profiles:
+            found = [p for p in profiles.values() if isinstance(p, dict)]
+            found.sort(key=lambda p: 0 if p.get('isActive') else 1)
+            return found
+
+        legacy = user.get('childrenStats')
+        if isinstance(legacy, list):
+            return [c for c in legacy if isinstance(c, dict)]
+        return []
+
     def _get_first_child_name(self, user: Dict) -> str:
         """Retourne le nom du premier enfant ou une valeur par defaut"""
-        children_stats = user.get('childrenStats', [])
-        if children_stats and len(children_stats) > 0:
-            first_child = children_stats[0]
-            return first_child.get('name', '') or first_child.get('childName', '')
+        for child in self._child_profiles(user):
+            name = str(child.get('name') or child.get('childName') or '').strip()
+            if name:
+                return name
         return ''
 
     def _get_all_children_names(self, user: Dict) -> str:
         """Retourne tous les noms des enfants separes par virgule"""
-        children_stats = user.get('childrenStats', [])
-        if children_stats:
-            names = []
-            for child in children_stats:
-                name = child.get('name', '') or child.get('childName', '')
-                if name:
-                    names.append(name)
-            return ', '.join(names)
-        return ''
+        names = []
+        for child in self._child_profiles(user):
+            name = str(child.get('name') or child.get('childName') or '').strip()
+            if name:
+                names.append(name)
+        return ', '.join(names)
 
     def _get_first_child_age(self, user: Dict) -> str:
         """Retourne l'age du premier enfant"""
-        children_stats = user.get('childrenStats', [])
-        if children_stats and len(children_stats) > 0:
-            first_child = children_stats[0]
-            age = first_child.get('age') or first_child.get('childAge', '')
-            return str(age) if age else ''
+        for child in self._child_profiles(user):
+            age = child.get('age') or child.get('childAge')
+            if age:
+                return str(age)
         return ''
 
     def filter_users_custom(

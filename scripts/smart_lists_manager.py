@@ -337,6 +337,21 @@ class SmartListsManager:
             'priority': 'high',
             'suggested_templates': ['premium_benefits', 'special_offer']
         },
+        # Cible win-back reelle : ils ont goute au produit (3+ contes finis)
+        # puis ont decroche. `convertible` exige <=7j d'inactivite et ne
+        # remonte quasi personne sur une base dormante (574/801 gratuits
+        # inactifs 90j+, mesure 2026-07-30) ; `trial_expired` et
+        # `lapsed_premium` sont structurellement vides (hadTrial/hadPremium
+        # jamais ecrits par l'app). D'ou ce segment.
+        'engaged_dormant': {
+            'id': 'engaged_dormant',
+            'name': 'Engages dormants',
+            'description': 'Gratuits ayant fini 3+ contes puis decroches (8j+)',
+            'icon': '🌙',
+            'category': 'subscription',
+            'priority': 'high',
+            'suggested_templates': ['special_offer', 'premium_benefits']
+        },
         'lapsed_premium': {
             'id': 'lapsed_premium',
             'name': 'Ex-Premium',
@@ -441,6 +456,7 @@ class SmartListsManager:
             'trial_expired': lambda u: self._is_trial_expired(u),
             'convertible': lambda u: self._is_convertible(u),
             'lapsed_premium': lambda u: self._is_lapsed_premium(u),
+            'engaged_dormant': lambda u: self._is_engaged_dormant(u),
 
             # Engagement
             'low_engagement': lambda u: self._is_low_engagement(u),
@@ -585,6 +601,23 @@ class SmartListsManager:
         if isinstance(sub, dict):
             return sub.get('type') == 'free' and sub.get('hadPremium', False)
         return False
+
+    # Seuils du segment win-back « engages dormants ».
+    ENGAGED_DORMANT_MIN_STORIES = 3
+    ENGAGED_DORMANT_MIN_DAYS_INACTIVE = 8
+
+    def _is_engaged_dormant(self, user: Dict) -> bool:
+        """Gratuit ayant fini assez de contes pour accrocher, puis decroche.
+
+        Complementaire de `convertible` (gratuits engages ENCORE actifs) : ici
+        on vise ceux qui sont partis, c'est-a-dire la cible des campagnes de
+        win-back avec code promo.
+        """
+        if self._get_subscription_type(user) != 'free':
+            return False
+        if self._get_stories_count(user) < self.ENGAGED_DORMANT_MIN_STORIES:
+            return False
+        return self._days_since_activity(user) >= self.ENGAGED_DORMANT_MIN_DAYS_INACTIVE
 
     def _is_high_engagement(self, user: Dict) -> bool:
         """Verifie si l'utilisateur est tres engage"""

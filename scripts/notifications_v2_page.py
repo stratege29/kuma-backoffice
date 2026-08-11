@@ -816,8 +816,11 @@ class NotificationsV2APIHandlers:
                 # Firestore : sans cette jointure, toute campagne email se
                 # resout a ~0 destinataire (filtre email de send_campaign).
                 try:
-                    from auth_emails import enrich_users_with_auth_emails
-                    users = enrich_users_with_auth_emails(users)
+                    from auth_emails import (
+                        enrich_users_with_auth_emails,
+                        derive_child_fields,
+                    )
+                    users = derive_child_fields(enrich_users_with_auth_emails(users))
                 except Exception as e:
                     logger.warning(f"Jointure emails Auth indisponible: {e}")
 

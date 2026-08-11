@@ -1321,6 +1321,18 @@ MAP_ELEMENTS_PAGE_HTML = r'''
   .me-app{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;font-size:18px}
   .me-app img{width:22px;height:22px;object-fit:contain}
   .me-zbtn{border:1px solid #cbd5e1;background:#f8fafc;border-radius:5px;cursor:pointer;font-size:11px;padding:1px 6px;line-height:1.5}
+  /* Galerie de sprites : les vignettes sont découpées dans l'atlas généré
+     depuis les dessins de l'app — aucune image n'est redessinée ici, donc
+     l'admin voit exactement ce que verra l'enfant. */
+  .me-sprites{max-height:260px;overflow-y:auto;border:1px solid #e2e8f0;border-radius:8px;padding:6px;margin-top:4px;background:#fafafa}
+  .me-fam{font-size:10px;font-weight:700;color:#94a3b8;text-transform:uppercase;margin:6px 0 3px;letter-spacing:.5px}
+  .me-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(58px,1fr));gap:4px}
+  .me-sp{border:2px solid transparent;border-radius:8px;background:#fff;cursor:pointer;padding:2px;text-align:center}
+  .me-sp:hover{background:#fff7ed}
+  .me-sp.on{border-color:#ff8a00;background:#fff7ed}
+  .me-sp i{display:block;width:52px;height:52px;margin:0 auto;background-image:url('/assets/sprites-atlas.png');background-repeat:no-repeat}
+  .me-sp span{display:block;font-size:9px;color:#64748b;line-height:1.15;margin-top:1px;word-break:break-word}
+  .me-mk{display:block;width:34px;height:34px;background-image:url('/assets/sprites-atlas.png');background-repeat:no-repeat;pointer-events:none}
 </style>
 <div class="me-wrap">
   <div class="me-left">
@@ -1365,9 +1377,17 @@ MAP_ELEMENTS_PAGE_HTML = r'''
       </select>
       <label>Apparence</label>
       <select id="f_assetkind" onchange="meAssetKindChanged()">
+        <option value="sprite">🎨 Sprite (catalogue)</option>
         <option value="emoji">😀 Emoji</option>
-        <option value="image">🖼️ Image (sprite)</option>
+        <option value="image">🖼️ Image importée</option>
       </select>
+      <div id="meSpriteBlock">
+        <label>Catalogue <span id="meSpriteSel" style="font-weight:400;text-transform:none;color:#0f172a"></span></label>
+        <input id="meSpriteSearch" placeholder="Chercher (girafe, pirogue, feu…)" oninput="meRenderSprites()" style="margin-bottom:4px">
+        <div class="me-sprites" id="meSprites"></div>
+        <input type="hidden" id="f_sprite" value="">
+        <div class="me-note" id="meSpriteHint"></div>
+      </div>
       <div id="meEmojiBlock">
         <label>Emoji</label>
         <input id="f_emoji" value="🌴" maxlength="4">
@@ -1472,7 +1492,13 @@ function meReorder(id,dir){ // dir=-1 vers le premier plan (haut liste), +1 vers
   if(!ups.length){meFetch();return;}
   Promise.all(ups.map(meUpdateElement)).then(()=>meFetch());
 }
-function meAppCell(el){if(el.asset&&el.asset.kind==='image'&&el.asset.value){return '<span class="me-app"><img src="'+meEsc(el.asset.value)+'"></span>';}return '<span class="me-app">'+meEsc((el.asset&&el.asset.value)||'❓')+'</span>';}
+function meAppCell(el){
+  if(el.asset&&el.asset.kind==='sprite'){
+    const sp=meSpriteById[el.asset.value];
+    return '<span class="me-app"><i style="display:block;width:24px;height:24px;background-image:url(/assets/sprites-atlas.png);background-repeat:no-repeat;'+meSpriteStyle(sp,24)+'"></i></span>';
+  }
+  if(el.asset&&el.asset.kind==='image'&&el.asset.value){return '<span class="me-app"><img src="'+meEsc(el.asset.value)+'"></span>';}
+  return '<span class="me-app">'+meEsc((el.asset&&el.asset.value)||'❓')+'</span>';}
 function meRenderTable(){
   const body=document.getElementById('meTableBody');if(!body)return;
   const arr=meElements.filter(e=>e.id).sort(meByZdesc);
@@ -1512,7 +1538,14 @@ function meRender(){
     m.className='me-marker'+(isEditing?' sel':'')+(isMulti?' multi':'')+(!el.id?' pending':'');
     m.style.left=((el.position?el.position.x:0.5)*100)+'%';
     m.style.top=((el.position?el.position.y:0.5)*100)+'%';
-    if(el.asset&&el.asset.kind==='image'&&el.asset.value){
+    if(el.asset&&el.asset.kind==='sprite'){
+      const sp=meSpriteById[el.asset.value];
+      const ic=document.createElement('i');
+      ic.className='me-mk';
+      ic.setAttribute('style',meSpriteStyle(sp,34));
+      m.appendChild(ic);
+      if(!sp)m.textContent='❓';
+    }else if(el.asset&&el.asset.kind==='image'&&el.asset.value){
       const im=document.createElement('img');
       im.src=el.asset.value; im.draggable=false;
       im.style.cssText='width:30px;height:30px;object-fit:contain;display:block;pointer-events:none';
@@ -1645,7 +1678,7 @@ document.addEventListener('pointercancel',meEndPointer);
 window.addEventListener('blur',function(){meDown=null;});
 
 function meNew(pos){
-  meSel={id:null,type:'decor',label:'',asset:{kind:'emoji',value:'🌴'},position:pos||{x:0.5,y:0.5},scale:1,water:false,
+  meSel={id:null,type:'decor',label:'',asset:{kind:'sprite',value:'baobab'},position:pos||{x:0.5,y:0.5},scale:1.5,water:false,
     animation:{kind:'bob',speed:1,amplitude:1,period:24,loop:true,path:[]},interactive:true,popup:{title:'',body:''},enabled:true,z:0};
   meFill();meRender();
 }
@@ -1660,13 +1693,10 @@ function meFill(){
   document.getElementById('f_type').value=meSel.type||'decor';
   const _ak=(meSel.asset&&meSel.asset.kind)||'emoji';
   document.getElementById('f_assetkind').value=_ak;
-  if(_ak==='image'){
-    document.getElementById('f_imgurl').value=(meSel.asset&&meSel.asset.value)||'';
-    document.getElementById('f_emoji').value='🌴';
-  }else{
-    document.getElementById('f_emoji').value=(meSel.asset&&meSel.asset.value)||'🌴';
-    document.getElementById('f_imgurl').value='';
-  }
+  document.getElementById('f_sprite').value=(_ak==='sprite'&&meSel.asset)?(meSel.asset.value||''):'';
+  document.getElementById('f_imgurl').value=(_ak==='image'&&meSel.asset)?(meSel.asset.value||''):'';
+  document.getElementById('f_emoji').value=(_ak==='emoji'&&meSel.asset)?(meSel.asset.value||'🌴'):'🌴';
+  meRenderSprites();
   meAssetKindChanged(true);
   document.getElementById('f_x').value=(meSel.position.x||0).toFixed(3);
   document.getElementById('f_y').value=(meSel.position.y||0).toFixed(3);
@@ -1693,14 +1723,77 @@ function meFill(){
 }
 function meTogglePopup(){document.getElementById('mePopup').style.display=document.getElementById('f_interactive').checked?'block':'none';}
 function meTypeChanged(){const t=document.getElementById('f_type').value;const map={fish:'🐟',bird:'🐦',car:'🚗',animal:'🦁',boat:'⛵',decor:'🌴'};if(map[t])document.getElementById('f_emoji').value=map[t];if(t==='fish'||t==='boat')document.getElementById('f_water').checked=true;meFormToSel();}
+// --- Catalogue de sprites ----------------------------------------------------
+// Le manifeste dit où chaque dessin se trouve dans l'atlas ; on ne stocke que
+// son identifiant (`asset:{kind:'sprite',value:'girafe'}`), jamais une image.
+var meSpriteList=[], meSpriteTile=128, meSpriteById={};
+var ME_FAMILY_LABEL={lieu:'Lieux & monuments',faune:'Faune',flore:'Végétation',eau:'Eau',vie:'Vie & culture'};
+var ME_GROUND_LABEL={terre:'sur la terre',eau:'sur l\'eau',ciel:'dans le ciel',partout:'partout'};
+
+function meLoadSprites(){
+  fetch('/assets/sprites-atlas.json').then(r=>r.json()).then(m=>{
+    meSpriteTile=m.tile||128; meSpriteList=m.sprites||[];
+    meSpriteById={}; meSpriteList.forEach(sp=>{meSpriteById[sp.id]=sp;});
+    meRenderSprites(); meRender(); meRenderTable();
+  }).catch(function(){
+    document.getElementById('meSprites').innerHTML=
+      '<div class="me-empty">Catalogue indisponible : relance <code>flutter test '+
+      'test/dev_map_sprites_sheet.dart</code> et copie sprites_atlas.* dans scripts/assets/.</div>';
+  });
+}
+
+// Une vignette = l'atlas décalé et redimensionné pour ne montrer qu'une tuile.
+function meSpriteStyle(sp,box){
+  if(!sp)return '';
+  const k=box/meSpriteTile;
+  return 'background-size:'+(meSpriteTile*6*k)+'px auto;background-position:'+
+    (-sp.col*meSpriteTile*k)+'px '+(-sp.row*meSpriteTile*k)+'px;';
+}
+
+function meRenderSprites(){
+  const wrap=document.getElementById('meSprites');
+  if(!wrap)return;
+  const q=(document.getElementById('meSpriteSearch').value||'').toLowerCase().trim();
+  const cur=document.getElementById('f_sprite').value;
+  const fams=['lieu','faune','flore','eau','vie'];
+  let html='';
+  fams.forEach(f=>{
+    const items=meSpriteList.filter(sp=>sp.family===f&&
+      (!q||sp.label.toLowerCase().indexOf(q)>-1||sp.id.indexOf(q)>-1));
+    if(!items.length)return;
+    html+='<div class="me-fam">'+(ME_FAMILY_LABEL[f]||f)+'</div><div class="me-grid">';
+    items.forEach(sp=>{
+      html+='<div class="me-sp'+(sp.id===cur?' on':'')+'" onclick="mePickSprite(\''+sp.id+'\')" title="'+meEsc(sp.label)+'">'+
+        '<i style="'+meSpriteStyle(sp,52)+'"></i><span>'+meEsc(sp.label)+'</span></div>';
+    });
+    html+='</div>';
+  });
+  wrap.innerHTML=html||'<div class="me-empty">Aucun sprite ne correspond.</div>';
+  const sp=meSpriteById[cur];
+  document.getElementById('meSpriteSel').textContent=sp?('— '+sp.label):'';
+  document.getElementById('meSpriteHint').textContent=sp?
+    ('Se pose '+(ME_GROUND_LABEL[sp.ground]||sp.ground)+'. Taille conseillée : '+sp.scale+'.'):'';
+}
+
+function mePickSprite(id){
+  document.getElementById('f_sprite').value=id;
+  const sp=meSpriteById[id];
+  // La taille conseillée du catalogue est appliquée à la pose, pas ensuite :
+  // sinon on écraserait un réglage fait à la main.
+  if(sp&&meSel&&!meSel.id)document.getElementById('f_scale').value=sp.scale;
+  meRenderSprites(); meFormToSel();
+}
+
 function meAssetFromForm(){
   const kind=document.getElementById('f_assetkind').value;
+  if(kind==='sprite'){return {kind:'sprite',value:document.getElementById('f_sprite').value||''};}
   if(kind==='image'){return {kind:'image',value:(document.getElementById('f_imgurl').value||'').trim()};}
   return {kind:'emoji',value:document.getElementById('f_emoji').value||'❓'};
 }
 function meAssetKindChanged(silent){
   const kind=document.getElementById('f_assetkind').value;
-  document.getElementById('meEmojiBlock').style.display=(kind==='image')?'none':'block';
+  document.getElementById('meSpriteBlock').style.display=(kind==='sprite')?'block':'none';
+  document.getElementById('meEmojiBlock').style.display=(kind==='emoji')?'block':'none';
   document.getElementById('meImageBlock').style.display=(kind==='image')?'block':'none';
   const url=(document.getElementById('f_imgurl').value||'').trim();
   const prev=document.getElementById('f_imgpreview');
@@ -1774,6 +1867,7 @@ function meRouteClear(){if(meSel){meSel.animation.path=[];meRenderPath();meUpdat
 function meUpdateRouteCount(){const n=(meSel&&meSel.animation&&meSel.animation.path)?meSel.animation.path.length:0;const el=document.getElementById('meRouteCount');if(el)el.textContent='('+n+' point'+(n>1?'s':'')+')';}
 function meRenderPath(){const svg=document.getElementById('mePath');const path=(meSel&&meSel.animation&&meSel.animation.path)||[];const af=document.getElementById('f_anim');const k=af?af.value:'';if((k!=='drive'&&k!=='fly')||path.length===0){svg.innerHTML='';return;}svg.setAttribute('viewBox','0 0 100 100');svg.setAttribute('preserveAspectRatio','none');const pts=path.map(p=>(p.x*100)+','+(p.y*100)).join(' ');let s='<polyline points="'+pts+'" fill="none" stroke="#ff8a00" stroke-width="1.5" stroke-dasharray="3 3" vector-effect="non-scaling-stroke"/>';path.forEach(p=>{s+='<circle cx="'+(p.x*100)+'" cy="'+(p.y*100)+'" r="1.3" fill="#ff8a00" vector-effect="non-scaling-stroke"/>';});svg.innerHTML=s;}
 meEmojiPalette();
+meLoadSprites();
 (function(){var cb=document.getElementById('meDragToggle');if(cb)cb.checked=meDragEnabled;})();
 if(meImg.complete)meFetch();else meImg.addEventListener('load',meFetch);
 </script>
@@ -1860,6 +1954,10 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
             self.handle_get_map_elements()
         elif self.path == '/assets/map-base.png':
             self.serve_map_base_image()
+        elif self.path == '/assets/sprites-atlas.png':
+            self.serve_sprites_atlas()
+        elif self.path == '/assets/sprites-atlas.json':
+            self.serve_sprites_manifest()
         elif self.path == '/souvenirs':
             self.send_souvenirs_page()
         elif self.path == '/badges':
@@ -13429,20 +13527,40 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
     # ==================== ÉLÉMENTS DE CARTE ====================
 
     def serve_map_base_image(self):
-        """Sert l'image de fond de la carte (africa_base) pour l'éditeur."""
+        """Sert le fond d'édition de la carte.
+
+        ⚠️ Ce PNG est REGÉNÉRÉ depuis le peintre de l'app
+        (`flutter test test/dev_map_render_snapshot.dart` -> map_base.png).
+        Ne pas le remplacer par une illustration : c'est parce que l'ancien
+        fond était un dessin isométrique, sans rapport avec la projection de
+        l'app, que tout ce qu'on posait ici finissait décalé en jeu.
+        """
+        self._serve_asset('map_base.png', 'image/png')
+
+    def serve_sprites_atlas(self):
+        """Atlas des sprites du catalogue, généré depuis les dessins de l'app
+        (`flutter test test/dev_map_sprites_sheet.dart`). La galerie ne
+        redessine donc rien : ce que l'admin choisit est exactement ce que
+        l'enfant verra."""
+        self._serve_asset('sprites_atlas.png', 'image/png')
+
+    def serve_sprites_manifest(self):
+        self._serve_asset('sprites_atlas.json', 'application/json')
+
+    def _serve_asset(self, name, content_type):
         import os
         try:
-            path = os.path.join(os.path.dirname(__file__), 'assets', 'map_base.png')
+            path = os.path.join(os.path.dirname(__file__), 'assets', name)
             with open(path, 'rb') as f:
                 data = f.read()
             self.send_response(200)
-            self.send_header('Content-type', 'image/png')
-            self.send_header('Cache-Control', 'public, max-age=86400')
+            self.send_header('Content-type', content_type)
+            self.send_header('Cache-Control', 'public, max-age=3600')
             self.send_header('Content-Length', str(len(data)))
             self.end_headers()
             self.wfile.write(data)
         except Exception as e:
-            self.send_error_response(404, f"Image de carte introuvable: {e}")
+            self.send_error_response(404, f"Asset {name} introuvable: {e}")
 
     def handle_get_map_elements(self):
         """Liste les éléments de carte (collection map_elements)."""
@@ -15569,12 +15687,34 @@ Un avis nous aide enormement a faire decouvrir Kuma a d'autres familles !<br><br
                 rows.sort(key=lambda r: (-r['revenue'], -r['initiated']))
                 return rows
 
+            # Ouvertures email : jointure notification_metrics (envois) x
+            # email_campaign_opens (pixel). Les deux sont indexes par campaign_id.
+            emails = {}
+            try:
+                for doc in db.collection('notification_metrics').stream():
+                    md = doc.to_dict() or {}
+                    cid = md.get('campaign_id')
+                    if not cid or md.get('channel') != 'email':
+                        continue
+                    row = emails.setdefault(cid, {'key': cid, 'sent': 0, 'opens': 0, 'unique_opens': 0})
+                    row['sent'] += md.get('total_sent', 0) or 0
+                for doc in db.collection('email_campaign_opens').stream():
+                    od = doc.to_dict() or {}
+                    row = emails.setdefault(doc.id, {'key': doc.id, 'sent': 0, 'opens': 0, 'unique_opens': 0})
+                    row['opens'] = od.get('opens', 0) or 0
+                    row['unique_opens'] = od.get('uniqueOpens', 0) or 0
+            except Exception as e:
+                logger.warning(f"promo-report: lecture ouvertures impossible: {e}")
+
+            email_rows = sorted(emails.values(), key=lambda r: -r['sent'])
+
             self.send_json_response({
                 'success': True,
                 'days': days,
                 'totals': totals,
                 'by_promo': as_rows(by_promo),
                 'by_campaign': as_rows(by_campaign),
+                'emails': email_rows,
             })
         except Exception as e:
             import traceback
@@ -15603,6 +15743,10 @@ Un avis nous aide enormement a faire decouvrir Kuma a d'autres familles !<br><br
                 <div class="section"><h3>Total p&eacute;riode</h3><div id="pr-totals" style="display:grid;grid-template-columns:repeat(4,1fr);gap:20px;margin-bottom:20px;"></div></div>
                 <div class="section"><h3>Par code promo</h3><div id="pr-promo"></div></div>
                 <div class="section"><h3>Par campagne (utm_campaign)</h3><div id="pr-campaign"></div></div>
+                <div class="section"><h3>Ouvertures email (pixel de suivi)</h3>
+                    <p style="color:#888;font-size:0.85em;margin-top:-6px;">Gmail met les images en cache (une ouverture compt&eacute;e par destinataire) et Apple Mail les pr&eacute;charge sans lecture humaine : lire ces taux comme un ordre de grandeur.</p>
+                    <div id="pr-emails"></div>
+                </div>
             </div>
             <div id="pr-error" style="display:none;"></div>
 
@@ -15652,6 +15796,24 @@ Un avis nous aide enormement a faire decouvrir Kuma a d'autres familles !<br><br
                         +prCard('Remises accordées', fcfa(t.discount));
                     document.getElementById('pr-promo').innerHTML=prTable(res.by_promo,'Code');
                     document.getElementById('pr-campaign').innerHTML=prTable(res.by_campaign,'Campagne');
+                    var em=res.emails||[];
+                    if(!em.length){ document.getElementById('pr-emails').innerHTML='<div class="alert alert-info">Aucune campagne email suivie pour l\\'instant.</div>'; }
+                    else{
+                        var h='<table style="width:100%;border-collapse:collapse;">'
+                            +'<tr style="background:#FFF3E0;"><th style="text-align:left;padding:8px;">Campagne</th>'
+                            +'<th style="padding:8px;">Envoy&eacute;s</th><th style="padding:8px;">Ouvertures uniques</th>'
+                            +'<th style="padding:8px;">Taux d ouverture</th><th style="padding:8px;">Ouvertures totales</th></tr>';
+                        em.forEach(function(r){
+                            var taux=r.sent? Math.round(100*r.unique_opens/r.sent)+' %':'—';
+                            h+='<tr style="border-bottom:1px solid #f0f0f0;">'
+                                +'<td style="padding:8px;font-weight:600;">'+r.key+'</td>'
+                                +'<td style="padding:8px;text-align:center;">'+r.sent+'</td>'
+                                +'<td style="padding:8px;text-align:center;color:#2e7d32;font-weight:600;">'+r.unique_opens+'</td>'
+                                +'<td style="padding:8px;text-align:center;">'+taux+'</td>'
+                                +'<td style="padding:8px;text-align:center;color:#888;">'+r.opens+'</td></tr>';
+                        });
+                        document.getElementById('pr-emails').innerHTML=h+'</table>';
+                    }
                 }).catch(function(e){ document.getElementById('pr-loading').style.display='none';
                     var er=document.getElementById('pr-error'); er.style.display='block';
                     er.innerHTML='<div class="alert alert-warning">Erreur réseau : '+e+'</div>'; });

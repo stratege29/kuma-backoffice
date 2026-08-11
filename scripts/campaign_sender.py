@@ -61,11 +61,14 @@ except Exception:  # pragma: no cover
     PUSH_AVAILABLE = False
 
 try:
-    from auth_emails import enrich_users_with_auth_emails
+    from auth_emails import enrich_users_with_auth_emails, derive_child_fields
 except Exception as e:  # pragma: no cover
     logger.warning(f"campaign_sender: auth_emails indisponible: {e}")
 
     def enrich_users_with_auth_emails(users):
+        return users
+
+    def derive_child_fields(users):
         return users
 
 
@@ -132,6 +135,43 @@ def _resolve_context(firebase_manager=None, push_manager=None, email_manager=Non
     return firebase_manager, db, push_manager, email_manager
 
 
+# ---------------------------------------------------------------------------
+# Suivi d'ouverture des emails (pixel 1x1)
+# ---------------------------------------------------------------------------
+# Le pixel est servi par la Cloud Function trackEmailOpen, exposee via le
+# rewrite hosting /e/o.gif. Le token identifie le destinataire SANS exposer
+# son email ni son uid dans l'URL : meme derivation cote fonction (voir le
+# commentaire OPEN_TOKEN_RE dans functions/index.js).
+OPEN_PIXEL_BASE_URL = 'https://kuma.ultimesgriots.com/e/o.gif'
+
+
+def _open_token(uid: str, campaign_id: str) -> str:
+    """SHA-256 tronque de uid:campagne — deterministe, non reversible."""
+    import hashlib
+    raw = f"{uid}:{campaign_id}".encode('utf-8')
+    return hashlib.sha256(raw).hexdigest()[:32]
+
+
+def _inject_open_pixel(html: str, uid: str, campaign_id: str) -> str:
+    """Ajoute le pixel de suivi a la fin du corps HTML.
+
+    Place juste avant </body> s'il existe, sinon a la fin : email_manager
+    ajoute ensuite son propre pied de page, le pixel reste dans le message.
+    """
+    import re as _re
+    # Meme contrainte que CAMPAIGN_ID_RE cote Cloud Function : un id hors
+    # format serait ignore par le pixel, autant ne pas l'injecter.
+    if not uid or not campaign_id or not _re.fullmatch(r'[A-Za-z0-9_-]{1,64}', str(campaign_id)):
+        return html
+    url = f"{OPEN_PIXEL_BASE_URL}?c={campaign_id}&r={_open_token(uid, campaign_id)}"
+    pixel = (f'<img src="{url}" width="1" height="1" alt="" '
+             f'style="display:block;width:1px;height:1px;border:0" />')
+    if '</body>' in html.lower():
+        import re as _re
+        return _re.sub(r'</body>', pixel + '</body>', html, count=1, flags=_re.IGNORECASE)
+    return html + pixel
+
+
 def load_all_users(db) -> List[Dict]:
     """Charge tous les utilisateurs avec calcul de daysSinceActivity.
 
@@ -181,7 +221,8 @@ def load_all_users(db) -> List[Dict]:
 
         # Les emails vivent dans Firebase Auth, pas dans les docs Firestore :
         # sans cette jointure le filtre email de send_campaign vide la cible.
-        return enrich_users_with_auth_emails(users)
+        # Le prenom de l'enfant vit dans la map `childrenProfiles`.
+        return derive_child_fields(enrich_users_with_auth_emails(users))
     except Exception as e:
         logger.error(f"load_all_users: erreur chargement users: {e}")
         return []
@@ -363,6 +404,10 @@ def send_campaign(
                     subject = subject.replace(var, val)
                     body = body.replace(var, val)
                 body = body.replace('{subscription_type}', subscription).replace('{email}', user.get('email', ''))
+
+                # Pixel de suivi d'ouverture (uniquement si la campagne est
+                # identifiee : sans campaign_id, rien n'est trace).
+                body = _inject_open_pixel(body, user.get('uid') or user.get('userId'), cid)
 
                 user_email = user.get('email')
                 if user_email and '@' in user_email:
