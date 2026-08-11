@@ -50,7 +50,6 @@ def check_firebase_credentials():
         '/Users/arnaudkossea/development/kuma_upload/firebase-credentials.json',  # Trouvé !
         '/Users/arnaudkossea/development/kumacodex/kumacodex-firebase-adminsdk-4i31d-0d61a17b94.json',
         '/Users/arnaudkossea/development/kumacodex/firebase-credentials.json',
-        '/Users/arnaudkossea/development/kuma_upload/scripts/firebase-credentials.json',
         os.path.expanduser('~/firebase-credentials.json')
     ]
     

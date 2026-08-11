@@ -62,7 +62,7 @@ class NotificationManager:
                     creds_path = f.name
                 os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = creds_path
             else:
-                local_creds = os.path.join(os.path.dirname(__file__), 'firebase-credentials.json')
+                local_creds = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'firebase-credentials.json')
                 if os.path.exists(local_creds):
                     creds_path = local_creds
                     os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = local_creds
