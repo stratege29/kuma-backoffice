@@ -827,7 +827,13 @@ class NotificationsV2APIHandlers:
                     )
                     users = derive_child_fields(enrich_users_with_auth_emails(users))
                 except Exception as e:
-                    logger.warning(f"Jointure emails Auth indisponible: {e}")
+                    # Marque la liste : send_campaign refusera d'envoyer une
+                    # campagne email ou personnalisee plutot que de l'amputer
+                    # en silence (le prenom deviendrait « votre enfant », et
+                    # le filtre email viderait la cible).
+                    logger.error(f"Jointure emails Auth INDISPONIBLE: {e}")
+                    for u in users:
+                        u['_authJoinFailed'] = True
 
                 self._users_cache = users
                 return users

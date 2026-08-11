@@ -60,16 +60,38 @@ try:
 except Exception:  # pragma: no cover
     PUSH_AVAILABLE = False
 
+# `auth_emails` fournit deux jointures sans lesquelles une campagne part
+# degradee, mais part quand meme : l'email (qui vit dans Firebase Auth, pas
+# dans Firestore) et le prenom de l'enfant (map `childrenProfiles`).
+#
+# Le repli garde le module IMPORTABLE — le backoffice ne doit pas tomber pour
+# ca — mais `send_campaign` refuse alors d'envoyer ce qui serait ampute (cf.
+# AUTH_EMAILS_AVAILABLE plus bas). Un module qui s'importe et une campagne qui
+# ment sont deux choses differentes.
+AUTH_EMAILS_AVAILABLE = True
+AUTH_EMAILS_ERROR = None
+
 try:
     from auth_emails import enrich_users_with_auth_emails, derive_child_fields
 except Exception as e:  # pragma: no cover
-    logger.warning(f"campaign_sender: auth_emails indisponible: {e}")
+    AUTH_EMAILS_AVAILABLE = False
+    AUTH_EMAILS_ERROR = str(e)
+    logger.error(
+        f"campaign_sender: auth_emails INDISPONIBLE ({e}) — les campagnes email "
+        f"et toute personnalisation du prenom seront refusees, pas degradees."
+    )
 
     def enrich_users_with_auth_emails(users):
         return users
 
     def derive_child_fields(users):
         return users
+
+
+# Les variables dont le rendu depend de `auth_emails`. Si l'une d'elles est
+# dans le message alors que la jointure manque, l'enfant devient « votre
+# enfant » et le win-back perd ce qui le rendait personnel.
+PERSONALISATION_TOKENS = ('{childName}', '{child_name}', '{childAge}', '{childrenNames}')
 
 
 class _FirebaseShim:
@@ -228,6 +250,35 @@ def load_all_users(db) -> List[Dict]:
         return []
 
 
+def _refus_si_jointure_absente(disponible, erreur, channel, email_data, custom_message):
+    """Refuse une campagne que la jointure Firebase Auth rendrait amputee.
+
+    Deux degats possibles, tous deux invisibles a l'envoi :
+      - canal email : l'adresse vit dans Auth, pas dans Firestore -> la cible
+        se vide et la campagne « reussit » avec 0 destinataire ;
+      - personnalisation : le prenom vient de `childrenProfiles` -> chaque
+        enfant devient « votre enfant », et le win-back perd sa raison d'etre.
+
+    Retourne None si tout va bien, sinon le dict d'erreur de send_campaign.
+    """
+    if disponible:
+        return None
+    contenu = ' '.join(str(x) for x in (
+        (email_data or {}).get('subject', ''), (email_data or {}).get('body', ''),
+        (custom_message or {}).get('title', ''), (custom_message or {}).get('body', ''),
+    ))
+    if channel == 'email':
+        return {'success': False, 'error':
+                f'Jointure Firebase Auth indisponible ({erreur}) : aucun '
+                f'destinataire ne serait joignable. Campagne NON envoyee.'}
+    if any(tok in contenu for tok in PERSONALISATION_TOKENS):
+        return {'success': False, 'error':
+                f'Jointure Firebase Auth indisponible ({erreur}) : le prenom de '
+                f"l'enfant ne peut pas etre rendu. Campagne NON envoyee — retirez "
+                f'la personnalisation ou reparez la jointure.'}
+    return None
+
+
 def _resolve_target_users(target: Dict, db, firebase_manager, users: Optional[List[Dict]]) -> (List[Dict], Optional[str]):
     """Retourne (users_cibles, erreur)."""
     if users is None:
@@ -284,6 +335,15 @@ def send_campaign(
         firebase_manager, push_manager, email_manager
     )
 
+    # Sans la jointure Auth, une campagne email n'a aucun destinataire et une
+    # campagne personnalisee dirait « votre enfant » a tout le monde. Mieux
+    # vaut ne rien envoyer et le dire, qu'envoyer une version amputee que
+    # personne ne verra passer.
+    refus = _refus_si_jointure_absente(
+        AUTH_EMAILS_AVAILABLE, AUTH_EMAILS_ERROR, channel, email_data, custom_message)
+    if refus:
+        return refus
+
     # Validation selon le canal
     if channel == 'push':
         if not template_id and not custom_message:
@@ -309,6 +369,15 @@ def send_campaign(
     target_users, err = _resolve_target_users(target, db, firebase_manager, users)
     if err:
         return {'success': False, 'error': err}
+
+    # La liste peut venir d'un appelant qui a, lui, rate la jointure Auth
+    # (notifications_v2_page la marque). Meme refus, meme message.
+    if any(u.get('_authJoinFailed') for u in target_users):
+        refus = _refus_si_jointure_absente(
+            False, 'jointure Auth echouee au chargement des utilisateurs',
+            channel, email_data, custom_message)
+        if refus:
+            return refus
 
     # Filtrage par canal
     users_before_filter = len(target_users)
