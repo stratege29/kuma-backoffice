@@ -1261,6 +1261,17 @@ class FirebaseManager:
             print(f"❌ Erreur get_social_post {post_id}: {e}")
             return None
 
+    def get_social_config(self, doc_id):
+        """Lit un doc de social_config (schedule, recommended_slots, automation…)."""
+        if not self.initialized:
+            return None
+        try:
+            snap = self.db.collection('social_config').document(doc_id).get()
+            return (snap.to_dict() or {}) if snap.exists else None
+        except Exception as e:
+            print(f"❌ Erreur get_social_config {doc_id}: {e}")
+            return None
+
     def update_social_post(self, post_id, fields):
         """Met à jour des champs d'un post de la file (ex: caption, hook, status)."""
         if not self.initialized:
@@ -12747,6 +12758,29 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
         except Exception:
             return '🏳️'
 
+    def _paris_iso(self, date_str, time_str):
+        """'YYYY-MM-DD' + 'HH:MM' → string ISO avec le BON offset Europe/Paris
+        (+01:00 hiver / +02:00 été). scheduledFor doit rester une string ISO :
+        socialPublishDue (Cloud Function) la parse via new Date()."""
+        from zoneinfo import ZoneInfo
+        from datetime import datetime
+        dt = datetime.fromisoformat(f"{date_str}T{time_str}:00").replace(tzinfo=ZoneInfo("Europe/Paris"))
+        return dt.isoformat()
+
+    def _weekday_fr(self, date_str):
+        """'YYYY-MM-DD' → jour en français, aligné sur WEEKDAYS de contentPlan.js."""
+        from datetime import datetime
+        jours = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche']
+        return jours[datetime.fromisoformat(date_str).weekday()]
+
+    def _dow_iso(self, date_str):
+        """'YYYY-MM-DD' → jour ISO 1 (lundi) … 7 (dimanche), comme igInsights.dowISO."""
+        from datetime import datetime
+        try:
+            return datetime.fromisoformat(str(date_str)).weekday() + 1
+        except Exception:
+            return None
+
     def _render_social_card(self, p, escape):
         """Construit la carte HTML d'un post de la file social."""
         pid = p.get('id', '')
@@ -12813,6 +12847,18 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                          ('needs_video', '🎬 Sans vidéo'),
                          ('published', '✅ Publié')])
         weekday_txt = f'({weekday})' if weekday else ''
+        # Date/heure programmées éditables (sauf posts déjà publiés). La publication
+        # auto (socialPublishDue, cron 15 min) suivra la nouvelle heure au run suivant.
+        if status != 'published':
+            schedule_inputs = f"""
+                <div style="display:flex;gap:10px;flex-wrap:wrap;margin:6px 0">
+                    <div><label style="font-weight:bold">📅 Date</label><br>
+                    <input type="date" id="sd-{pid}" value="{date}" style="padding:8px;border:1px solid #ddd;border-radius:5px"></div>
+                    <div><label style="font-weight:bold">⏰ Heure (Europe/Paris)</label><br>
+                    <input type="time" id="st-{pid}" value="{sched_time}" style="padding:8px;border:1px solid #ddd;border-radius:5px"></div>
+                </div>"""
+        else:
+            schedule_inputs = ''
 
         return f"""
         <div class="story-item" data-status="{status}" id="sq-{pid}">
@@ -12843,6 +12889,7 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                 <input id="hook-{pid}" value="{hook}" style="width:100%;padding:8px;margin:6px 0;border:1px solid #ddd;border-radius:5px">
                 <label style="font-weight:bold">Légende (caption)</label>
                 <textarea id="cap-{pid}" rows="8" style="width:100%;padding:8px;margin:6px 0;border:1px solid #ddd;border-radius:5px;font-family:inherit">{caption_esc}</textarea>
+                {schedule_inputs}
                 <label style="font-weight:bold">Statut</label>
                 <select id="stat-{pid}" style="width:100%;padding:8px;margin:6px 0;border:1px solid #ddd;border-radius:5px">{options}</select>
                 <button class="btn-primary" onclick="sqSave('{pid}')">💾 Enregistrer</button>
@@ -12851,12 +12898,21 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
         </div>
         """
 
-    def _render_social_grid(self, posts, escape):
+    def _render_social_grid(self, posts, escape, recommended=None):
         """Grille type feed Instagram (aperçu visuel) de la file.
 
         Réutilise les mêmes données que les cartes ; un clic sur une vignette
         bascule en vue Liste et déroule la carte correspondante (édition/vidéo).
+        `recommended` = slots de social_config/recommended_slots (heures conseillées
+        calculées sur les Insights IG réels), joints par (jour ISO, format).
         """
+        rec_map = {}
+        for s in (recommended or []):
+            try:
+                if s.get('recommendedTime') and s.get('confidence') in ('medium', 'high'):
+                    rec_map[(int(s.get('dow')), str(s.get('format')))] = s
+            except Exception:
+                pass
         style = """<style>
         .sq-profile{display:flex;align-items:center;gap:18px;max-width:780px;margin:0 auto 16px;padding:6px 4px}
         .sq-ava{width:64px;height:64px;border-radius:50%;padding:3px;flex:none;display:flex;background:linear-gradient(45deg,#FF6B35,#FFC107)}
@@ -12966,6 +13022,8 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
             imgs = media.get('imageUrls') if isinstance(media.get('imageUrls'), list) else []
             thumb = media.get('coverUrl') or media.get('imageUrl') or (imgs[0] if imgs else '')
             sf = str(p.get('scheduledFor', ''))
+            _dw = self._dow_iso(p.get('date'))
+            _rec = rec_map.get((_dw, str(p.get('format', '')))) if _dw else None
             data[str(p.get('id'))] = {
                 'format': str(p.get('format', '')),
                 'hook': str(p.get('hook', '')),
@@ -12976,6 +13034,11 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                 'weekday': str(p.get('weekday', '')),
                 'date': str(p.get('date', '')),
                 'scheduledTime': str(p.get('scheduledTime') or (sf[11:16] if len(sf) >= 16 else '')),
+                'scheduledFor': sf,
+                'timeSource': str(p.get('timeSource', '')),
+                'recommended': ({'time': str(_rec.get('recommendedTime')),
+                                 'sampleSize': _rec.get('sampleSize'),
+                                 'confidence': str(_rec.get('confidence', ''))} if _rec else None),
                 'status': str(p.get('status', '')),
                 'statusLabel': st_label.get(str(p.get('status', '')), str(p.get('status', ''))),
                 'videoUrl': _bust(media.get('videoUrl') or ''),
@@ -13008,9 +13071,26 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
             params.append('caption', document.getElementById('cap-'+id).value);
             params.append('hook', document.getElementById('hook-'+id).value);
             params.append('status', document.getElementById('stat-'+id).value);
+            var sd = document.getElementById('sd-'+id), st = document.getElementById('st-'+id);
+            if(sd && sd.value) params.append('scheduledDate', sd.value);
+            if(st && st.value) params.append('scheduledTime', st.value);
             sqPost('/api/social-queue/'+id+'/update', params.toString()).then(sqJson).then(function(d){
                 if(d.success){ location.reload(); } else { alert('Erreur: '+(d.error||'inconnue')); }
             }).catch(function(e){ alert('Erreur réseau: '+e); });
+        }
+        function sqSaveTime(id){
+            var st = document.getElementById('sqm-time-'+id);
+            if(!st || !st.value){ alert('Choisis une heure.'); return; }
+            var params = new URLSearchParams();
+            params.append('scheduledTime', st.value);
+            sqPost('/api/social-queue/'+id+'/update', params.toString()).then(sqJson).then(function(d){
+                if(d.success){ location.reload(); } else { alert('Erreur: '+(d.error||'inconnue')); }
+            }).catch(function(e){ alert('Erreur réseau: '+e); });
+        }
+        function sqApplyRec(id, time){
+            var st = document.getElementById('sqm-time-'+id);
+            if(st){ st.value = time; }
+            sqSaveTime(id);
         }
         function sqDelete(id){
             if(!confirm('Supprimer définitivement ce post de la file ?')) return;
@@ -13070,6 +13150,21 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                 actions += '<button class="sqm-btn" style="background:#833AB4" onclick="sqPublish(\\''+id+'\\')">🚀 Publier</button>';
             }
             actions += '<button class="sqm-btn" style="background:#dc2626" onclick="sqDelete(\\''+id+'\\')">🗑️</button>';
+            var schedBlock = '';
+            if(p.status !== 'published'){
+                schedBlock = '<div style="display:flex;align-items:center;gap:8px;margin:8px 0;flex-wrap:wrap;border-top:1px solid #eee;padding-top:10px">'
+                  + '<span style="font-size:12px;font-weight:700;color:#555">⏰ Heure (Paris)</span>'
+                  + '<input type="time" id="sqm-time-'+id+'" value="'+sqEsc(p.scheduledTime||'')+'" style="padding:6px;border:1px solid #ddd;border-radius:6px">'
+                  + '<button class="sqm-btn" style="background:#0d9488;padding:6px 10px" onclick="sqSaveTime(\\''+id+'\\')">💾 Enregistrer</button>';
+                if(p.timeSource === 'manual'){
+                    schedBlock += '<span class="sqm-chip" title="Heure fixée à la main — la boucle autonome ne la touchera pas">✋ manuelle</span>';
+                }
+                if(p.recommended && p.recommended.time && p.recommended.time !== p.scheduledTime){
+                    schedBlock += '<span class="sqm-chip" style="background:#fef3c7;color:#92400e" title="Calculée sur les stats Instagram réelles (Insights)">💡 Conseillé : '+sqEsc(p.recommended.time)+' (n='+p.recommended.sampleSize+')</span>'
+                      + '<button class="sqm-btn" style="background:#f59e0b;padding:6px 10px" onclick="sqApplyRec(\\''+id+'\\',\\''+sqEsc(p.recommended.time)+'\\')">Appliquer</button>';
+                }
+                schedBlock += '</div>';
+            }
             var storyBlock = '';
             if(p.storyUrl){
                 var stState = p.storyPosted ? '<span style="color:#16a34a">· postée ✓</span>' : '<span style="color:#888">· auto à la publication du post</span>';
@@ -13083,6 +13178,7 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
               + '<div class="sqm-media">'+media+'</div>'
               + '<div class="sqm-info"><h3>'+sqEsc(p.hook||'')+'</h3>'
               + '<div class="sqm-meta">'+meta.join('')+'</div>'
+              + schedBlock
               + storyBlock
               + '<div class="sqm-cap">'+sqEsc(p.caption||'')+'</div>'
               + '<div class="sqm-actions">'+actions+'</div></div>';
@@ -13134,8 +13230,9 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
         total = len(posts)
 
         if posts:
+            rec_doc = self.firebase_manager.get_social_config('recommended_slots') or {}
             cards_html = ''.join(self._render_social_card(p, escape) for p in posts)
-            grid_html = self._render_social_grid(posts, escape)
+            grid_html = self._render_social_grid(posts, escape, rec_doc.get('slots') or [])
             grid_block = f'<div id="social-grid">{grid_html}</div>'
             list_block = f'<div class="stories-container" id="social-list" style="display:none">{cards_html}</div>'
         else:
@@ -13192,7 +13289,8 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
         self.send_html_response(self.get_base_html('social-queue', content))
 
     def handle_update_social_post(self, post_id, post_data):
-        """Met à jour caption / hook / status d'un post de la file."""
+        """Met à jour caption / hook / status / date+heure programmées d'un post."""
+        import re as _re
         try:
             can_edit, message = self.security_manager.can_perform_action('edit')
             if not can_edit:
@@ -13207,6 +13305,37 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                 fields['hook'] = form['hook'][0]
             if 'status' in form and form['status'][0]:
                 fields['status'] = form['status'][0]
+            # Reprogrammation : heure seule (la date est reprise du doc) ou date+heure.
+            # Écrit scheduledFor (ISO offset Paris correct) + scheduledTime + date +
+            # weekday de façon COHÉRENTE, et timeSource='manual' (la boucle autonome
+            # ne re-horodate jamais un post édité à la main).
+            new_date = (form.get('scheduledDate') or [''])[0].strip()
+            new_time = (form.get('scheduledTime') or [''])[0].strip()
+            if new_date or new_time:
+                if new_date and not _re.fullmatch(r'\d{4}-\d{2}-\d{2}', new_date):
+                    self.send_error_response(400, f'Date invalide: {new_date} (attendu YYYY-MM-DD)')
+                    return
+                if new_time and not _re.fullmatch(r'\d{2}:\d{2}', new_time):
+                    self.send_error_response(400, f'Heure invalide: {new_time} (attendu HH:MM)')
+                    return
+                post = self.firebase_manager.get_social_post(post_id)
+                if not post:
+                    self.send_error_response(404, 'Post introuvable')
+                    return
+                if str(post.get('status', '')) == 'published':
+                    self.send_error_response(400, 'Post déjà publié — heure non modifiable')
+                    return
+                cur_sf = str(post.get('scheduledFor', ''))
+                date_final = new_date or str(post.get('date', '')) or (cur_sf[:10] if len(cur_sf) >= 10 else '')
+                time_final = new_time or str(post.get('scheduledTime', '')) or (cur_sf[11:16] if len(cur_sf) >= 16 else '')
+                if not (_re.fullmatch(r'\d{4}-\d{2}-\d{2}', date_final) and _re.fullmatch(r'\d{2}:\d{2}', time_final)):
+                    self.send_error_response(400, 'Impossible de reconstituer date+heure (post sans scheduledFor ?)')
+                    return
+                fields['scheduledFor'] = self._paris_iso(date_final, time_final)
+                fields['scheduledTime'] = time_final
+                fields['date'] = date_final
+                fields['weekday'] = self._weekday_fr(date_final)
+                fields['timeSource'] = 'manual'
             if not fields:
                 self.send_error_response(400, 'Aucun champ à mettre à jour')
                 return
