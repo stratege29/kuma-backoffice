@@ -2430,6 +2430,8 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
         elif self.path == '/api/landing/subscribe':
             self.handle_landing_subscribe(post_data)
         # ===== API SOCIAL QUEUE =====
+        elif self.path == '/api/social-queue/compose':
+            self.handle_compose_social_posts(post_data)
         elif self.path.startswith('/api/social-queue/') and '/update' in self.path:
             post_id = self.path.split('/')[-2]
             self.handle_update_social_post(post_id, post_data)
@@ -12879,10 +12881,13 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
         else:
             schedule_inputs = ''
 
+        sel_box = ('' if status == 'published' else
+                   f'<input type="checkbox" class="sq-sel" data-id="{pid}" onchange="sqSelChanged()" '
+                   f'style="width:17px;height:17px;margin-right:8px;vertical-align:middle;cursor:pointer">')
         return f"""
         <div class="story-item" data-status="{status}" id="sq-{pid}">
             <div class="story-header">
-                <h4>{flag} {country} · {fmt_icon} {fmt}</h4>
+                <h4>{sel_box}{flag} {country} · {fmt_icon} {fmt}</h4>
                 <span class="story-status" style="background:{bg};color:{fg}">{label}</span>
             </div>
             <div class="story-meta">
@@ -12916,6 +12921,38 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
             </div>
         </div>
         """
+
+    def _render_social_bulkbar(self):
+        """Barre d'édition PAR LOTS (vue Liste) : sélection de posts non publiés →
+        décaler la date, fixer l'heure, changer le statut, supprimer. Chaque action
+        boucle séquentiellement sur les endpoints unitaires existants."""
+        return """
+        <div id="sq-bulk" style="position:sticky;top:0;z-index:5;background:#fff;border:1px solid #eee;
+             border-radius:10px;padding:10px 14px;margin-bottom:12px;display:flex;gap:10px;
+             flex-wrap:wrap;align-items:center;font-size:13px">
+            <label style="font-weight:700;cursor:pointer">
+                <input type="checkbox" id="sq-selall" onchange="sqSelAll(this.checked)"
+                       style="width:16px;height:16px;vertical-align:middle"> Tout
+            </label>
+            <span id="sq-selcount" style="color:#6b7280;min-width:95px">0 sélectionné</span>
+            <span style="color:#ddd">|</span>
+            <label>Décaler de <input type="number" id="sq-shift" value="1"
+                style="width:55px;padding:5px;border:1px solid #ddd;border-radius:5px"> j</label>
+            <button class="btn-secondary" onclick="sqBulkShift()">Appliquer</button>
+            <span style="color:#ddd">|</span>
+            <label>⏰ <input type="time" id="sq-btime"
+                style="padding:5px;border:1px solid #ddd;border-radius:5px"></label>
+            <button class="btn-secondary" onclick="sqBulkTime()">Appliquer</button>
+            <span style="color:#ddd">|</span>
+            <select id="sq-bstat" style="padding:6px;border:1px solid #ddd;border-radius:5px">
+                <option value="approved">🗓️ Programmé (auto)</option>
+                <option value="pending_review">⏳ À valider</option>
+                <option value="needs_video">🎬 Sans vidéo</option>
+            </select>
+            <button class="btn-secondary" onclick="sqBulkStatus()">Appliquer</button>
+            <span style="flex:1"></span>
+            <button class="btn-action btn-delete" onclick="sqBulkDelete()">🗑️ Supprimer la sélection</button>
+        </div>"""
 
     def _render_social_history(self, entries, escape):
         """Journal compact de la boucle autonome : recalculs de grille, reprogrammations,
@@ -13290,6 +13327,94 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                 if(d.success){ location.reload(); } else { alert('Erreur: '+(d.error||'inconnue')); }
             }).catch(function(e){ alert('Erreur réseau: '+e); });
         }
+        /* ── Édition PAR LOTS (vue Liste) ─────────────────────────────────── */
+        function sqSelected(){
+            return Array.prototype.filter.call(document.querySelectorAll('.sq-sel:checked'), function(cb){
+                var card = cb.closest('.story-item');
+                return card && card.style.display !== 'none';
+            }).map(function(cb){ return cb.getAttribute('data-id'); });
+        }
+        function sqSelChanged(){
+            var n = sqSelected().length;
+            var el = document.getElementById('sq-selcount');
+            if(el){ el.textContent = n + ' sélectionné' + (n > 1 ? 's' : ''); }
+        }
+        function sqSelAll(on){
+            document.querySelectorAll('.sq-sel').forEach(function(cb){
+                var card = cb.closest('.story-item');
+                if(card && card.style.display !== 'none'){ cb.checked = on; }
+            });
+            sqSelChanged();
+        }
+        function sqBulkRun(ids, label, makeParams, endpoint){
+            var ok = 0, fail = 0, firstErr = '', i = 0;
+            (function next(){
+                if(i >= ids.length){
+                    var msg = '✅ ' + ok + ' post(s) : ' + label + '.';
+                    if(fail){ msg += '\\n❌ ' + fail + ' échec(s).'; if(firstErr){ msg += '\\n\\n' + firstErr; } }
+                    alert(msg);
+                    if(ok > 0){ location.reload(); }
+                    return;
+                }
+                var id = ids[i];
+                var params = makeParams ? makeParams(id) : null;
+                if(params === undefined){ i++; next(); return; } // post sans données : sauté
+                sqPost('/api/social-queue/' + id + (endpoint || '/update'), params ? params.toString() : '')
+                    .then(sqJson).then(function(d){
+                        if(d && d.success){ ok++; } else { fail++; if(!firstErr){ firstErr = (d && d.error) || 'Erreur inconnue'; } }
+                        i++; next();
+                    }).catch(function(e){ fail++; if(!firstErr){ firstErr = 'Réseau: ' + e; } i++; next(); });
+            })();
+        }
+        function sqBulkShift(){
+            var ids = sqSelected();
+            if(!ids.length){ alert('Sélectionne au moins un post (cases à cocher).'); return; }
+            var n = parseInt(document.getElementById('sq-shift').value, 10);
+            if(!n){ alert('Nombre de jours invalide (peut être négatif).'); return; }
+            if(!confirm('Décaler ' + ids.length + ' post(s) de ' + n + ' jour(s) ?')) return;
+            sqBulkRun(ids, 'décalé(s) de ' + n + ' j', function(id){
+                var p = (window.SQ_POSTS || {})[id];
+                if(!p || !p.date){ return undefined; }
+                var d = new Date(p.date + 'T12:00:00Z');
+                d = new Date(d.getTime() + n * 86400000);
+                var params = new URLSearchParams();
+                params.append('scheduledDate', d.toISOString().slice(0, 10));
+                if(p.scheduledTime){ params.append('scheduledTime', p.scheduledTime); }
+                return params;
+            });
+        }
+        function sqBulkTime(){
+            var ids = sqSelected();
+            if(!ids.length){ alert('Sélectionne au moins un post (cases à cocher).'); return; }
+            var t = document.getElementById('sq-btime').value;
+            if(!t){ alert('Choisis une heure.'); return; }
+            if(!confirm('Fixer ' + t + ' (Europe/Paris) sur ' + ids.length + ' post(s) ?')) return;
+            sqBulkRun(ids, 'heure fixée à ' + t, function(){
+                var params = new URLSearchParams();
+                params.append('scheduledTime', t);
+                return params;
+            });
+        }
+        function sqBulkStatus(){
+            var ids = sqSelected();
+            if(!ids.length){ alert('Sélectionne au moins un post (cases à cocher).'); return; }
+            var s = document.getElementById('sq-bstat').value;
+            var msg = (s === 'approved')
+                ? 'Approuver ' + ids.length + ' post(s) ? Ils seront publiés AUTOMATIQUEMENT à leur heure programmée.'
+                : 'Passer ' + ids.length + ' post(s) au statut « ' + s + ' » ?';
+            if(!confirm(msg)) return;
+            sqBulkRun(ids, 'statut → ' + s, function(){
+                var params = new URLSearchParams();
+                params.append('status', s);
+                return params;
+            });
+        }
+        function sqBulkDelete(){
+            var ids = sqSelected();
+            if(!ids.length){ alert('Sélectionne au moins un post (cases à cocher).'); return; }
+            if(!confirm('Supprimer DÉFINITIVEMENT ' + ids.length + ' post(s) de la file ?')) return;
+            sqBulkRun(ids, 'supprimé(s)', function(){ return null; }, '/delete');
+        }
         function sqApproveAll(){
             var items = document.querySelectorAll('.story-item[data-status="pending_review"]');
             if(!items.length){ alert('Aucun post à valider.'); return; }
@@ -13315,6 +13440,248 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
         </script>
         """
 
+    # Séries proposées par le compositeur — MIROIR de COMPOSE_GENS dans
+    # kumacodex/functions/social/reelFunction.js (socialComposePost) : ne proposer
+    # ici que ce que la CF accepte.
+    SQC_GENS = [
+        ('genTresor', '🎬 Reel · Le Conte du soir (Trésor)', 'reel', '18:30'),
+        ('genLeSage', '🎬 Reel · Le Sage M’Bobog', 'reel', '18:30'),
+        ('genMiroir', '🖼️ Carrousel · Le Miroir', 'carousel', '12:30'),
+        ('genRituel', '🖼️ Carrousel · La Boussole (parents)', 'carousel', '12:30'),
+        ('genProverbe', '🖼️ Carrousel · Proverbe', 'carousel', '12:30'),
+        ('genCommunaute', '🏞️ Image · Jeu communauté', 'image', '12:30'),
+        ('genCoulisses', '🖼️ Carrousel · Coulisses', 'carousel', '12:30'),
+    ]
+    # Semaine type = GRID Plan B de contentPlan.js (dow 1-5 → lun-ven).
+    SQC_WEEK_GRID = [
+        (0, '18:30', 'genTresor'), (1, '12:30', 'genMiroir'), (2, '19:00', 'genTresor'),
+        (3, '12:30', 'genRituel'), (4, '18:30', 'genLeSage'),
+    ]
+
+    def _render_social_composer(self, posts, escape):
+        """Compositeur de posts (unique ou par lots) : chaque ligne devient un post
+        généré par la CF socialComposePost (contenu + média) et mis en file
+        `pending_review`. Les reels peuvent cibler un pays / un conte précis ;
+        hook/caption fournis sont VERROUILLÉS (le moteur ne les réécrit pas)."""
+        import json as _json
+        # Contes publiés, groupés par pays — pour cibler le conte d'un reel.
+        stories_by_cc = {}
+        country_names = {}
+        try:
+            for s in self.firebase_manager.get_stories():
+                cc = str(s.get('countryCode') or '').upper()
+                if len(cc) != 2 or not s.get('isPublished'):
+                    continue
+                country_names.setdefault(cc, str(s.get('country') or cc))
+                stories_by_cc.setdefault(cc, []).append({
+                    'id': str(s.get('id', '')),
+                    'title': str(s.get('title') or s.get('id', '')),
+                    'audio': bool((s.get('audioUrl') or '').strip()),
+                    'image': bool((s.get('imageUrl') or '').strip()),
+                })
+        except Exception as e:
+            print(f"⚠️ Compositeur: contes indisponibles: {e}")
+        for cc in stories_by_cc:
+            stories_by_cc[cc].sort(key=lambda x: (not (x['audio'] and x['image']), x['id']))
+        countries = sorted(
+            [{'cc': cc, 'name': country_names.get(cc, cc),
+              'ready': any(x['audio'] and x['image'] for x in lst),
+              'flag': self._social_flag(cc)}
+             for cc, lst in stories_by_cc.items()],
+            key=lambda c: c['name'])
+        data = {
+            'gens': [{'id': g, 'label': l, 'format': f, 'time': t} for g, l, f, t in self.SQC_GENS],
+            'week': [{'off': o, 'time': t, 'gen': g} for o, t, g in self.SQC_WEEK_GRID],
+            'countries': countries,
+            'stories': stories_by_cc,
+            'dates': sorted({str(p.get('date')) for p in posts if p.get('date')}),
+        }
+        data_json = _json.dumps(data, ensure_ascii=False).replace('<', '\\u003c')
+
+        html = f"""
+        <details id="sq-composer" style="max-width:900px;margin:0 auto 18px">
+            <summary style="cursor:pointer;font-weight:700;padding:8px 0">➕ Nouveau post — éditeur (unique ou par lots)</summary>
+            <div style="background:#fff;border:1px solid #eee;border-radius:10px;padding:16px">
+                <p style="font-size:13px;color:#555;margin:0 0 12px">
+                    Chaque ligne = un post <strong>généré par le moteur</strong> (visuels/vidéo inclus) puis mis en file
+                    « ⏳ À valider » — rien n'est publié directement. Un <strong>reel prend 1 à 3 min</strong> à générer ;
+                    les lignes sont traitées une par une. Accroche/légende laissées vides = texte du moteur ;
+                    remplies = <strong>verrouillées</strong> (le moteur ne les réécrira pas, rebuild compris).
+                </p>
+                <div id="sqc-rows"></div>
+                <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:10px">
+                    <button class="btn-secondary" onclick="sqcAddRow()">➕ Ajouter une ligne</button>
+                    <span style="color:#bbb">|</span>
+                    <label style="font-size:13px">📅 Semaine type dès le lundi&nbsp;:
+                        <input type="date" id="sqc-monday" style="padding:6px;border:1px solid #ddd;border-radius:5px"></label>
+                    <button class="btn-secondary" onclick="sqcAddWeek()">🗓️ Ajouter les 5 posts</button>
+                    <span style="flex:1"></span>
+                    <button class="btn-primary" id="sqc-go" onclick="sqcSubmit()">🚀 Générer</button>
+                </div>
+                <div id="sqc-progress" style="margin-top:10px;font-size:13px"></div>
+            </div>
+        </details>
+        <script>window.SQC = {data_json};</script>
+        """
+        return html + self._social_composer_script()
+
+    def _social_composer_script(self):
+        """JS (statique) du compositeur — lignes dynamiques + envoi séquentiel."""
+        return """
+        <script>
+        var sqcSeq = 0;
+        function sqcGenMeta(gen){
+            var g = (window.SQC.gens || []).filter(function(x){ return x.id === gen; })[0];
+            return g || {format:'carousel', time:'12:30'};
+        }
+        function sqcAddRow(prefill){
+            prefill = prefill || {};
+            var id = 'sqcr-' + (++sqcSeq);
+            var gens = window.SQC.gens.map(function(g){
+                return '<option value="'+g.id+'"'+(prefill.gen===g.id?' selected':'')+'>'+sqEsc(g.label)+'</option>';
+            }).join('');
+            var countries = '<option value="">Pays auto</option>' + window.SQC.countries.map(function(c){
+                return '<option value="'+c.cc+'">'+c.flag+' '+sqEsc(c.name)+(c.ready?'':' (sans audio)')+'</option>';
+            }).join('');
+            var div = document.createElement('div');
+            div.className = 'sqc-row'; div.id = id;
+            div.style.cssText = 'border:1px solid #eee;border-radius:8px;padding:10px;margin-bottom:8px;background:#fafafa';
+            div.innerHTML =
+                '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
+              + '<input type="date" class="sqc-date" value="'+(prefill.date||'')+'" onchange="sqcDateChanged(\\''+id+'\\')" style="padding:7px;border:1px solid #ddd;border-radius:5px">'
+              + '<input type="time" class="sqc-time" value="'+(prefill.time||'18:30')+'" style="padding:7px;border:1px solid #ddd;border-radius:5px">'
+              + '<select class="sqc-gen" onchange="sqcGenChanged(\\''+id+'\\')" style="padding:7px;border:1px solid #ddd;border-radius:5px">'+gens+'</select>'
+              + '<select class="sqc-cc" onchange="sqcCountryChanged(\\''+id+'\\')" style="padding:7px;border:1px solid #ddd;border-radius:5px">'+countries+'</select>'
+              + '<select class="sqc-story" style="padding:7px;border:1px solid #ddd;border-radius:5px;max-width:260px"><option value="">Conte auto</option></select>'
+              + '<span class="sqc-warn" style="color:#b45309;font-size:12px;font-weight:700"></span>'
+              + '<span style="flex:1"></span>'
+              + '<span class="sqc-state" style="font-size:13px;font-weight:700"></span>'
+              + '<button class="btn-action btn-delete" onclick="sqcDelRow(\\''+id+'\\')">🗑️</button>'
+              + '</div>'
+              + '<details style="margin-top:6px"><summary style="cursor:pointer;font-size:12px;color:#6b7280">✏️ Textes personnalisés (optionnel — verrouillés si remplis)</summary>'
+              + '<input class="sqc-hook" placeholder="Accroche (hook) — vide = texte du moteur" style="width:100%;padding:7px;margin:6px 0;border:1px solid #ddd;border-radius:5px">'
+              + '<textarea class="sqc-caption" rows="3" placeholder="Légende (caption) — vide = texte du moteur" style="width:100%;padding:7px;margin:0 0 6px;border:1px solid #ddd;border-radius:5px;font-family:inherit"></textarea>'
+              + '<textarea class="sqc-slides" rows="3" placeholder="Slides du carrousel, une par ligne — vide = contenu du moteur (ignoré pour les reels)" style="width:100%;padding:7px;margin:0 0 6px;border:1px solid #ddd;border-radius:5px;font-family:inherit"></textarea>'
+              + '<label style="font-size:12px;color:#6b7280">Variante de contenu (rotation 0-13, vide = auto selon la semaine) '
+              + '<input type="number" class="sqc-idx" min="0" max="13" style="width:70px;padding:5px;border:1px solid #ddd;border-radius:5px"></label>'
+              + '</details>';
+            document.getElementById('sqc-rows').appendChild(div);
+            sqcGenChanged(id); // visibilité pays/conte/slides + heure par défaut de la série
+            if(prefill.time){ div.querySelector('.sqc-time').value = prefill.time; }
+            if(prefill.date){ sqcDateChanged(id); }
+            return id;
+        }
+        function sqcDelRow(id){ var el = document.getElementById(id); if(el){ el.remove(); } }
+        function sqcGenChanged(id){
+            var el = document.getElementById(id);
+            var meta = sqcGenMeta(el.querySelector('.sqc-gen').value);
+            var isReel = meta.format === 'reel';
+            el.querySelector('.sqc-cc').style.display = isReel ? '' : 'none';
+            el.querySelector('.sqc-story').style.display = isReel ? '' : 'none';
+            el.querySelector('.sqc-slides').style.display = (meta.format === 'carousel') ? '' : 'none';
+            el.querySelector('.sqc-time').value = meta.time;
+        }
+        function sqcCountryChanged(id){
+            var el = document.getElementById(id);
+            var cc = el.querySelector('.sqc-cc').value;
+            var sel = el.querySelector('.sqc-story');
+            var opts = '<option value="">Conte auto</option>';
+            (window.SQC.stories[cc] || []).forEach(function(s){
+                var tag = (s.audio && s.image) ? '' : (s.audio ? ' (sans image)' : ' (sans audio)');
+                opts += '<option value="'+s.id+'">'+sqEsc(s.title)+tag+'</option>';
+            });
+            sel.innerHTML = opts;
+        }
+        function sqcDateChanged(id){
+            var el = document.getElementById(id);
+            var d = el.querySelector('.sqc-date').value;
+            el.querySelector('.sqc-warn').textContent =
+                (d && window.SQC.dates.indexOf(d) >= 0) ? '⚠️ un post existe déjà ce jour-là' : '';
+        }
+        function sqcAddWeek(){
+            var mon = document.getElementById('sqc-monday').value;
+            if(!mon){ alert('Choisis le lundi de départ.'); return; }
+            var base = new Date(mon + 'T12:00:00Z');
+            if(base.getUTCDay() !== 1){ alert('La date choisie n\\'est pas un lundi.'); return; }
+            window.SQC.week.forEach(function(w){
+                var d = new Date(base.getTime() + w.off * 86400000).toISOString().slice(0, 10);
+                sqcAddRow({date: d, time: w.time, gen: w.gen});
+            });
+        }
+        function sqcCollect(){
+            var items = [];
+            var rows = document.querySelectorAll('.sqc-row');
+            for(var i = 0; i < rows.length; i++){
+                var r = rows[i];
+                var date = r.querySelector('.sqc-date').value;
+                if(!date){ alert('Ligne '+(i+1)+' : date manquante.'); return null; }
+                var meta = sqcGenMeta(r.querySelector('.sqc-gen').value);
+                var item = { date: date,
+                             time: r.querySelector('.sqc-time').value || meta.time,
+                             gen: r.querySelector('.sqc-gen').value };
+                if(meta.format === 'reel'){
+                    var cc = r.querySelector('.sqc-cc').value;
+                    var sid = r.querySelector('.sqc-story').value;
+                    if(cc){ item.countryCode = cc; }
+                    if(sid){ item.storyId = sid; }
+                } else {
+                    var slides = (r.querySelector('.sqc-slides').value || '').split('\\n')
+                        .map(function(s){ return s.trim(); }).filter(function(s){ return s; });
+                    if(slides.length){ item.slides = slides; }
+                }
+                var hook = r.querySelector('.sqc-hook').value.trim();
+                var cap = r.querySelector('.sqc-caption').value.trim();
+                var idx = r.querySelector('.sqc-idx').value;
+                if(hook){ item.hook = hook; }
+                if(cap){ item.caption = cap; }
+                if(idx !== ''){ item.idx = parseInt(idx, 10); }
+                item._rowId = r.id;
+                items.push(item);
+            }
+            return items;
+        }
+        function sqcSubmit(){
+            var items = sqcCollect();
+            if(items === null){ return; }
+            if(!items.length){ alert('Ajoute au moins une ligne.'); return; }
+            if(!confirm('Générer '+items.length+' post(s) ? Ils partiront en file « À valider » (rien ne sera publié). Un reel prend 1 à 3 min.')) return;
+            var go = document.getElementById('sqc-go');
+            go.disabled = true; go.textContent = '⏳ Génération…';
+            var prog = document.getElementById('sqc-progress');
+            var ok = 0, fail = 0, i = 0;
+            (function next(){
+                if(i >= items.length){
+                    go.disabled = false; go.textContent = '🚀 Générer';
+                    prog.innerHTML = '✅ '+ok+' généré(s)' + (fail ? ' · ❌ '+fail+' échec(s)' : '');
+                    if(ok > 0 && confirm(ok+' post(s) en file. Recharger la page ?')){ location.reload(); }
+                    return;
+                }
+                var it = items[i];
+                var row = document.getElementById(it._rowId);
+                var state = row ? row.querySelector('.sqc-state') : null;
+                if(state){ state.textContent = '⏳ génération…'; state.style.color = '#b45309'; }
+                prog.textContent = 'Post '+(i+1)+'/'+items.length+' ('+it.date+')…';
+                var payload = {}; for(var k in it){ if(k !== '_rowId'){ payload[k] = it[k]; } }
+                fetch('/api/social-queue/compose', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({items: [payload]})
+                }).then(sqJson).then(function(d){
+                    var r0 = (d.results && d.results[0]) || {};
+                    if(d.success && r0.ok){
+                        ok++; if(state){ state.textContent = '✅ en file ('+(r0.status||'pending_review')+')'; state.style.color = '#16a34a'; }
+                    } else {
+                        fail++; if(state){ state.textContent = '❌ '+(r0.error || d.error || 'échec'); state.style.color = '#dc2626'; }
+                    }
+                    i++; next();
+                }).catch(function(e){
+                    fail++; if(state){ state.textContent = '❌ réseau: '+e; state.style.color = '#dc2626'; }
+                    i++; next();
+                });
+            })();
+        }
+        </script>
+        """
+
     def send_social_queue_page(self):
         """Page de gestion de la file des posts Instagram (collection social_queue)."""
         from html import escape
@@ -13330,7 +13697,8 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
             cards_html = ''.join(self._render_social_card(p, escape) for p in posts)
             grid_html = self._render_social_grid(posts, escape, rec_doc.get('slots') or [])
             grid_block = f'<div id="social-grid">{grid_html}</div>'
-            list_block = f'<div class="stories-container" id="social-list" style="display:none">{cards_html}</div>'
+            list_block = (f'<div class="stories-container" id="social-list" style="display:none">'
+                          f'{self._render_social_bulkbar()}{cards_html}</div>')
         else:
             grid_block = ''
             list_block = (
@@ -13382,7 +13750,8 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
             </div>
         """
         history_block = self._render_social_history(self.firebase_manager.get_social_config_history(30), escape)
-        content = header + history_block + grid_block + list_block + self._social_queue_script()
+        composer_block = self._render_social_composer(posts, escape)
+        content = header + composer_block + history_block + grid_block + list_block + self._social_queue_script()
         self.send_html_response(self.get_base_html('social-queue', content))
 
     def handle_update_social_post(self, post_id, post_data):
@@ -13481,6 +13850,56 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_error_response(502, f"Échec publication Instagram: {body}")
         except Exception as e:
             print(f"❌ Erreur publish social post: {e}")
+            self.send_error_response(500, f'Erreur: {str(e)}')
+
+    def handle_compose_social_posts(self, post_data):
+        """Compositeur : proxy vers la Cloud Function socialComposePost (clé serveur).
+        Génère un post COMPLET (contenu + média via buildMedia) et l'enfile en
+        `pending_review` — jamais publié directement. Le JS envoie 1 item par appel
+        (un reel ffmpeg prend 1-3 min) ; la CF en accepte jusqu'à 3."""
+        try:
+            can_edit, message = self.security_manager.can_perform_action('edit')
+            if not can_edit:
+                self.send_error_response(403, message)
+                return
+            self.security_manager.update_activity()
+            import json as _json
+            key = os.environ.get('SOCIAL_TRIGGER_KEY', '').strip()
+            if not key:
+                self.send_error_response(
+                    501,
+                    "SOCIAL_TRIGGER_KEY absente de l'environnement du service. Poser la clé "
+                    "(même valeur que functions/.env) : gcloud run services update kuma-backoffice "
+                    "--region us-central1 --project kumafire-7864b --update-env-vars SOCIAL_TRIGGER_KEY=…")
+                return
+            try:
+                body = _json.loads(post_data or '{}')
+            except Exception:
+                self.send_error_response(400, 'Body JSON attendu')
+                return
+            items = body.get('items') or ([body['item']] if body.get('item') else None)
+            if not items or not isinstance(items, list):
+                self.send_error_response(400, 'items requis: { items: [ { date, time, gen, … } ] }')
+                return
+            allowed = {'date', 'time', 'gen', 'format', 'countryCode', 'storyId', 'idx', 'hook', 'caption', 'slides'}
+            clean = [{k: v for k, v in it.items() if k in allowed} for it in items[:3] if isinstance(it, dict)]
+            if not clean:
+                self.send_error_response(400, 'Aucun item valide')
+                return
+            import requests
+            url = 'https://europe-west1-kumafire-7864b.cloudfunctions.net/socialComposePost'
+            r = requests.post(url, json={'items': clean}, headers={'x-trigger-key': key}, timeout=540)
+            try:
+                out = r.json()
+            except Exception:
+                out = {'raw': r.text[:500]}
+            if r.status_code == 200:
+                out['success'] = bool(out.get('ok'))
+                self.send_json_response(out)
+            else:
+                self.send_error_response(502, f'Échec génération ({r.status_code}): {out}')
+        except Exception as e:
+            print(f"❌ Erreur compose social posts: {e}")
             self.send_error_response(500, f'Erreur: {str(e)}')
 
     def send_story_audio_page(self):
