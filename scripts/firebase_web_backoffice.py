@@ -1261,6 +1261,25 @@ class FirebaseManager:
             print(f"❌ Erreur get_social_post {post_id}: {e}")
             return None
 
+    def get_social_config_history(self, limit=30):
+        """Journal des décisions de la boucle autonome (social_config_history) —
+        écrit par socialOptimizeSchedule (recalcul grille + reprogrammation) et par
+        les éditions manuelles d'heure (timeSource='manual', kill-switch)."""
+        if not self.initialized:
+            return []
+        try:
+            docs = (self.db.collection('social_config_history')
+                    .order_by('at', direction='DESCENDING').limit(limit).get())
+            out = []
+            for d in docs:
+                x = d.to_dict() or {}
+                x['id'] = d.id
+                out.append(x)
+            return out
+        except Exception as e:
+            print(f"❌ Erreur get_social_config_history: {e}")
+            return []
+
     def get_social_config(self, doc_id):
         """Lit un doc de social_config (schedule, recommended_slots, automation…)."""
         if not self.initialized:
@@ -12898,6 +12917,81 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
         </div>
         """
 
+    def _render_social_history(self, entries, escape):
+        """Journal compact de la boucle autonome : recalculs de grille, reprogrammations,
+        refresh de token, éditions manuelles. Section repliable sous /social-queue."""
+        from zoneinfo import ZoneInfo
+        if not entries:
+            return ''
+
+        KIND_LABEL = {
+            'optimize': ('🧠', 'Recalcul automatique'),
+            'token_refresh': ('🔑', 'Refresh token IG'),
+            'manual_time_edit': ('✋', 'Édition manuelle'),
+        }
+
+        def _fmt_at(x):
+            at = x.get('at')
+            try:
+                return at.astimezone(ZoneInfo('Europe/Paris')).strftime('%d/%m %H:%M')
+            except Exception:
+                return '—'
+
+        rows = []
+        for x in entries:
+            kind = str(x.get('kind', ''))
+            icon, label = KIND_LABEL.get(kind, ('•', kind or '—'))
+            when = escape(_fmt_at(x))
+
+            if kind == 'optimize':
+                dry = x.get('dryRun')
+                badge = ('<span style="background:#e5e7eb;color:#374151;font-size:11px;'
+                         'padding:2px 7px;border-radius:999px;font-weight:700">DRY-RUN</span>') if dry else (
+                         '<span style="background:#dcfce7;color:#166534;font-size:11px;'
+                         'padding:2px 7px;border-radius:999px;font-weight:700">APPLIQUÉ</span>')
+                summary = (f"Grille : {x.get('gridChanged', 0)} créneau(x) changé(s) · "
+                           f"{x.get('postsRescheduled', 0)} post(s) reprogrammé(s)")
+                decisions = x.get('decisions') or []
+                dec_rows = ''.join(
+                    f"<tr><td>dow{d.get('dow')}</td><td>{escape(str(d.get('format','')))}</td>"
+                    f"<td>{escape(str(d.get('from','')))} → {escape(str(d.get('to') or '—'))}</td>"
+                    f"<td>n={d.get('sampleSize', 0)}</td>"
+                    f"<td>{'✅' if d.get('applied') else '⏭️ ' + escape(str(d.get('skippedReason','')))}</td></tr>"
+                    for d in decisions)
+                detail = (f'<details style="margin-top:4px"><summary style="cursor:pointer;'
+                          f'font-size:12px;color:#6b7280">{len(decisions)} décision(s)</summary>'
+                          f'<table style="width:100%;font-size:12px;margin-top:6px;border-collapse:collapse">'
+                          f'<tr style="color:#888;text-align:left"><th>Jour</th><th>Format</th>'
+                          f'<th>Heure</th><th>Éch.</th><th>Statut</th></tr>{dec_rows}</table></details>'
+                          if decisions else '')
+                body = f'{badge} {escape(summary)}{detail}'
+            elif kind == 'token_refresh':
+                err = x.get('error')
+                if err:
+                    body = f'<span style="color:#dc2626">❌ échec : {escape(str(err))}</span>'
+                else:
+                    body = f"✅ token rafraîchi (expire dans ~{x.get('expiresInDays', '?')} j)"
+            else:
+                body = escape(str(x.get('note', '')))
+
+            rows.append(
+                f'<div style="padding:10px 0;border-bottom:1px solid #f0f0f0">'
+                f'<div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap">'
+                f'<span style="font-size:15px">{icon}</span>'
+                f'<strong style="font-size:13px">{escape(label)}</strong>'
+                f'<span style="color:#999;font-size:12px">{when} (Europe/Paris)</span></div>'
+                f'<div style="margin-top:4px;font-size:13px;color:#333">{body}</div></div>')
+
+        return f"""
+        <details style="max-width:900px;margin:0 auto 18px" open>
+            <summary style="cursor:pointer;font-weight:700;padding:8px 0">
+                📜 Historique de la boucle autonome ({len(entries)})
+            </summary>
+            <div style="background:#fff;border:1px solid #eee;border-radius:10px;padding:4px 16px">
+                {''.join(rows)}
+            </div>
+        </details>"""
+
     def _render_social_grid(self, posts, escape, recommended=None):
         """Grille type feed Instagram (aperçu visuel) de la file.
 
@@ -13285,7 +13379,8 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                 <a href="/social-queue" class="btn-secondary" style="text-decoration:none;display:inline-block">🔄 Rafraîchir</a>
             </div>
         """
-        content = header + grid_block + list_block + self._social_queue_script()
+        history_block = self._render_social_history(self.firebase_manager.get_social_config_history(30), escape)
+        content = header + history_block + grid_block + list_block + self._social_queue_script()
         self.send_html_response(self.get_base_html('social-queue', content))
 
     def handle_update_social_post(self, post_id, post_data):
