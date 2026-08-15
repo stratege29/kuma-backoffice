@@ -13064,6 +13064,8 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                   'needs_video': ('sq-st-novid', 'Sans vidéo', '#dc2626')}
         tiles = []
         for p in reversed(posts):  # plus récent en premier (look feed Instagram)
+            if str(p.get('status', '')) == 'published':
+                continue  # deja publie : hors du feed a valider, reste dans la vue Liste
             pid = escape(str(p.get('id', '')))
             fmt = str(p.get('format', ''))
             badge = {'reel': '▶', 'carousel': '❏', 'image': ''}.get(fmt, '')
@@ -13096,16 +13098,16 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
         n_appr = sum(1 for p in posts if p.get('status') == 'approved')
         n_pub = sum(1 for p in posts if p.get('status') == 'published')
         n_nov = sum(1 for p in posts if p.get('status') == 'needs_video')
+        pub_note = f' · {n_pub} publié(s), visibles dans la vue Liste' if n_pub else ''
         profile = (
             '<div class="sq-profile"><div class="sq-ava"><div>🦁</div></div>'
             '<div><div class="sq-handle">@kumacontes</div>'
-            f'<div style="color:#888;font-size:13px">{len(posts)} posts · aperçu du feed programmé</div>'
+            f'<div style="color:#888;font-size:13px">{len(tiles)} post(s) à venir · aperçu du feed programmé{pub_note}</div>'
             '</div></div>')
         legend = (
             '<div class="sq-legend">'
             f'<span><i class="sq-dot" style="background:#f59e0b"></i>À valider ({n_rev})</span>'
             f'<span><i class="sq-dot" style="background:#2563eb"></i>Programmé/approuvé ({n_appr})</span>'
-            f'<span><i class="sq-dot" style="background:#16a34a"></i>Publié ({n_pub})</span>'
             f'<span><i class="sq-dot" style="background:#dc2626"></i>Sans vidéo ({n_nov})</span>'
             '</div>')
         # Données complètes par post pour la modale d'aperçu (clic sur une vignette).
