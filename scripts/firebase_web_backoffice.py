@@ -12802,6 +12802,90 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
         except Exception:
             return None
 
+    def _social_page_style(self):
+        """CSS de la page /social-queue : barre de commande collante + panneaux.
+
+        Volontairement émis même quand la file est vide (contrairement au CSS de la
+        grille, rendu par _render_social_grid) : la barre existe dans tous les cas."""
+        return """<style>
+        .sq-help{max-width:900px;margin:10px auto 14px;font-size:13px;color:#555}
+        .sq-help>summary{cursor:pointer;font-weight:700;color:#333;padding:4px 0}
+        .sq-help>div{background:#f0f7ff;border:1px solid #cfe4ff;border-radius:8px;padding:12px 14px;margin-top:6px;line-height:1.6}
+        .sq-bar{position:sticky;top:0;z-index:20;display:flex;flex-wrap:wrap;gap:8px;align-items:center;
+                background:#fff;border:1px solid #e8e8ec;border-radius:10px;padding:9px 12px;margin:0 0 16px;
+                box-shadow:0 2px 12px rgba(0,0,0,.07)}
+        .sq-seg{display:inline-flex;background:#f1f2f4;border-radius:8px;padding:3px;gap:2px;flex:none}
+        .sq-seg button{border:0;background:transparent;padding:6px 12px;border-radius:6px;font-size:13px;
+                       font-weight:700;color:#555;cursor:pointer}
+        .sq-seg button.on{background:#fff;color:#111;box-shadow:0 1px 3px rgba(0,0,0,.18)}
+        .sq-div{width:1px;height:24px;background:#e8e8ec;flex:none}
+        .sq-chip{display:inline-flex;align-items:center;gap:6px;border:1px solid #e2e2e6;background:#fff;color:#444;
+                 border-radius:999px;padding:5px 11px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap}
+        .sq-chip:hover{border-color:#b9b9c0}
+        .sq-chip .n{background:#f1f2f4;border-radius:999px;padding:1px 8px;font-size:12px;font-weight:800;color:#333}
+        .sq-chip.on{background:#374151;border-color:#374151;color:#fff}
+        .sq-chip.on .n{background:rgba(255,255,255,.24);color:#fff}
+        .sq-chip[data-f="pending_review"].on{background:#f59e0b;border-color:#f59e0b}
+        .sq-chip[data-f="approved"].on{background:#2563eb;border-color:#2563eb}
+        .sq-chip[data-f="needs_video"].on{background:#dc2626;border-color:#dc2626}
+        .sq-chip[data-f="published"].on{background:#16a34a;border-color:#16a34a}
+        .sq-chips{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+        .sq-acts{display:flex;gap:8px;align-items:center}
+        .sq-grow{flex:1;min-width:0}
+        .sq-tool{border:1px solid #e2e2e6;background:#fff;border-radius:8px;padding:6px 11px;font-size:13px;
+                 font-weight:700;color:#444;cursor:pointer;text-decoration:none;display:inline-block;white-space:nowrap}
+        .sq-tool:hover{background:#f7f7f9;color:#222}
+        .sq-tool.on{background:#374151;border-color:#374151;color:#fff}
+        .sq-tool.go{background:#2563eb;border-color:#2563eb;color:#fff}
+        .sq-tool.go:hover{background:#1d4ed8;color:#fff}
+        .sq-panel{background:#fff;border:1px solid #e8e8ec;border-radius:10px;padding:16px;margin:0 auto 18px;
+                  max-width:900px;box-shadow:0 2px 10px rgba(0,0,0,.05)}
+        .sq-panel[hidden]{display:none}
+        .sq-panel-head{display:flex;align-items:center;gap:10px;margin:0 0 10px}
+        .sq-panel-head h3{margin:0;font-size:15px;flex:1}
+        </style>"""
+
+    def _render_social_toolbar(self, counts, total, has_posts, n_history):
+        """Barre de commande unique : vue + filtres porteurs des compteurs + actions.
+
+        Remplace l'ancien trio (grille de 5 métriques décoratives + rangée de filtres
+        + légende de la grille) qui répétait trois fois les mêmes statuts et repoussait
+        le premier post à ~1450 px du haut de page."""
+        def chip(f, label, n):
+            on = ' on' if f == 'all' else ''
+            return (f'<button class="sq-chip{on}" data-f="{f}" onclick="sqFilter(\'{f}\', this)">'
+                    f'{label}<span class="n">{n}</span></button>')
+
+        chips = (chip('all', 'Tous', total)
+                 + chip('pending_review', '⏳ À valider', counts.get('pending_review', 0))
+                 + chip('approved', '🗓️ Programmés', counts.get('approved', 0))
+                 + chip('needs_video', '🎬 Sans vidéo', counts.get('needs_video', 0))
+                 + chip('published', '✅ Publiés', counts.get('published', 0)))
+
+        seg = ('<div class="sq-seg">'
+               '<button class="sq-view on" data-v="grid" onclick="sqView(\'grid\', this)">🔲 Grille</button>'
+               '<button class="sq-view" data-v="list" onclick="sqView(\'list\', this)">📋 Liste</button>'
+               '</div><span class="sq-div"></span>') if has_posts else ''
+
+        approve_all = ('<button class="sq-tool go" onclick="sqApproveAll()">✅ Tout approuver</button>'
+                       if counts.get('pending_review', 0) else '')
+        history_btn = (f'<button class="sq-tool" id="sq-btn-history" onclick="sqPanel(\'history\', this)">'
+                       f'📜 Historique ({n_history})</button>' if n_history else '')
+
+        return f"""
+            <div class="sq-bar">
+                {seg}
+                <div class="sq-chips">{chips}</div>
+                <span class="sq-grow"></span>
+                <div class="sq-acts">
+                    <button class="sq-tool" id="sq-btn-composer" onclick="sqPanel('composer', this)">➕ Nouveau post</button>
+                    {history_btn}
+                    {approve_all}
+                    <a href="/social-queue" class="sq-tool" title="Recharger la file">🔄</a>
+                </div>
+            </div>
+        """
+
     def _render_social_card(self, p, escape):
         """Construit la carte HTML d'un post de la file social."""
         pid = p.get('id', '')
@@ -12927,7 +13011,7 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
         décaler la date, fixer l'heure, changer le statut, supprimer. Chaque action
         boucle séquentiellement sur les endpoints unitaires existants."""
         return """
-        <div id="sq-bulk" style="position:sticky;top:0;z-index:5;background:#fff;border:1px solid #eee;
+        <div id="sq-bulk" style="position:sticky;top:64px;z-index:5;background:#fff;border:1px solid #eee;
              border-radius:10px;padding:10px 14px;margin-bottom:12px;display:flex;gap:10px;
              flex-wrap:wrap;align-items:center;font-size:13px">
             <label style="font-weight:700;cursor:pointer">
@@ -13020,14 +13104,15 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                 f'<div style="margin-top:4px;font-size:13px;color:#333">{body}</div></div>')
 
         return f"""
-        <details style="max-width:900px;margin:0 auto 18px" open>
-            <summary style="cursor:pointer;font-weight:700;padding:8px 0">
-                📜 Historique de la boucle autonome ({len(entries)})
-            </summary>
-            <div style="background:#fff;border:1px solid #eee;border-radius:10px;padding:4px 16px">
+        <div class="sq-panel" id="sq-history" hidden>
+            <div class="sq-panel-head">
+                <h3>📜 Historique de la boucle autonome ({len(entries)})</h3>
+                <button class="sq-tool" onclick="sqPanelClose('history')">✕ Fermer</button>
+            </div>
+            <div style="max-height:420px;overflow:auto">
                 {''.join(rows)}
             </div>
-        </details>"""
+        </div>"""
 
     def _render_social_grid(self, posts, escape, recommended=None):
         """Grille type feed Instagram (aperçu visuel) de la file.
@@ -13045,10 +13130,10 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
             except Exception:
                 pass
         style = """<style>
-        .sq-profile{display:flex;align-items:center;gap:18px;max-width:780px;margin:0 auto 16px;padding:6px 4px}
-        .sq-ava{width:64px;height:64px;border-radius:50%;padding:3px;flex:none;display:flex;background:linear-gradient(45deg,#FF6B35,#FFC107)}
-        .sq-ava>div{flex:1;border-radius:50%;background:#1a1a2e;color:#fff;display:flex;align-items:center;justify-content:center;font-size:26px;border:2px solid #fff}
-        .sq-handle{font-size:17px;font-weight:700}
+        .sq-profile{display:flex;align-items:center;gap:14px;max-width:780px;margin:0 auto 12px;padding:2px 4px}
+        .sq-ava{width:44px;height:44px;border-radius:50%;padding:2px;flex:none;display:flex;background:linear-gradient(45deg,#FF6B35,#FFC107)}
+        .sq-ava>div{flex:1;border-radius:50%;background:#1a1a2e;color:#fff;display:flex;align-items:center;justify-content:center;font-size:19px;border:2px solid #fff}
+        .sq-handle{font-size:15px;font-weight:700}
         .sq-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;max-width:780px;margin:0 auto}
         .sq-tile{position:relative;aspect-ratio:4/5;border-radius:4px;overflow:hidden;cursor:pointer;background:#23232c}
         .sq-tile img{width:100%;height:100%;object-fit:cover;display:block;transition:transform .25s}
@@ -13061,9 +13146,6 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
         .sq-hook{font-size:12px;font-weight:600;line-height:1.35;display:-webkit-box;-webkit-line-clamp:6;-webkit-box-orient:vertical;overflow:hidden}
         .sq-status{position:absolute;top:7px;left:7px;font-size:10px;font-weight:800;padding:3px 8px;border-radius:999px;letter-spacing:.3px;text-transform:uppercase;color:#fff;filter:drop-shadow(0 1px 2px rgba(0,0,0,.5))}
         .sq-st-rev{background:#f59e0b}.sq-st-prog{background:#2563eb}.sq-st-pub{background:#16a34a}.sq-st-novid{background:#dc2626}.sq-st-other{background:#6b7280}
-        .sq-legend{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;max-width:780px;margin:0 auto 14px;font-size:12px;color:#555}
-        .sq-legend span{display:inline-flex;align-items:center;gap:5px}
-        .sq-dot{width:11px;height:11px;border-radius:50%;display:inline-block}
         .sqm-overlay{position:fixed;inset:0;background:rgba(10,8,16,.82);z-index:9999;display:none;align-items:center;justify-content:center;padding:18px}
         .sqm-overlay.open{display:flex}
         .sqm{background:#fff;border-radius:16px;overflow:hidden;width:100%;max-width:960px;max-height:92vh;display:grid;grid-template-columns:minmax(0,1fr) 360px;position:relative}
@@ -13125,28 +13207,23 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
             foot_date = date_short + (f' · {time}' if time else '')
             story_mark = ' 📲' if media.get('storyUrl') else ''
             tiles.append(
-                f'<div class="sq-tile" onclick="sqOpen(\'{pid}\')">{inner}'
+                f'<div class="sq-tile" data-status="{escape(str(p.get("status", "")))}" '
+                f'onclick="sqOpen(\'{pid}\')">{inner}'
                 f'<span class="sq-status {st_cls}">{st_lab}</span>'
                 f'<span class="sq-badge">{badge}{story_mark}</span>'
                 f'<div class="sq-hover"><span class="sq-hook">{hook}</span></div>'
                 f'<div class="sq-foot"><span>{foot_date}</span><span>{flag}</span></div></div>')
 
-        n_rev = sum(1 for p in posts if p.get('status') == 'pending_review')
-        n_appr = sum(1 for p in posts if p.get('status') == 'approved')
         n_pub = sum(1 for p in posts if p.get('status') == 'published')
-        n_nov = sum(1 for p in posts if p.get('status') == 'needs_video')
-        pub_note = f' · {n_pub} publié(s), visibles dans la vue Liste' if n_pub else ''
+        pub_note = f' · {n_pub} publié(s) en vue Liste' if n_pub else ''
         profile = (
             '<div class="sq-profile"><div class="sq-ava"><div>🦁</div></div>'
             '<div><div class="sq-handle">@kumacontes</div>'
-            f'<div style="color:#888;font-size:13px">{len(tiles)} post(s) à venir · aperçu du feed programmé{pub_note}</div>'
+            f'<div style="color:#888;font-size:13px">Aperçu du feed programmé · {len(tiles)} post(s) à venir{pub_note}</div>'
             '</div></div>')
-        legend = (
-            '<div class="sq-legend">'
-            f'<span><i class="sq-dot" style="background:#f59e0b"></i>À valider ({n_rev})</span>'
-            f'<span><i class="sq-dot" style="background:#2563eb"></i>Programmé/approuvé ({n_appr})</span>'
-            f'<span><i class="sq-dot" style="background:#dc2626"></i>Sans vidéo ({n_nov})</span>'
-            '</div>')
+        # L'état vide sert au filtrage côté client (les publiés ne sont pas dans la grille).
+        empty = ('<div id="sq-grid-empty" hidden style="max-width:780px;margin:16px auto;padding:20px;'
+                 'text-align:center;color:#666;background:#fafafa;border:1px dashed #ddd;border-radius:10px"></div>')
         # Données complètes par post pour la modale d'aperçu (clic sur une vignette).
         st_label = {'pending_review': 'À valider', 'approved': 'Programmé', 'published': 'Publié', 'needs_video': 'Sans vidéo'}
         data = {}
@@ -13185,7 +13262,8 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
         modal = ('<div class="sqm-overlay" id="sqm-overlay" onclick="if(event.target===this)sqClose()">'
                  '<div class="sqm" id="sqm"></div></div>'
                  f'<script>window.SQ_POSTS = {data_json};</script>')
-        return style + profile + legend + '<div class="sq-grid">' + ''.join(tiles) + '</div>' + modal
+        return (style + profile + '<div class="sq-grid">' + ''.join(tiles) + '</div>'
+                + empty + modal)
 
     def _social_queue_script(self):
         """JS (statique) pour éditer / supprimer / publier / filtrer."""
@@ -13240,19 +13318,52 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                 else { alert('Échec: '+(d.error||JSON.stringify(d))); if(btn){ btn.disabled=false; btn.textContent='🚀 Publier'; } }
             }).catch(function(e){ alert('Erreur réseau: '+e); if(btn){ btn.disabled=false; btn.textContent='🚀 Publier'; } });
         }
+        /* Le filtre pilote LES DEUX vues (avant : la liste seulement, donc cliquer
+           un filtre en vue Grille ne faisait rien de visible). */
         function sqFilter(status, el){
             document.querySelectorAll('#social-list .story-item').forEach(function(c){
                 c.style.display = (status==='all' || c.getAttribute('data-status')===status) ? 'block' : 'none';
             });
-            document.querySelectorAll('.sq-filter').forEach(function(b){ b.classList.remove('btn-primary'); b.classList.add('btn-secondary'); });
-            if(el){ el.classList.remove('btn-secondary'); el.classList.add('btn-primary'); }
+            var shown = 0;
+            document.querySelectorAll('.sq-tile').forEach(function(t){
+                var ok = (status==='all' || t.getAttribute('data-status')===status);
+                t.style.display = ok ? '' : 'none';
+                if(ok){ shown++; }
+            });
+            var empty = document.getElementById('sq-grid-empty');
+            if(empty){
+                empty.hidden = (shown > 0);
+                empty.innerHTML = (shown > 0) ? '' : ((status === 'published')
+                    ? 'Les posts déjà publiés ne figurent pas dans l\\'aperçu du feed. '
+                      + '<button class="sq-tool" onclick="sqViewList()">📋 Les voir en liste</button>'
+                    : 'Aucun post avec ce statut.');
+            }
+            document.querySelectorAll('.sq-chip').forEach(function(b){ b.classList.remove('on'); });
+            if(el){ el.classList.add('on'); }
+            sqSelChanged();
         }
         function sqView(mode, el){
             var g = document.getElementById('social-grid'), l = document.getElementById('social-list');
             if(g) g.style.display = (mode==='grid') ? 'block' : 'none';
-            if(l) l.style.display = (mode==='list') ? 'block' : 'none';
-            document.querySelectorAll('.sq-view').forEach(function(b){ b.classList.remove('btn-primary'); b.classList.add('btn-secondary'); });
-            if(el){ el.classList.remove('btn-secondary'); el.classList.add('btn-primary'); }
+            if(l) l.style.display = (mode==='list') ? 'grid' : 'none';
+            document.querySelectorAll('.sq-view').forEach(function(b){ b.classList.remove('on'); });
+            if(el){ el.classList.add('on'); }
+        }
+        function sqViewList(){ sqView('list', document.querySelector('.sq-view[data-v="list"]')); }
+        /* Compositeur et historique : panneaux repliés ouverts depuis la barre, en place. */
+        function sqPanel(name, el){
+            var p = document.getElementById('sq-'+name);
+            if(!p){ return; }
+            var open = p.hidden;
+            p.hidden = !open;
+            var btn = el || document.getElementById('sq-btn-'+name);
+            if(btn){ btn.classList.toggle('on', open); }
+            if(open){ p.scrollIntoView({behavior:'smooth', block:'nearest'}); }
+        }
+        function sqPanelClose(name){
+            var p = document.getElementById('sq-'+name), b = document.getElementById('sq-btn-'+name);
+            if(p){ p.hidden = true; }
+            if(b){ b.classList.remove('on'); }
         }
         function sqEsc(s){ return (s||'').replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
         function sqOpen(id){
@@ -13319,7 +13430,7 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
         }
         function sqClose(){ var o=document.getElementById('sqm-overlay'); if(o){ o.classList.remove('open'); document.getElementById('sqm').innerHTML=''; } }
         function sqmScroll(d){ var c=document.getElementById('sqm-car'); if(c){ c.scrollBy({left:d*c.clientWidth, behavior:'smooth'}); } }
-        function sqEdit(id){ sqClose(); sqView('list', document.querySelector('.sq-view[data-v="list"]')); var c=document.getElementById('sq-'+id); if(c){ c.scrollIntoView({behavior:'smooth', block:'center'}); sqToggleEdit(id); } }
+        function sqEdit(id){ sqClose(); sqViewList(); var c=document.getElementById('sq-'+id); if(c){ c.scrollIntoView({behavior:'smooth', block:'center'}); sqToggleEdit(id); } }
         document.addEventListener('keydown', function(e){ if(e.key==='Escape') sqClose(); });
         function sqApprove(id, status){
             var params = new URLSearchParams(); params.append('status', status);
@@ -13499,28 +13610,29 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
         data_json = _json.dumps(data, ensure_ascii=False).replace('<', '\\u003c')
 
         html = f"""
-        <details id="sq-composer" style="max-width:900px;margin:0 auto 18px">
-            <summary style="cursor:pointer;font-weight:700;padding:8px 0">➕ Nouveau post — éditeur (unique ou par lots)</summary>
-            <div style="background:#fff;border:1px solid #eee;border-radius:10px;padding:16px">
-                <p style="font-size:13px;color:#555;margin:0 0 12px">
-                    Chaque ligne = un post <strong>généré par le moteur</strong> (visuels/vidéo inclus) puis mis en file
-                    « ⏳ À valider » — rien n'est publié directement. Un <strong>reel prend 1 à 3 min</strong> à générer ;
-                    les lignes sont traitées une par une. Accroche/légende laissées vides = texte du moteur ;
-                    remplies = <strong>verrouillées</strong> (le moteur ne les réécrira pas, rebuild compris).
-                </p>
-                <div id="sqc-rows"></div>
-                <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:10px">
-                    <button class="btn-secondary" onclick="sqcAddRow()">➕ Ajouter une ligne</button>
-                    <span style="color:#bbb">|</span>
-                    <label style="font-size:13px">📅 Semaine type dès le lundi&nbsp;:
-                        <input type="date" id="sqc-monday" style="padding:6px;border:1px solid #ddd;border-radius:5px"></label>
-                    <button class="btn-secondary" onclick="sqcAddWeek()">🗓️ Ajouter les 5 posts</button>
-                    <span style="flex:1"></span>
-                    <button class="btn-primary" id="sqc-go" onclick="sqcSubmit()">🚀 Générer</button>
-                </div>
-                <div id="sqc-progress" style="margin-top:10px;font-size:13px"></div>
+        <div class="sq-panel" id="sq-composer" hidden>
+            <div class="sq-panel-head">
+                <h3>➕ Nouveau post — éditeur (unique ou par lots)</h3>
+                <button class="sq-tool" onclick="sqPanelClose('composer')">✕ Fermer</button>
             </div>
-        </details>
+            <p style="font-size:13px;color:#555;margin:0 0 12px">
+                Chaque ligne = un post <strong>généré par le moteur</strong> (visuels/vidéo inclus) puis mis en file
+                « ⏳ À valider » — rien n'est publié directement. Un <strong>reel prend 1 à 3 min</strong> à générer ;
+                les lignes sont traitées une par une. Accroche/légende laissées vides = texte du moteur ;
+                remplies = <strong>verrouillées</strong> (le moteur ne les réécrira pas, rebuild compris).
+            </p>
+            <div id="sqc-rows"></div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:10px">
+                <button class="btn-secondary" onclick="sqcAddRow()">➕ Ajouter une ligne</button>
+                <span style="color:#bbb">|</span>
+                <label style="font-size:13px">📅 Semaine type dès le lundi&nbsp;:
+                    <input type="date" id="sqc-monday" style="padding:6px;border:1px solid #ddd;border-radius:5px"></label>
+                <button class="btn-secondary" onclick="sqcAddWeek()">🗓️ Ajouter les 5 posts</button>
+                <span style="flex:1"></span>
+                <button class="btn-primary" id="sqc-go" onclick="sqcSubmit()">🚀 Générer</button>
+            </div>
+            <div id="sqc-progress" style="margin-top:10px;font-size:13px"></div>
+        </div>
         <script>window.SQC = {data_json};</script>
         """
         return html + self._social_composer_script()
@@ -13709,12 +13821,6 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
                 'Reviens après la prochaine exécution, ou déclenche-la manuellement '
                 '(<code>socialGenerate?key=…&amp;date=YYYY-MM-DD</code>).</p></div></div>')
 
-        view_toggle = (
-            '<button class="btn-secondary sq-view btn-primary" data-v="grid" onclick="sqView(\'grid\', this)">🔲 Grille</button>'
-            '<button class="btn-secondary sq-view" data-v="list" onclick="sqView(\'list\', this)">📋 Liste</button>'
-            '<span style="display:inline-block;width:1px;height:22px;background:#ddd;margin:0 8px;vertical-align:middle"></span>'
-        ) if posts else ''
-
         # Bandeau lecture seule : sans mode Éditeur/Admin, Approuver/Publier sont bloqués.
         can_edit, _msg = self.security_manager.can_perform_action('edit')
         readonly_banner = '' if can_edit else (
@@ -13724,34 +13830,31 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
             'entre ton PIN pour passer en <strong>mode Admin</strong>, puis reviens ici.'
             '</div>')
 
+        # Le mode d'emploi est replié : utile la première fois, du bruit ensuite.
         header = f"""
             <h2>📱 File des posts Instagram — @kumacontes</h2>
             {readonly_banner}
-            <div class="alert alert-info">
-                Workflow : <strong>À valider</strong> → tu cliques <strong>✅ Approuver</strong> →
-                le post se <strong>publie automatiquement à son heure programmée</strong> (statut → Publié).
-                <em>« Publier maintenant »</em> pour poster tout de suite. Clique une vignette pour la revoir/éditer.
-            </div>
-            <div class="metrics-grid">
-                <div class="metric-card"><h3>Total</h3><div class="metric-number">{total}</div></div>
-                <div class="metric-card"><h3>⏳ À valider</h3><div class="metric-number">{counts.get('pending_review', 0)}</div></div>
-                <div class="metric-card"><h3>🗓️ Programmés</h3><div class="metric-number">{counts.get('approved', 0)}</div></div>
-                <div class="metric-card"><h3>🎬 Sans vidéo</h3><div class="metric-number">{counts.get('needs_video', 0)}</div></div>
-                <div class="metric-card"><h3>✅ Publiés</h3><div class="metric-number">{counts.get('published', 0)}</div></div>
-            </div>
-            <div class="actions-bar">
-                {view_toggle}
-                <button class="btn-secondary sq-filter btn-primary" onclick="sqFilter('all', this)">Tous</button>
-                <button class="btn-secondary sq-filter" onclick="sqFilter('pending_review', this)">⏳ À valider</button>
-                <button class="btn-secondary sq-filter" onclick="sqFilter('needs_video', this)">🎬 Sans vidéo</button>
-                <button class="btn-secondary sq-filter" onclick="sqFilter('published', this)">✅ Publiés</button>
-                <button class="btn-secondary" style="background:#2563eb;color:#fff" onclick="sqApproveAll()">✅ Tout approuver</button>
-                <a href="/social-queue" class="btn-secondary" style="text-decoration:none;display:inline-block">🔄 Rafraîchir</a>
-            </div>
+            <details class="sq-help">
+                <summary>❔ Comment ça marche</summary>
+                <div>
+                    <strong>À valider</strong> → tu cliques <strong>✅ Approuver</strong> →
+                    le post se <strong>publie automatiquement à son heure programmée</strong> (statut → Publié).
+                    <em>« Publier maintenant »</em> pour poster tout de suite.
+                    Clique une vignette pour la revoir/éditer ; la vue <strong>📋 Liste</strong> ajoute
+                    l'édition par lots (décaler, fixer l'heure, changer le statut).
+                    La file se remplit seule chaque jour à 18 h (Europe/Paris) via <code>socialDailyPost</code>.
+                </div>
+            </details>
         """
-        history_block = self._render_social_history(self.firebase_manager.get_social_config_history(30), escape)
+        history_entries = self.firebase_manager.get_social_config_history(30)
+        toolbar = self._render_social_toolbar(counts, total, bool(posts), len(history_entries))
+        history_block = self._render_social_history(history_entries, escape)
         composer_block = self._render_social_composer(posts, escape)
-        content = header + composer_block + history_block + grid_block + list_block + self._social_queue_script()
+        # Ordre : barre de commande → panneaux repliés → contenu. Les posts sont visibles
+        # sans scroller ; composer et historique s'ouvrent en place depuis la barre.
+        content = (self._social_page_style() + header + toolbar
+                   + composer_block + history_block
+                   + grid_block + list_block + self._social_queue_script())
         self.send_html_response(self.get_base_html('social-queue', content))
 
     def handle_update_social_post(self, post_id, post_data):
