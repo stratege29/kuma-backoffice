@@ -12811,18 +12811,21 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
         .sq-help{max-width:900px;margin:10px auto 14px;font-size:13px;color:#555}
         .sq-help>summary{cursor:pointer;font-weight:700;color:#333;padding:4px 0}
         .sq-help>div{background:#f0f7ff;border:1px solid #cfe4ff;border-radius:8px;padding:12px 14px;margin-top:6px;line-height:1.6}
-        .sq-bar{position:sticky;top:0;z-index:20;display:flex;flex-wrap:wrap;gap:8px;align-items:center;
+        .sq-bar{position:sticky;top:0;z-index:20;display:flex;flex-wrap:wrap;gap:6px;align-items:center;
                 background:#fff;border:1px solid #e8e8ec;border-radius:10px;padding:9px 12px;margin:0 0 16px;
                 box-shadow:0 2px 12px rgba(0,0,0,.07)}
+        /* La barre passe sur 2 rangées sous ~1300 px : la barre de lots se cale sur sa
+           hauteur RÉELLE (--sq-bar-h, mesurée par sqBarH()) et non sur une constante. */
+        #sq-bulk{top:calc(var(--sq-bar-h, 62px) + 8px)}
         .sq-seg{display:inline-flex;background:#f1f2f4;border-radius:8px;padding:3px;gap:2px;flex:none}
         .sq-seg button{border:0;background:transparent;padding:6px 12px;border-radius:6px;font-size:13px;
                        font-weight:700;color:#555;cursor:pointer}
         .sq-seg button.on{background:#fff;color:#111;box-shadow:0 1px 3px rgba(0,0,0,.18)}
         .sq-div{width:1px;height:24px;background:#e8e8ec;flex:none}
-        .sq-chip{display:inline-flex;align-items:center;gap:6px;border:1px solid #e2e2e6;background:#fff;color:#444;
-                 border-radius:999px;padding:5px 11px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap}
+        .sq-chip{display:inline-flex;align-items:center;gap:5px;border:1px solid #e2e2e6;background:#fff;color:#444;
+                 border-radius:999px;padding:5px 10px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap}
         .sq-chip:hover{border-color:#b9b9c0}
-        .sq-chip .n{background:#f1f2f4;border-radius:999px;padding:1px 8px;font-size:12px;font-weight:800;color:#333}
+        .sq-chip .n{background:#f1f2f4;border-radius:999px;padding:1px 7px;font-size:12px;font-weight:800;color:#333}
         .sq-chip.on{background:#374151;border-color:#374151;color:#fff}
         .sq-chip.on .n{background:rgba(255,255,255,.24);color:#fff}
         .sq-chip[data-f="pending_review"].on{background:#f59e0b;border-color:#f59e0b}
@@ -13011,7 +13014,7 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
         décaler la date, fixer l'heure, changer le statut, supprimer. Chaque action
         boucle séquentiellement sur les endpoints unitaires existants."""
         return """
-        <div id="sq-bulk" style="position:sticky;top:64px;z-index:5;background:#fff;border:1px solid #eee;
+        <div id="sq-bulk" style="position:sticky;z-index:5;background:#fff;border:1px solid #eee;
              border-radius:10px;padding:10px 14px;margin-bottom:12px;display:flex;gap:10px;
              flex-wrap:wrap;align-items:center;font-size:13px">
             <label style="font-weight:700;cursor:pointer">
@@ -13350,6 +13353,25 @@ class KumaFirebaseHTTPHandler(http.server.SimpleHTTPRequestHandler):
             if(el){ el.classList.add('on'); }
         }
         function sqViewList(){ sqView('list', document.querySelector('.sq-view[data-v="list"]')); }
+        /* La barre de commande passe sur 2 rangées quand la fenêtre rétrécit (ou quand
+           « Tout approuver » apparaît) : on publie sa hauteur réelle pour que la barre
+           d'édition par lots se cale dessous au lieu de passer dessous en la recouvrant. */
+        function sqBarH(){
+            var b = document.querySelector('.sq-bar');
+            if(b){ document.documentElement.style.setProperty('--sq-bar-h', b.offsetHeight + 'px'); }
+        }
+        (function(){
+            var b = document.querySelector('.sq-bar');
+            if(!b){ return; }
+            /* ResizeObserver suit la hauteur RÉELLE de la barre, y compris quand elle
+               change sans que la fenêtre bouge (« Tout approuver » qui apparaît). On garde
+               resize en filet : les callbacks du ResizeObserver sont livrés pendant les
+               étapes de rendu, donc suspendus quand l'onglet n'est pas visible. */
+            if(window.ResizeObserver){ new ResizeObserver(sqBarH).observe(b); }
+            window.addEventListener('resize', sqBarH);
+            window.addEventListener('load', sqBarH);
+            sqBarH();
+        })();
         /* Compositeur et historique : panneaux repliés ouverts depuis la barre, en place. */
         function sqPanel(name, el){
             var p = document.getElementById('sq-'+name);
