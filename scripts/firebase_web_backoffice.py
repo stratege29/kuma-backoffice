@@ -1476,6 +1476,23 @@ MAP_ELEMENTS_PAGE_HTML = r'''
         <label>Popup — Texte</label>
         <textarea id="f_pbody" rows="3" placeholder="Petit texte enfant…"></textarea>
       </div>
+      <label>Famille — Trésors de la carte</label>
+      <select id="f_category" onchange="meCategoryChanged()">
+        <option value="decor">🌿 Décor — peuple la carte, ne récompense rien</option>
+        <option value="merveille">⭐ Merveille — repère patrimonial permanent (halo doré)</option>
+        <option value="cadeau">🎁 Cadeau — objet événementiel daté (scintille, puis s'en va)</option>
+      </select>
+      <div id="meTreasureBox" style="display:none;margin-top:6px;background:#fffbeb;border:1px dashed #f5b301;border-radius:8px;padding:8px">
+        <div class="me-row">
+          <div><label title="Le trésor reste caché tant que le pays est dans la brume">Pays</label>
+            <select id="f_country" onchange="meRewardOptions()"><option value="">— aucun —</option></select></div>
+          <div><label title="Ne se dessine qu'au-delà de ce zoom. 1 = toujours visible.">Zoom mini</label>
+            <input id="f_minscale" type="number" step="0.1" min="1" max="5" placeholder="1"></div>
+        </div>
+        <label>Récompense — souvenir offert à la 1ʳᵉ collecte</label>
+        <select id="f_reward"><option value="">— aucune —</option></select>
+        <div class="me-note" id="meRewardHint" style="margin-top:4px">Le bouton « Je l'emporte ! » n'apparaît que si une récompense est choisie. Une seule fois par enfant.</div>
+      </div>
       <div class="me-check"><input type="checkbox" id="f_sched" onchange="meSchedToggle()"><label style="margin:0">Planning horaire (visible seulement à certaines heures)</label></div>
       <div id="meSchedBox" style="display:none;margin-top:6px">
         <div class="me-row">
@@ -1483,6 +1500,14 @@ MAP_ELEMENTS_PAGE_HTML = r'''
           <div><label>À (heure)</label><input id="f_sched_end" type="number" min="0" max="23" step="1" value="19"></div>
         </div>
         <div class="me-note" style="margin-top:4px">Heures locales 0–23. « De 20 à 6 » = la nuit (passe minuit). Décoché = toujours visible.</div>
+      </div>
+      <div class="me-check"><input type="checkbox" id="f_dates" onchange="meDatesToggle()"><label style="margin:0">Fenêtre de dates (fête nationale, journée de l'Afrique…)</label></div>
+      <div id="meDatesBox" style="display:none;margin-top:6px">
+        <div class="me-row">
+          <div><label>Du</label><input id="f_date_start" type="date"></div>
+          <div><label>Au (inclus)</label><input id="f_date_end" type="date"></div>
+        </div>
+        <div class="me-note" style="margin-top:4px">Bornes INCLUSES, à l'heure locale de l'enfant : « du 07/08 au 07/08 » = visible toute la journée du 7 août. « Au » vide = plus jamais retiré. L'app le fait apparaître et disparaître seule, sans mise à jour.</div>
       </div>
       <div class="me-check"><input type="checkbox" id="f_enabled" checked><label style="margin:0">Activé (visible dans l'app)</label></div>
       <div class="me-actions">
@@ -1543,7 +1568,7 @@ function meRenderTable(){
     const up=idx>0?'<button class="me-zbtn" title="Vers le premier plan" onclick="event.stopPropagation();meReorder(\''+el.id+'\',-1)">▲</button>':'<span style="display:inline-block;width:24px"></span>';
     const dn=idx<arr.length-1?'<button class="me-zbtn" title="Vers l\'arrière" onclick="event.stopPropagation();meReorder(\''+el.id+'\',1)">▼</button>':'';
     tr.innerHTML='<td>'+meAppCell(el)+'</td>'+
-      '<td>'+(meEsc(el.label)||'<i style=\"color:#94a3b8\">(sans nom)</i>')+(el.schedule?(' <span title="Planning '+((el.schedule.startHour!=null?el.schedule.startHour:'?'))+'h–'+((el.schedule.endHour!=null?el.schedule.endHour:'?'))+'h" style="color:#0ea5e9">⏰</span>'):'')+'</td>'+
+      '<td>'+(meEsc(el.label)||'<i style=\"color:#94a3b8\">(sans nom)</i>')+meTreasureBadge(el)+((el.schedule&&el.schedule.startHour!=null)?(' <span title="Planning '+el.schedule.startHour+'h–'+((el.schedule.endHour!=null?el.schedule.endHour:'?'))+'h" style="color:#0ea5e9">⏰</span>'):'')+meDatesBadge(el)+'</td>'+
       '<td>'+meEsc(el.type||'')+'</td>'+
       '<td>'+(el.z||0)+'</td>'+
       '<td style="white-space:nowrap">'+up+' '+dn+'</td>'+
@@ -1551,6 +1576,23 @@ function meRenderTable(){
       '<td><button class="me-zbtn" title="Éditer" onclick="event.stopPropagation();var e=meFindEl(\''+el.id+'\');if(e)meSelect(e)">✏️</button></td>';
     body.appendChild(tr);
   });
+}
+// Une Merveille et un Cadeau se repèrent d'un coup d'œil dans la liste : sans
+// ça, rien ne distingue les 141 éléments les uns des autres.
+function meTreasureBadge(el){
+  if(el.category==='merveille')return ' <span title="Merveille'+(el.countryCode?' · '+el.countryCode:'')+(el.reward?' · offre '+el.reward.souvenirId:'')+'" style="color:#b45309">⭐</span>';
+  if(el.category==='cadeau')return ' <span title="Cadeau'+(el.countryCode?' · '+el.countryCode:'')+(el.reward?' · offre '+el.reward.souvenirId:'')+'" style="color:#b45309">🎁</span>';
+  return '';
+}
+function meDatesBadge(el){
+  const s=el.schedule;if(!s||(!s.startDate&&!s.endDate))return '';
+  const txt=(s.startDate||'…')+' → '+(s.endDate||'…');
+  // Passé / à venir / en cours : le calendrier se relit sans ouvrir chaque fiche.
+  const today=new Date().toISOString().slice(0,10);
+  let color='#16a34a';
+  if(s.startDate&&today<s.startDate)color='#64748b';
+  else if(s.endDate&&today>s.endDate)color='#94a3b8';
+  return ' <span title="Fenêtre de dates '+txt+'" style="color:'+color+';font-size:10px">📅'+txt+'</span>';
 }
 function meNorm(ev){const r=meImg.getBoundingClientRect();return {x:Math.min(1,Math.max(0,(ev.clientX-r.left)/r.width)),y:Math.min(1,Math.max(0,(ev.clientY-r.top)/r.height))};}
 
@@ -1709,7 +1751,8 @@ window.addEventListener('blur',function(){meDown=null;});
 
 function meNew(pos){
   meSel={id:null,type:'decor',label:'',asset:{kind:'sprite',value:'baobab'},position:pos||{x:0.5,y:0.5},scale:1.5,water:false,
-    animation:{kind:'bob',speed:1,amplitude:1,period:24,loop:true,path:[]},interactive:true,popup:{title:'',body:''},enabled:true,z:0};
+    animation:{kind:'bob',speed:1,amplitude:1,period:24,loop:true,path:[]},interactive:true,popup:{title:'',body:''},enabled:true,z:0,
+    category:'decor',countryCode:null,minScale:null,reward:null};
   meFill();meRender();
 }
 function meSelect(el){meSel=JSON.parse(JSON.stringify(el));meFill();meRender();meRenderTable();}
@@ -1746,9 +1789,22 @@ function meFill(){
   document.getElementById('f_pbody').value=(meSel.popup&&meSel.popup.body)||'';
   document.getElementById('f_enabled').checked=meSel.enabled!==false;
   const sch=meSel.schedule;
-  document.getElementById('f_sched').checked=!!sch;
-  if(sch){document.getElementById('f_sched_start').value=(sch.startHour!=null?sch.startHour:7);document.getElementById('f_sched_end').value=(sch.endHour!=null?sch.endHour:19);}
+  // Les heures et les dates ont chacune leur case : un cadeau daté n'est pas
+  // forcément nocturne, et les lucioles n'ont pas de date de péremption.
+  const hasHours=!!(sch&&sch.startHour!=null&&sch.endHour!=null);
+  const hasDates=!!(sch&&(sch.startDate||sch.endDate));
+  document.getElementById('f_sched').checked=hasHours;
+  if(hasHours){document.getElementById('f_sched_start').value=sch.startHour;document.getElementById('f_sched_end').value=sch.endHour;}
+  document.getElementById('f_dates').checked=hasDates;
+  document.getElementById('f_date_start').value=(sch&&sch.startDate)||'';
+  document.getElementById('f_date_end').value=(sch&&sch.endDate)||'';
+  document.getElementById('f_category').value=meSel.category||'decor';
+  document.getElementById('f_minscale').value=(meSel.minScale!=null?meSel.minScale:'');
+  meCountryOptions(meSel.countryCode||'');
+  meRewardOptions((meSel.reward&&meSel.reward.souvenirId)||'');
+  meCategoryChanged();
   meSchedToggle();
+  meDatesToggle();
   meTogglePopup();
 }
 function meTogglePopup(){document.getElementById('mePopup').style.display=document.getElementById('f_interactive').checked?'block':'none';}
@@ -1866,16 +1922,85 @@ function meRead(){
     popup:{title:document.getElementById('f_ptitle').value.trim(),body:document.getElementById('f_pbody').value.trim()},
     enabled:document.getElementById('f_enabled').checked,
     z:parseInt(document.getElementById('f_z').value)||0,
-    schedule:meSchedRead()
+    schedule:meSchedRead(),
+    category:document.getElementById('f_category').value||'decor',
+    countryCode:document.getElementById('f_country').value||null,
+    minScale:meMinScaleRead(),
+    reward:meRewardRead()
   };
 }
 function meSchedToggle(){const on=document.getElementById('f_sched').checked;document.getElementById('meSchedBox').style.display=on?'block':'none';}
+function meDatesToggle(){const on=document.getElementById('f_dates').checked;document.getElementById('meDatesBox').style.display=on?'block':'none';}
 function meSchedRead(){
-  if(!document.getElementById('f_sched').checked)return null;
-  let s=parseInt(document.getElementById('f_sched_start').value);let e=parseInt(document.getElementById('f_sched_end').value);
-  if(isNaN(s))s=0;if(isNaN(e))e=0;
-  s=((s%24)+24)%24;e=((e%24)+24)%24;
-  return {startHour:s,endHour:e};
+  // Un seul objet `schedule` porte les deux fenêtres, chacune indépendante :
+  // l'app exige la bonne date ET la bonne heure quand les deux sont posées.
+  const out={};
+  if(document.getElementById('f_sched').checked){
+    let s=parseInt(document.getElementById('f_sched_start').value);let e=parseInt(document.getElementById('f_sched_end').value);
+    if(isNaN(s))s=0;if(isNaN(e))e=0;
+    out.startHour=((s%24)+24)%24;out.endHour=((e%24)+24)%24;
+  }
+  if(document.getElementById('f_dates').checked){
+    const sd=document.getElementById('f_date_start').value;const ed=document.getElementById('f_date_end').value;
+    if(sd)out.startDate=sd;if(ed)out.endDate=ed;
+  }
+  return Object.keys(out).length?out:null;
+}
+function meMinScaleRead(){
+  const v=parseFloat(document.getElementById('f_minscale').value);
+  // <= 1 : visible dès la vue d'ensemble — autant ne rien écrire.
+  return (isNaN(v)||v<=1)?null:Math.min(v,5);
+}
+function meRewardRead(){
+  const id=document.getElementById('f_reward').value;
+  return id?{souvenirId:id,once:true}:null;
+}
+function meCategoryChanged(){
+  const c=document.getElementById('f_category').value;
+  document.getElementById('meTreasureBox').style.display=(c==='decor')?'none':'block';
+  const hint=document.getElementById('meRewardHint');
+  if(hint)hint.textContent=(c==='cadeau')
+    ? "Cadeau : pense à cocher la fenêtre de dates ci-dessous, sinon il reste sur la carte toute l'année."
+    : "Le bouton « Je l'emporte ! » n'apparaît que si une récompense est choisie. Une seule fois par enfant.";
+}
+// Le catalogue des souvenirs, chargé une fois : c'est lui qui alimente le
+// choix de la récompense ET la liste des pays.
+let meSouvenirs=[];
+function meLoadSouvenirs(){
+  fetch('/api/souvenirs').then(r=>r.json()).then(d=>{
+    meSouvenirs=(d.souvenirs||[]).filter(s=>s&&(s.souvenirId||s.docId));
+    meSouvenirs.sort((a,b)=>String(a.souvenirId||a.docId).localeCompare(String(b.souvenirId||b.docId)));
+    // Le formulaire est peut-être déjà ouvert : on le re-peuple sans perdre
+    // ce qui y est sélectionné.
+    if(meSel){meCountryOptions(document.getElementById('f_country').value||meSel.countryCode||'');
+              meRewardOptions(document.getElementById('f_reward').value||(meSel.reward&&meSel.reward.souvenirId)||'');}
+  }).catch(()=>{});
+}
+function meCountryOptions(sel){
+  const el=document.getElementById('f_country');if(!el)return;
+  const seen={};
+  meSouvenirs.forEach(s=>{if(s.countryCode)seen[s.countryCode]=s.countryName||s.countryCode;});
+  // Un pays saisi ailleurs (script de seed) ne doit jamais être perdu.
+  if(sel&&!seen[sel])seen[sel]=sel;
+  const codes=Object.keys(seen).sort();
+  el.innerHTML='<option value="">— aucun —</option>'+codes.map(c=>
+    '<option value="'+c+'">'+meEsc(c+' · '+seen[c])+'</option>').join('');
+  el.value=sel||'';
+}
+function meRewardOptions(sel){
+  const el=document.getElementById('f_reward');if(!el)return;
+  if(sel===undefined)sel=el.value;
+  const country=document.getElementById('f_country').value;
+  // Filtré sur le pays quand il est posé : la récompense d'une Merveille
+  // ivoirienne se cherche parmi les souvenirs ivoiriens, pas parmi 290.
+  const list=meSouvenirs.filter(s=>!country||s.countryCode===country);
+  const opts=list.map(s=>{const id=s.souvenirId||s.docId;
+    return '<option value="'+meEsc(id)+'">'+meEsc(id+' · '+(s.name||''))+'</option>';});
+  if(sel&&!list.some(s=>(s.souvenirId||s.docId)===sel)){
+    opts.unshift('<option value="'+meEsc(sel)+'">'+meEsc(sel+' · (hors du pays choisi)')+'</option>');
+  }
+  el.innerHTML='<option value="">— aucune —</option>'+opts.join('');
+  el.value=sel||'';
 }
 function meSave(){
   const data=meRead();
@@ -1898,6 +2023,7 @@ function meUpdateRouteCount(){const n=(meSel&&meSel.animation&&meSel.animation.p
 function meRenderPath(){const svg=document.getElementById('mePath');const path=(meSel&&meSel.animation&&meSel.animation.path)||[];const af=document.getElementById('f_anim');const k=af?af.value:'';if((k!=='drive'&&k!=='fly')||path.length===0){svg.innerHTML='';return;}svg.setAttribute('viewBox','0 0 100 100');svg.setAttribute('preserveAspectRatio','none');const pts=path.map(p=>(p.x*100)+','+(p.y*100)).join(' ');let s='<polyline points="'+pts+'" fill="none" stroke="#ff8a00" stroke-width="1.5" stroke-dasharray="3 3" vector-effect="non-scaling-stroke"/>';path.forEach(p=>{s+='<circle cx="'+(p.x*100)+'" cy="'+(p.y*100)+'" r="1.3" fill="#ff8a00" vector-effect="non-scaling-stroke"/>';});svg.innerHTML=s;}
 meEmojiPalette();
 meLoadSprites();
+meLoadSouvenirs();
 (function(){var cb=document.getElementById('meDragToggle');if(cb)cb.checked=meDragEnabled;})();
 if(meImg.complete)meFetch();else meImg.addEventListener('load',meFetch);
 </script>
